@@ -12,6 +12,8 @@ import { wordMergeTool } from './word/merge.tool';
 import { wordTemplateTool } from './word/template.tool'; // Importar la nueva herramienta
 import { wordTextTool } from './word/text.tool'; // Importar la herramienta de texto
 import { wordSearchReplaceTool } from './word/searchReplace.tool'; // Importar la nueva herramienta
+import { wordTablesTool } from './word/tables.tool'; // Importar la herramienta de tablas (corrected extension)
+import { wordChartsTool } from './word/charts.tool'; // Importar la herramienta de gráficos
 // Import static resources
 import aiAssistantGuideResource from '../resources/static/ai_assistant_guide.resource'; // Added import
 // Import other tools (Excel, PowerPoint, Office, etc.) here
@@ -28,6 +30,8 @@ const allTools: McpResource[] = [
     ...wordTemplateTool, // Añadir la nueva herramienta
     ...wordTextTool, // Añadir la herramienta de texto
     ...wordSearchReplaceTool, // Añadir la nueva herramienta
+    ...wordTablesTool, // Añadir la herramienta de tablas
+    ...wordChartsTool, // Añadir la herramienta de gráficos
     ...aiAssistantGuideResource, // Added the new resource
     // ...excelRangeTool,
     // ...powerpointSlidesTool,
@@ -41,8 +45,8 @@ const placeholderTools: McpResource[] = [
     // { path: 'word/search-replace', handler: async () => ({ success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Tool word/search-replace not implemented.' } }), description: 'Perform advanced search and replace (Not Implemented - Requires VBA/COM)' }, // Placeholder removed
     { path: 'word/page', handler: async () => ({ success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Tool word/page not implemented.' } }), description: 'Configure page layout (Not Implemented)' },
     { path: 'word/headers-footers', handler: async () => ({ success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Tool word/headers-footers not implemented.' } }), description: 'Manage headers and footers (Not Implemented)' },
-    { path: 'word/tables', handler: async () => ({ success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Tool word/tables not implemented.' } }), description: 'Create and manage tables (Not Implemented)' },
-    { path: 'word/charts', handler: async () => ({ success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Tool word/charts not implemented.' } }), description: 'Insert and manage charts (Not Implemented)' },
+    // { path: 'word/tables', handler: async () => ({ success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Tool word/tables not implemented.' } }), description: 'Create and manage tables (Not Implemented)' }, // Placeholder removed
+    // { path: 'word/charts', handler: async () => ({ success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Tool word/charts not implemented.' } }), description: 'Insert and manage charts (Not Implemented)' }, // Placeholder removed
     { path: 'word/embedded-objects', handler: async () => ({ success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Tool word/embedded-objects not implemented.' } }), description: 'Manage embedded objects (Not Implemented - Requires VBA/COM)' },
     { path: 'word/metadata', handler: async () => ({ success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Tool word/metadata not implemented.' } }), description: 'Manage document properties and comments (Not Implemented)' },
     { path: 'word/batch', handler: async () => ({ success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Tool word/batch not implemented.' } }), description: 'Execute multiple operations (Not Implemented)' },
