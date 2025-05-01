@@ -83,7 +83,7 @@ Office MCP is a Node.js project with TypeScript. You’ll need:
 
 #### Clone the Repository
 ```bash
-git clone https://https://github.com/dvdjg/mcp-office.git
+git clone https://github.com/dvdjg/mcp-office.git
 cd mcp-office
 ```
 
