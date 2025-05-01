@@ -8,145 +8,229 @@ import path from 'path';
 import MarkdownIt from 'markdown-it';
 import { z } from 'zod';
 import { McpResource, ApiResponse, ToolContext, ToolRequestParams } from '@/types/common.types';
-import { createErrorResponse, handleToolError } from '@/utils/errorHandler';
+import { handleToolError } from '@/utils/errorHandler';
 import { validateFilePath } from '@/utils/security';
 import logger from '@/utils/logger';
-// Placeholder for Word API interaction (needs Office JS context or COM/VBA bridge)
-import { getWordContext } from './styles.tool'; // Reusing the placeholder context getter
+import { getOfficeApplication, releaseObject } from '@/utils/officeInterop'; // Use COM Interop
 
 // --- Schemas ---
 const exportSchema = z.object({
-    documentReference: z.string(), // Path to the source Word document
-    output: z.string(),           // Path to the output Markdown file
+    filePath: z.string().min(1).refine(validateFilePath, { // Renamed from documentReference
+        message: "Invalid or potentially unsafe source file path provided.",
+    }),
+    output: z.string().min(1).refine(value => { // Validate output path and directory
+        try {
+            const dir = path.dirname(value);
+            validateFilePath(dir); // Check directory safety/existence implicitly
+            return true;
+        } catch {
+            return false;
+        }
+    }, {
+        message: "Invalid or potentially unsafe output file path or directory.",
+    }),
     comments: z.enum(['ignore', 'append', 'inline']).default('ignore'),
 });
 
 const importSchema = z.object({
-    path: z.string(),             // Path to the source Markdown file
-    output: z.string(),           // Path to the output Word document
-    template: z.string().optional(), // Path to Word template (.dotx)
+    filePath: z.string().min(1).refine(validateFilePath, { // Renamed from path
+        message: "Invalid or potentially unsafe source Markdown file path provided.",
+    }),
+    output: z.string().min(1).refine(value => { // Validate output path and directory
+        try {
+            const dir = path.dirname(value);
+            validateFilePath(dir);
+            return true;
+        } catch {
+            return false;
+        }
+    }, {
+        message: "Invalid or potentially unsafe output Word file path or directory.",
+    }),
+    template: z.string().optional().refine(value => !value || validateFilePath(value), { // Validate template if provided
+        message: "Invalid or potentially unsafe template file path provided.",
+    }),
 });
 
-// --- Markdown Parser Setup ---
+// --- Markdown Parser Setup (Kept as is, used for import logic) ---
 const md = new MarkdownIt({
-  html: false, // Disable HTML tags in source
+  html: false,
   xhtmlOut: false,
-  breaks: true, // Convert '\n' in paragraphs into <br>
+  breaks: true,
   linkify: true,
   typographer: true,
 });
-// Add plugins as needed (e.g., for tables, footnotes, task lists)
 // md.use(require('markdown-it-footnote'));
 
 
 // --- Handlers ---
 
 /**
- * Exports a Word document to Markdown format.
- * NOTE: This is a simplified implementation. Real export requires parsing
- * the Word document structure (paragraphs, headings, lists, tables, comments)
- * and converting it to Markdown syntax. This often requires VBA or COM Interop
- * for reliable structure traversal. Office JS APIs have limitations here.
+ * Exports a Word document to Markdown format using COM Interop (Basic Text Extraction).
+ * NOTE: This implementation extracts plain text. Preserving formatting (headings, lists, bold, etc.)
+ * requires complex iteration over the Word document structure via COM.
  */
 async function exportToMarkdown(params: ToolRequestParams, context?: ToolContext): Promise<ApiResponse<{ outputPath: string }>> {
+    let wordApp: any = null;
+    let doc: any = null;
+    const safeOutputPath = path.resolve(params.output as string); // Already validated by Zod
+
     try {
         const validatedParams = exportSchema.parse(params);
-        const safeInputPath = validateFilePath(validatedParams.documentReference);
-        // Validate output directory
-        const outputDir = path.dirname(validatedParams.output);
-        validateFilePath(outputDir);
-        const safeOutputPath = path.resolve(validatedParams.output);
+        const safeInputPath = validatedParams.filePath; // Already validated
 
-        logger.info(`Attempting to export Word doc '${safeInputPath}' to Markdown '${safeOutputPath}'`);
+        logger.info(`Attempting COM export Word doc '${safeInputPath}' to Markdown '${safeOutputPath}'`);
 
-        // --- !!! Word Document Parsing Logic (Highly Simplified Placeholder) !!! ---
-        // This section needs a robust implementation using appropriate Office APIs.
-        // Option 1: Office JS (Limited structure access, best for simple text)
-        // Option 2: VBA/COM Interop (Best for complex structure, Windows Desktop only)
-        // Option 3: Third-party libraries (e.g., mammoth.js - converts .docx to HTML, then HTML to MD)
-
-        // Placeholder using mammoth.js concept (requires mammoth installation: npm install mammoth)
-        let markdownContent = `# Placeholder Export for ${path.basename(safeInputPath)}\n\n`;
-        try {
-            // Attempt to use mammoth if available (conceptual)
-            const mammoth = require('mammoth'); // Dynamic require
-            const result = await mammoth.extractRawText({ path: safeInputPath });
-            // const htmlResult = await mammoth.convertToHtml({ path: safeInputPath }); // Alternative: convert to HTML first
-            markdownContent += `(Content extracted using basic text extraction - formatting lost)\n\n${result.value}`;
-            logger.warn("Export using basic text extraction via mammoth (placeholder). Formatting is lost.");
-
-             // --- Comment Handling (Placeholder) ---
-             if (validatedParams.comments !== 'ignore') {
-                 markdownContent += `\n\n## Comments (Placeholder)\n`;
-                 markdownContent += `- Comment 1: Placeholder text.\n`;
-                 markdownContent += `- Comment 2: Another placeholder.\n`;
-                 logger.warn("Comment extraction requires advanced Word API access (VBA/COM or specific Office JS APIs if available).");
-             }
-             // --- End Comment Handling ---
-
-        } catch (mammothError) {
-            logger.error("Mammoth library not found or failed. Using basic placeholder.", mammothError);
-            markdownContent += "(Could not extract content - requires proper Word parsing implementation or library like mammoth.js)";
+        wordApp = await getOfficeApplication('Word.Application');
+        doc = wordApp.Documents.Open(safeInputPath);
+        if (!doc) {
+            throw new Error(`Failed to open document via COM: ${safeInputPath}`);
         }
-        // --- !!! End Placeholder Parsing Logic !!! ---
 
+        // --- Basic Text Extraction using COM ---
+        logger.warn("Exporting using basic COM text extraction (doc.Content.Text). Formatting will be lost.");
+        let extractedText = doc.Content.Text || ''; // Get the plain text content
 
-        await fs.writeFile(safeOutputPath, markdownContent, 'utf8');
-        logger.info(`Successfully wrote placeholder Markdown to ${safeOutputPath}`);
+        // --- Comment Handling (Basic COM Placeholder) ---
+        if (validatedParams.comments !== 'ignore' && doc.Comments && doc.Comments.Count > 0) {
+            logger.info(`Extracting ${doc.Comments.Count} comments (basic)...`);
+            extractedText += `\n\n## Comments (Extracted via COM)\n`;
+            let commentsCollection = null;
+            try {
+                commentsCollection = doc.Comments;
+                for (let i = 1; i <= commentsCollection.Count; i++) {
+                    let comment: any = null;
+                    try {
+                        comment = commentsCollection(i);
+                        const commentText = comment?.Range?.Text || 'Error reading comment text';
+                        const author = comment?.Author || 'Unknown Author';
+                        const scope = comment?.Scope?.Text ? ` (Scope: "${comment.Scope.Text.substring(0, 50)}...")` : '';
+                        extractedText += `- **${author}**: ${commentText}${scope}\n`;
+                    } catch (commentError) {
+                        logger.error(`Error reading comment at index ${i}: ${commentError}`);
+                        extractedText += `- Error reading comment at index ${i}.\n`;
+                    } finally {
+                         if (comment) releaseObject(comment);
+                    }
+                }
+            } catch (commentsError) {
+                 logger.error(`Error accessing comments collection: ${commentsError}`);
+                 extractedText += `- Error accessing comments collection.\n`;
+            } finally {
+                 if (commentsCollection) releaseObject(commentsCollection);
+            }
+        }
+        // --- End Comment Handling ---
+
+        await fs.writeFile(safeOutputPath, extractedText, 'utf8');
+        logger.info(`Successfully wrote extracted text via COM to ${safeOutputPath}`);
 
         return { success: true, data: { outputPath: safeOutputPath } };
 
     } catch (error) {
         return handleToolError(error, 'WORD_MD_EXPORT_ERROR');
+    } finally {
+        // --- CRUCIAL: Release COM Objects ---
+        if (doc) {
+            try {
+                doc.Close(false); // Close without saving
+                logger.debug(`Closed document: ${params.filePath}`);
+            } catch (closeError) {
+                logger.error(`Error closing document: ${closeError}`);
+            }
+            releaseObject(doc);
+            doc = null;
+        }
+        if (wordApp) {
+            // Consider wordApp.Quit() if needed, but releasing is usually sufficient if obtained via getOfficeApplication
+            releaseObject(wordApp);
+            wordApp = null;
+            logger.debug("Released Word Application COM object for export.");
+        }
     }
 }
 
 /**
- * Imports a Markdown file into a Word document.
- * NOTE: Similar to export, this requires robust interaction with Word APIs
- * to create paragraphs, apply styles based on Markdown elements (headings, bold, etc.),
- * insert tables, lists, etc. Office JS or VBA/COM is needed.
+ * Imports a Markdown file into a Word document using COM Interop (Basic Text Insertion).
+ * NOTE: This implementation inserts the Markdown content as plain text.
+ * Applying Word formatting based on Markdown syntax (headings, lists, bold, etc.)
+ * requires complex parsing and interaction with Word's COM API.
  */
 async function importFromMarkdown(params: ToolRequestParams, context?: ToolContext): Promise<ApiResponse<{ outputPath: string }>> {
-     try {
-        const validatedParams = importSchema.parse(params);
-        const safeInputPath = validateFilePath(validatedParams.path);
-         // Validate output directory
-        const outputDir = path.dirname(validatedParams.output);
-        validateFilePath(outputDir);
-        const safeOutputPath = path.resolve(validatedParams.output);
-        let safeTemplatePath: string | undefined;
-        if (validatedParams.template) {
-            safeTemplatePath = validateFilePath(validatedParams.template);
-        }
+    let wordApp: any = null;
+    let newDoc: any = null;
+    const safeOutputPath = path.resolve(params.output as string); // Already validated by Zod
 
-        logger.info(`Attempting to import Markdown '${safeInputPath}' to Word '${safeOutputPath}'`);
+    try {
+        const validatedParams = importSchema.parse(params);
+        const safeInputPath = validatedParams.filePath; // Already validated
+        const safeTemplatePath = validatedParams.template; // Already validated (if present)
+
+        logger.info(`Attempting COM import Markdown '${safeInputPath}' to Word '${safeOutputPath}'`);
         if (safeTemplatePath) {
             logger.info(`Using template: ${safeTemplatePath}`);
         }
 
         const markdownContent = await fs.readFile(safeInputPath, 'utf8');
 
-        // --- !!! Word Document Creation Logic (Placeholder) !!! ---
-        // This requires creating a new Word document (potentially from the template)
-        // and then iterating through the Markdown structure (parsed by markdown-it)
-        // to insert content and apply formatting using Word APIs.
+        wordApp = await getOfficeApplication('Word.Application');
 
-        logger.warn("Markdown import to Word is not implemented. Requires Office JS or VBA/COM bridge.");
-        logger.debug("Parsed Markdown Tokens (Example):", md.parse(markdownContent, {}));
+        // Create new document
+        if (safeTemplatePath) {
+            newDoc = wordApp.Documents.Add(safeTemplatePath);
+        } else {
+            newDoc = wordApp.Documents.Add();
+        }
+        if (!newDoc) {
+            throw new Error("Failed to create new Word document via COM.");
+        }
 
-        // Placeholder: Just save the markdown content to a .txt file instead of .docx
-        const placeholderOutputPath = safeOutputPath.replace('.docx', '.txt');
-        await fs.writeFile(placeholderOutputPath, `# Placeholder Import\n\nSource MD: ${safeInputPath}\nTemplate: ${safeTemplatePath || 'None'}\n\n---\n\n${markdownContent}`, 'utf8');
-        logger.warn(`Placeholder: Saved raw Markdown content to ${placeholderOutputPath} instead of creating DOCX.`);
-        // --- !!! End Placeholder Creation Logic !!! ---
+        // --- Basic Text Insertion using COM ---
+        logger.warn("Importing Markdown as plain text using COM (newDoc.Content.Text). Formatting is lost.");
+        newDoc.Content.Text = markdownContent; // Insert the entire Markdown as plain text
+
+        // --- Complex Formatting (Placeholder Idea) ---
+        // For real formatting, you would:
+        // 1. Parse markdownContent using md.parse(markdownContent, {})
+        // 2. Iterate through tokens:
+        //    - If heading_open, insert text, apply style (e.g., newDoc.Paragraphs.Last.Style = "Heading 1")
+        //    - If strong_open, turn on bold (e.g., wordApp.Selection.Font.Bold = true), insert text, turn off bold
+        //    - If bullet_list_open, start applying list formatting... etc.
+        // This is highly non-trivial.
+        // logger.debug("Parsed Markdown Tokens (for potential future formatting):", md.parse(markdownContent, {}));
+        // --- End Complex Formatting ---
 
 
-        // Return the intended output path, even though a placeholder was created
+        // Save the new document
+        // Use WdSaveFormat enumeration for DOCX (value 16)
+        const wdFormatDocumentDefault = 16; // .docx format
+        newDoc.SaveAs2(safeOutputPath, wdFormatDocumentDefault);
+        logger.info(`Successfully saved new Word document via COM to ${safeOutputPath}`);
+
         return { success: true, data: { outputPath: safeOutputPath } };
 
     } catch (error) {
         return handleToolError(error, 'WORD_MD_IMPORT_ERROR');
+    } finally {
+        // --- CRUCIAL: Release COM Objects ---
+        if (newDoc) {
+            try {
+                // Close the *newly created* document. Saving already happened.
+                // Pass false to SaveChanges parameter if you are sure no more changes are needed.
+                newDoc.Close(false);
+                logger.debug(`Closed newly created document: ${safeOutputPath}`);
+            } catch (closeError) {
+                logger.error(`Error closing newly created document: ${closeError}`);
+            }
+            releaseObject(newDoc);
+            newDoc = null;
+        }
+        if (wordApp) {
+            // Consider wordApp.Quit() if needed
+            releaseObject(wordApp);
+            wordApp = null;
+            logger.debug("Released Word Application COM object for import.");
+        }
     }
 }
 
@@ -157,12 +241,12 @@ export const wordMarkdownTool: McpResource[] = [
         path: 'word/markdown/export',
         handler: exportToMarkdown,
         schema: exportSchema,
-        description: 'Exports a Word document (.docx) to Markdown (.md). Requires robust Word parsing (VBA/COM or library like mammoth.js). Comment handling is basic.',
+        description: 'Exports a Word document (.docx) to Markdown (.md) using COM Interop (basic text extraction, formatting lost). Includes basic comment extraction.',
     },
     {
         path: 'word/markdown/import',
         handler: importFromMarkdown,
         schema: importSchema,
-        description: 'Imports a Markdown (.md) file into a new Word document (.docx), optionally using a template. Requires Office JS or VBA/COM bridge for actual DOCX creation.',
+        description: 'Imports a Markdown (.md) file into a new Word document (.docx) using COM Interop (inserts as plain text, formatting lost), optionally using a template.',
     },
 ];
