@@ -20,8 +20,9 @@ const logger = winston.createLogger({
   ],
 });
 
-// If not in production, also log to the console with colorized output
-if (process.env.NODE_ENV !== 'production') {
+// If not in production AND not in STDIO mode, also log to the console with colorized output
+// Check if OFFICE_MCP_PORT is defined to infer if it's running in SSE mode (not STDIO)
+if (process.env.NODE_ENV !== 'production' && process.env.OFFICE_MCP_PORT) {
   logger.add(new winston.transports.Console({
     format: winston.format.combine(
       winston.format.colorize(),

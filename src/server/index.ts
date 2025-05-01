@@ -19,7 +19,7 @@ type ServerContext = FastMCPContext<undefined>;
 type Extras = Record<string, unknown>;
 
 // --- FastMCP Server Configuration ---
-const PORT = process.env.PORT || 3000;
+const OFFICE_MCP_PORT = process.env.OFFICE_MCP_PORT;
 
 // Instantiate FastMCP with name and version from package.json
 const mcpServer = new FastMCP({
@@ -31,89 +31,113 @@ const mcpServer = new FastMCP({
 // --- Register Tools ---
 logger.info(`Registering ${allTools.length} MCP resources...`);
 
-allTools.forEach((tool: McpResource) => {
+allTools.forEach((item: McpResource) => {
     try {
-        // Use addTool instead of registerResource
-        mcpServer.addTool({
-            name: tool.path, // Use the unique path as the tool name
-            description: tool.description,
-            // Use tool.schema as parameters if it exists and conforms to StandardSchemaV1
-            parameters: tool.schema as unknown as ToolParameters | undefined, // Cast schema, ensure it's compatible
-            // annotations: { title: tool.path }, // Optional: Add annotations like title
-            // Adjust return type based on removed imports if necessary, FastMCP handles ContentResult union
-            execute: async (args: StandardSchemaV1.InferOutput<any>, context: ServerContext): Promise<ContentResult | string | TextContent> => {
-                const startTime = Date.now();
-                // Use context.log provided by FastMCP
-                context.log.info(`[${tool.path}] Request received`, { params: hideSensitiveParams(args) as SerializableValue }); // Ensure logged params are serializable
-
-                try {
-                    // Validation is typically handled by FastMCP based on 'parameters' schema
-                    // Authorization checks can use context.session if authentication is implemented
-
-                    // Execute the original tool handler
-                    // Pass args and potentially context.session if needed by the original handler
-                    const apiResponse: ApiResponse<any> = await tool.handler(args, undefined); // Pass args, context original era undefined
-
-                    const duration = Date.now() - startTime;
-
-                    // Transform the ApiResponse to the format expected by FastMCP
+        if (item.path.includes('resource')) { // Simple check to identify resources
+            logger.debug(`Attempting to register resource: ${item.path}`);
+            // Register as a resource
+            mcpServer.addResource({
+                uri: item.path, // Use path as URI for resources
+                name: item.description || 'Unnamed Resource', // Use description as name, provide default
+                // mimeType: 'text/plain', // Infer or set appropriate mime type if possible
+                load: async () => {
+                    // Resources don't have parameters, so call handler without args
+                    const apiResponse: ApiResponse<any> = await item.handler({}, undefined);
                     if (apiResponse.success) {
-                        context.log.info(`[${tool.path}] Request successful`, { durationMs: duration });
-                        const data = apiResponse.data;
+                        // Assuming resource handler returns text content
+                        return { text: String(apiResponse.data) };
+                    } else {
+                        // Handle resource loading errors
+                        logger.error(`Failed to load resource: ${item.path}`, { error: apiResponse.error });
+                        throw new UnexpectedStateError(`Failed to load resource: ${item.path}`);
+                    }
+                },
+            });
+            logger.debug(`Registered resource: ${item.path}`);
+        } else {
+            logger.debug(`Attempting to register tool: ${item.path}`);
+            // Register as a tool
+            mcpServer.addTool({
+                name: item.path, // Use the unique path as the tool name
+                description: item.description,
+                // Use item.schema as parameters if it exists and conforms to StandardSchemaV1
+                parameters: item.schema as unknown as ToolParameters | undefined, // Cast schema, ensure it's compatible
+                // annotations: { title: item.path }, // Optional: Add annotations like title
+                // Adjust return type based on removed imports if necessary, FastMCP handles ContentResult union
+                execute: async (args: StandardSchemaV1.InferOutput<any>, context: ServerContext): Promise<ContentResult | string | TextContent> => {
+                    const startTime = Date.now();
+                    // Use context.log provided by FastMCP
+                    context.log.info(`[${item.path}] Request received`, { params: hideSensitiveParams(args) as SerializableValue }); // Ensure logged params are serializable
 
-                        // Map data to FastMCP return types
-                        if (typeof data === 'string') {
-                            // Return string directly or as TextContent
-                            return data;
-                            // return { type: 'text', text: data };
-                        } else if (data && typeof data === 'object') {
-                            // Attempt to return structured data if possible, otherwise stringify
-                            // This might need refinement based on specific tool outputs
-                            // For now, return as JSON string within TextContent
-                            try {
-                                return { type: 'text', text: JSON.stringify(data, null, 2) };
-                            } catch (stringifyError) {
-                                // Convert error to string for logging
-                                context.log.error(`[${tool.path}] Error stringifying successful response data`, { error: String(stringifyError) });
-                                throw new UnexpectedStateError("Failed to serialize successful response data.");
+                    try {
+                        // Validation is typically handled by FastMCP based on 'parameters' schema
+                        // Authorization checks can use context.session if authentication is implemented
+
+                        // Execute the original tool handler
+                        // Pass args and potentially context.session if needed by the original handler
+                        const apiResponse: ApiResponse<any> = await item.handler(args, undefined); // Pass args, context original era undefined
+
+                        const duration = Date.now() - startTime;
+
+                        // Transform the ApiResponse to the format expected by FastMCP
+                        if (apiResponse.success) {
+                            context.log.info(`[${item.path}] Request successful`, { durationMs: duration });
+                            const data = apiResponse.data;
+
+                            // Map data to FastMCP return types
+                            if (typeof data === 'string') {
+                                // Return string directly or as TextContent
+                                return data;
+                                // return { type: 'text', text: data };
+                            } else if (data && typeof data === 'object') {
+                                // Attempt to return structured data if possible, otherwise stringify
+                                // This might need refinement based on specific tool outputs
+                                // For now, return as JSON string within TextContent
+                                try {
+                                    return { type: 'text', text: JSON.stringify(data, null, 2) };
+                                } catch (stringifyError) {
+                                    // Convert error to string for logging
+                                    context.log.error(`[${item.path}] Error stringifying successful response data`, { error: String(stringifyError) });
+                                    throw new UnexpectedStateError("Failed to serialize successful response data.");
+                                }
+                            } else {
+                                // Handle null, undefined, or other types
+                                return { type: 'text', text: 'Operation completed successfully.' }; // Default success message
                             }
                         } else {
-                            // Handle null, undefined, or other types
-                            return { type: 'text', text: 'Operation completed successfully.' }; // Default success message
+                            // Throw a UserError for FastMCP to handle client-side errors
+                            // Convert error details to string for logging and UserError
+                            const errorDetailsString = apiResponse.error?.details ? String(apiResponse.error.details) : undefined;
+                            context.log.warn(`[${item.path}] Request failed`, { durationMs: duration, code: apiResponse.error?.code, message: apiResponse.error?.message, details: errorDetailsString });
+                            // Pass serializable details to UserError
+                            const userErrorDetails = errorDetailsString ? { details: errorDetailsString } : undefined;
+                            throw new UserError(apiResponse.error?.message || 'An unexpected error occurred during tool execution.', userErrorDetails);
                         }
-                    } else {
-                        // Throw a UserError for FastMCP to handle client-side errors
-                        // Convert error details to string for logging and UserError
-                        const errorDetailsString = apiResponse.error?.details ? String(apiResponse.error.details) : undefined;
-                        context.log.warn(`[${tool.path}] Request failed`, { durationMs: duration, code: apiResponse.error?.code, message: apiResponse.error?.message, details: errorDetailsString });
-                        // Pass serializable details to UserError
+
+                    } catch (error) {
+                        const duration = Date.now() - startTime;
+                         // Convert error to string for logging
+                        context.log.error(`[${item.path}] Unhandled error in tool execution wrapper`, { durationMs: duration, error: String(error) });
+
+                        // Ensure errors are thrown in FastMCP's expected format
+                        if (error instanceof UserError || error instanceof UnexpectedStateError) {
+                            throw error; // Re-throw FastMCP specific errors
+                        }
+
+                        // Convert other errors to UserError using the existing handler logic
+                        const apiErrorResponse = handleToolError(error); // Get standardized error response
+                        // Convert details to string for UserError
+                        const errorDetailsString = apiErrorResponse.error?.details ? String(apiErrorResponse.error.details) : undefined;
                         const userErrorDetails = errorDetailsString ? { details: errorDetailsString } : undefined;
-                        throw new UserError(apiResponse.error?.message || 'Tool execution failed.', userErrorDetails);
+                        throw new UserError(apiErrorResponse.error?.message || 'An unexpected error occurred during tool execution.', userErrorDetails);
                     }
-
-                } catch (error) {
-                    const duration = Date.now() - startTime;
-                     // Convert error to string for logging
-                    context.log.error(`[${tool.path}] Unhandled error in tool execution wrapper`, { durationMs: duration, error: String(error) });
-
-                    // Ensure errors are thrown in FastMCP's expected format
-                    if (error instanceof UserError || error instanceof UnexpectedStateError) {
-                        throw error; // Re-throw FastMCP specific errors
-                    }
-
-                    // Convert other errors to UserError using the existing handler logic
-                    const apiErrorResponse = handleToolError(error); // Get standardized error response
-                    // Convert details to string for UserError
-                    const errorDetailsString = apiErrorResponse.error?.details ? String(apiErrorResponse.error.details) : undefined;
-                    const userErrorDetails = errorDetailsString ? { details: errorDetailsString } : undefined;
-                    throw new UserError(apiErrorResponse.error?.message || 'An unexpected error occurred during tool execution.', userErrorDetails);
-                }
-            },
-            // Completions are handled differently in FastMCP (e.g., via Prompt/Resource arguments), remove from here.
-        });
-        logger.debug(`Registered tool: ${tool.path}`);
+                },
+                // Completions are handled differently in FastMCP (e.g., via Prompt/Resource arguments), remove from here.
+            });
+            logger.debug(`Registered tool: ${item.path}`);
+        }
     } catch (error) {
-         logger.error(`Failed to register tool: ${tool.path}`, { error });
+         logger.error(`Failed to register item: ${item.path}`, { error });
     }
 });
 
@@ -182,21 +206,36 @@ async function testCom() {
 }
 testCom(); // Llama a la función de prueba al inicio
 // --- Fin Prueba COM Interop ---
-// Start the server using SSE transport
-mcpServer.start({
-    transportType: "sse",
-    sse: {
-        endpoint: "/mcp", // Define the SSE endpoint path
-        port: Number(PORT) // Ensure PORT is a number
-    }
-})
+// Start the server
+if (OFFICE_MCP_PORT) {
+    // Use SSE transport if port is defined
+    mcpServer.start({
+        transportType: "sse",
+        sse: {
+            endpoint: "/mcp", // Define the SSE endpoint path
+            port: Number(OFFICE_MCP_PORT) // Ensure OFFICE_MCP_PORT is a number
+        }
+    })
     .then(() => {
-        logger.info(`🚀 msoffice-mcp server listening on port ${PORT} at endpoint /mcp`);
+        logger.info(`🚀 msoffice-mcp server listening on port ${OFFICE_MCP_PORT} at endpoint /mcp`);
     })
     .catch((error: Error) => {
         logger.error('Failed to start msoffice-mcp server:', error);
         process.exit(1);
     });
+} else {
+    // Use STDIO transport if port is not defined
+    mcpServer.start({
+        transportType: "stdio"
+    })
+    .then(() => {
+        logger.info('🚀 msoffice-mcp server started in STDIO mode');
+    })
+    .catch((error: Error) => {
+        logger.error('Failed to start msoffice-mcp server in STDIO mode:', error);
+        process.exit(1);
+    });
+}
 
 // Graceful shutdown handling
 process.on('SIGTERM', () => {
