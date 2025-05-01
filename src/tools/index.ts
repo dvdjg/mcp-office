@@ -8,6 +8,7 @@ import { fsDirectoryTool } from './fs/directory.tool';
 import { fsFileTool } from './fs/file.tool';
 import { wordStylesTool } from './word/styles.tool';
 import { wordMarkdownTool } from './word/markdown.tool';
+import { wordMergeTool } from './word/merge.tool'; // Importar la nueva herramienta (sin extensión .ts)
 // Import static resources
 import aiAssistantGuideResource from '../resources/static/ai_assistant_guide.resource'; // Added import
 // Import other tools (Excel, PowerPoint, Office, etc.) here
@@ -20,6 +21,7 @@ const allTools: McpResource[] = [
     ...fsFileTool,
     ...wordStylesTool,
     ...wordMarkdownTool,
+    ...wordMergeTool, // Añadir la nueva herramienta
     ...aiAssistantGuideResource, // Added the new resource
     // ...excelRangeTool,
     // ...powerpointSlidesTool,
@@ -41,7 +43,7 @@ const placeholderTools: McpResource[] = [
     { path: 'word/batch', handler: async () => ({ success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Tool word/batch not implemented.' } }), description: 'Execute multiple operations (Not Implemented)' },
     { path: 'word/mermaid/import', handler: async () => ({ success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Tool word/mermaid/import not implemented.' } }), description: 'Import and render Mermaid diagrams (Not Implemented)' },
     { path: 'word/mermaid/export', handler: async () => ({ success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Tool word/mermaid/export not implemented.' } }), description: 'Export Mermaid diagrams (Not Implemented)' },
-    { path: 'word/merge', handler: async () => ({ success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Tool word/merge not implemented.' } }), description: 'Merge multiple Word documents (Not Implemented - Requires VBA/COM)' },
+    // { path: 'word/merge', handler: async () => ({ success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Tool word/merge not implemented.' } }), description: 'Merge multiple Word documents (Not Implemented - Requires VBA/COM)' }, // Eliminado placeholder
     { path: 'word/template', handler: async () => ({ success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Tool word/template not implemented.' } }), description: 'Create a template with placeholders (Not Implemented)' },
     { path: 'word/reformat', handler: async () => ({ success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Tool word/reformat not implemented.' } }), description: 'Reformat a document professionally (Not Implemented)' },
     { path: 'word/analyze', handler: async () => ({ success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Tool word/analyze not implemented.' } }), description: 'Analyze content and add comments (Not Implemented - Requires AI integration)' },
