@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "CommonJS", // Changed to CommonJS for Node compatibility
+    "lib": ["ES2020", "DOM"], // Added DOM for Office JS types if needed client-side simulation
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "node", // Ensure Node.js module resolution
+    "resolveJsonModule": true,
+    "baseUrl": ".", // Allows path mapping
+    "paths": {
+      "@/*": ["src/*"] // Example path mapping
+    },
+    "sourceMap": true, // Generate source maps for debugging
+    "declaration": true // Generate .d.ts files
+  },
+  "include": ["src/**/*"], // Include all files in src
+  "exclude": ["node_modules", "dist", "tests"] // Exclude unnecessary directories
+}
