@@ -84,62 +84,198 @@ const embeddedObjectsExecute = async (input: EmbeddedObjectsInput, context: { lo
       doc = wordApp.Documents.Open(absoluteFilePath, false, openReadOnly, false, undefined, undefined, undefined, undefined, undefined, undefined, false); // Visible = false al final
 
     switch (input.operation) {
-      case 'insert':
-        // Lógica para insertar objeto OLE usando doc.InlineShapes.AddOLEObject(...) o similar
-        log.warn('Operación "insert" aún no implementada.');
-        // Ejemplo (requiere investigación API COM):
-        // const { objectPath } = input; // Asegurarse que objectPath está definido en InsertSchema
-        // const absoluteObjectPath = validateFilePath(objectPath); // Validar también el path del objeto
-        // await fs.access(absoluteObjectPath); // Verificar existencia
-        // const range = doc.Content; // O determinar el rango según input.range
-        // range.Collapse(0); // wdCollapseEnd = 0 // Ir al final por defecto
-        // doc.InlineShapes.AddOLEObject({ ClassType: undefined, FileName: absoluteObjectPath, LinkToFile: false, DisplayAsIcon: false }, range);
-        return { success: false, message: 'Operación "insert" no implementada.' };
+      case 'insert': {
+        log.info('Iniciando operación "insert".');
+        const { objectPath } = input;
+        const absoluteObjectPath = validateFilePath(objectPath);
+        await fs.access(absoluteObjectPath); // Verificar existencia del archivo a insertar
 
-      case 'modify':
-        // Lógica para modificar objeto OLE
-        log.warn('Operación "modify" aún no implementada.');
-        // Ejemplo (requiere investigación API COM):
-        // const { objectIndex, newObjectPath } = input; // Asegurarse que están definidos en ModifySchema
-        // const absoluteNewObjectPath = validateFilePath(newObjectPath); // Validar path
-        // await fs.access(absoluteNewObjectPath);
-        // if (objectIndex <= 0 || objectIndex > doc.InlineShapes.Count) { // Corregido: <= 0
-        //   throw new Error(`Índice de objeto ${objectIndex} fuera de rango (1-${doc.InlineShapes.Count}).`);
-        // }
-        // const shape = doc.InlineShapes.Item(objectIndex);
-        // if (shape.Type === 7 /* wdInlineShapeOLEObject */ || shape.OLEFormat) {
-        //    // Lógica para reemplazar: ¿eliminar y añadir? ¿o hay método directo?
-        //    // shape.OLEFormat.DoVerb(VerbIndex:=wdOLEVerbPrimary) // Activar?
-        //    // shape.Delete();
-        //    // doc.InlineShapes.AddOLEObject(...)
-        // } else {
-        //    throw new Error(`El objeto en el índice ${objectIndex} no es un objeto OLE.`);
-        // }
-        return { success: false, message: 'Operación "modify" no implementada.' };
+        // Insertar al final del documento por defecto
+        const range = doc.Content;
+        range.Collapse(0); // wdCollapseEnd = 0
 
-      case 'delete':
-        // Lógica para eliminar objeto OLE
-        log.warn('Operación "delete" aún no implementada.');
-        // Ejemplo (requiere investigación API COM):
-        // const { objectIndex } = input; // Asegurarse que está definido en DeleteSchema
-        // if (objectIndex <= 0 || objectIndex > doc.InlineShapes.Count) { // Corregido: <= 0
-        //   throw new Error(`Índice de objeto ${objectIndex} fuera de rango (1-${doc.InlineShapes.Count}).`);
-        // }
-        // const shapeToDelete = doc.InlineShapes.Item(objectIndex); // Índice 1-based
-        // // Verificar si es OLE antes de borrar? shapeToDelete.Type === 7 /* wdInlineShapeOLEObject */
-        // shapeToDelete.Delete();
-        // doc.Save();
-        return { success: false, message: 'Operación "delete" no implementada.' };
+        // doc.InlineShapes.AddOLEObject(ClassType, FileName, LinkToFile, DisplayAsIcon, IconFileName, IconIndex, IconLabel, Range)
+        // ClassType: Opcional. Especifica la clase del objeto OLE. Si se omite, se determina por FileName.
+        // FileName: Opcional. El archivo a insertar.
+        // LinkToFile: Opcional. True para vincular, False para incrustar.
+        // DisplayAsIcon: Opcional. True para mostrar como icono.
+        // Range: Opcional. El rango donde insertar.
+        const inlineShape = doc.InlineShapes.AddOLEObject(
+          undefined, // ClassType
+          absoluteObjectPath, // FileName
+          false, // LinkToFile (incrustar)
+          false, // DisplayAsIcon
+          undefined, // IconFileName
+          undefined, // IconIndex
+          undefined, // IconLabel
+          range // Range
+        );
 
-      case 'extractAll':
-        // Lógica para extraer todos los objetos OLE
+        doc.Save(); // Guardar cambios
+        log.info(`Objeto insertado desde ${objectPath}.`);
+        // El ID puede no ser el índice 1-based global, pero es un identificador útil.
+        // Podríamos intentar encontrar el índice después de la inserción si fuera necesario.
+        return { success: true, message: `Objeto insertado desde ${objectPath}.`, details: { insertedObjectId: inlineShape.Range.InlineShape.ID } };
+      }
+
+      case 'modify': {
+        log.info('Iniciando operación "modify".');
+        const { objectIndex, newObjectPath } = input;
+        const absoluteNewObjectPath = validateFilePath(newObjectPath);
+        await fs.access(absoluteNewObjectPath); // Verificar existencia del nuevo archivo
+
+        // La modificación directa de objetos OLE incrustados vía COM es compleja.
+        // Un enfoque común es eliminar el objeto existente e insertar el nuevo.
+        // Intentaremos mantener la posición si es un InlineShape.
+
+        let shapeToModify: any = null;
+        let isInline = false;
+
+        // Buscar en InlineShapes primero
+        if (objectIndex > 0 && objectIndex <= doc.InlineShapes.Count) {
+          shapeToModify = doc.InlineShapes.Item(objectIndex);
+          isInline = true;
+          log.debug(`[EmbeddedObjects] Found InlineShape at index ${objectIndex}.`);
+        } else {
+          // Si no está en InlineShapes, buscar en Shapes (objetos flotantes)
+          // El índice para Shapes es relativo a la colección Shapes, no global.
+          // Necesitamos ajustar el índice.
+          const shapesIndex = objectIndex - doc.InlineShapes.Count;
+          if (shapesIndex > 0 && shapesIndex <= doc.Shapes.Count) {
+            shapeToModify = doc.Shapes.Item(shapesIndex);
+            isInline = false;
+            log.debug(`[EmbeddedObjects] Found Shape at index ${objectIndex} (relative index ${shapesIndex}).`);
+          } else {
+            throw new Error(`Índice de objeto ${objectIndex} fuera de rango. Total InlineShapes: ${doc.InlineShapes.Count}, Total Shapes: ${doc.Shapes.Count}.`);
+          }
+        }
+
+        // Verificar si el objeto es OLE antes de intentar modificar/eliminar
+        // wdInlineShapeOLEObject = 7, wdInlineShapeLinkedOLEObject = 8
+        // msoEmbeddedOLEObject = 7, msoLinkedOLEObject = 10
+        const isOLE = shapeToModify.Type === 7 || shapeToModify.Type === 8 || shapeToModify.Type === 10 || shapeToModify.OLEFormat;
+
+        if (!isOLE) {
+           throw new Error(`El objeto en el índice ${objectIndex} no es un objeto OLE incrustado o vinculado.`);
+        }
+
+        let originalRange: any = null;
+        let originalLeft: number | undefined;
+        let originalTop: number | undefined;
+        let originalAnchor: any = null;
+
+        if (isInline) {
+           originalRange = shapeToModify.Range; // Capturar el rango antes de eliminar
+        } else {
+           // Para Shapes flotantes, capturar la posición y el ancla.
+           originalLeft = shapeToModify.Left;
+           originalTop = shapeToModify.Top;
+           originalAnchor = shapeToModify.Anchor;
+           log.warn(`Modificación de Shape flotante (índice ${objectIndex}) intentará mantener la posición, pero puede variar.`);
+        }
+
+        shapeToModify.Delete(); // Eliminar el objeto existente
+        log.debug(`[EmbeddedObjects] Deleted object at index ${objectIndex}.`);
+
+        let newShape: any = null;
+        if (isInline && originalRange) {
+           // Intentar insertar el nuevo objeto en el rango original
+           originalRange.Collapse(0); // wdCollapseEnd = 0
+           newShape = doc.InlineShapes.AddOLEObject(
+              undefined, // ClassType
+              absoluteNewObjectPath, // FileName
+              false, // LinkToFile (incrustar)
+              false, // DisplayAsIcon
+              undefined, // IconFileName
+              undefined, // IconIndex
+              undefined, // IconLabel
+              originalRange // Range
+           );
+           log.info(`Objeto en índice ${objectIndex} modificado (reemplazado) con ${newObjectPath} en la posición original.`);
+        } else if (!isInline && originalAnchor) {
+            // Intentar reinsertar Shape flotante con la misma posición y ancla
+            // AddOLEObject en Shapes colección es diferente: AddOLEObject(ClassType, FileName, LinkToFile, DisplayAsIcon, IconFileName, IconIndex, IconLabel, Left, Top, Width, Height, Anchor)
+            newShape = doc.Shapes.AddOLEObject(
+                undefined, // ClassType
+                absoluteNewObjectPath, // FileName
+                false, // LinkToFile (incrustar)
+                false, // DisplayAsIcon
+                undefined, // IconFileName
+                undefined, // IconIndex
+                undefined, // IconLabel
+                originalLeft, // Left
+                originalTop, // Top
+                undefined, // Width (auto)
+                undefined, // Height (auto)
+                originalAnchor // Anchor
+            );
+            log.info(`Objeto en índice ${objectIndex} modificado (reemplazado) con ${newObjectPath}, reinsertado como Shape flotante.`);
+
+        } else {
+           // Insertar al final si no se pudo mantener la posición (InlineShape sin rango o Shape sin ancla)
+           const endRange = doc.Content;
+           endRange.Collapse(0); // wdCollapseEnd = 0
+           newShape = doc.InlineShapes.AddOLEObject(
+              undefined, // ClassType
+              absoluteNewObjectPath, // FileName
+              false, // LinkToFile (incrustar)
+              false, // DisplayAsIcon
+              undefined, // IconFileName
+              undefined, // IconIndex
+              undefined, // IconLabel
+              endRange // Range
+           );
+           log.info(`Objeto en índice ${objectIndex} modificado (reemplazado) con ${newObjectPath} al final del documento.`);
+        }
+
+        doc.Save(); // Guardar cambios
+        return { success: true, message: `Objeto en índice ${objectIndex} modificado (reemplazado) con ${newObjectPath}.` };
+      }
+
+      case 'delete': {
+        log.info('Iniciando operación "delete".');
+        const { objectIndex } = input;
+
+        let shapeToDelete: any = null;
+        let isInline = false;
+
+        // Buscar en InlineShapes primero
+        if (objectIndex > 0 && objectIndex <= doc.InlineShapes.Count) {
+          shapeToDelete = doc.InlineShapes.Item(objectIndex);
+          isInline = true;
+          log.debug(`[EmbeddedObjects] Found InlineShape at index ${objectIndex} for deletion.`);
+        } else {
+          // Si no está en InlineShapes, buscar en Shapes (objetos flotantes)
+          const shapesIndex = objectIndex - doc.InlineShapes.Count;
+          if (shapesIndex > 0 && shapesIndex <= doc.Shapes.Count) {
+            shapeToDelete = doc.Shapes.Item(shapesIndex);
+            isInline = false;
+            log.debug(`[EmbeddedObjects] Found Shape at index ${objectIndex} (relative index ${shapesIndex}) for deletion.`);
+          } else {
+            throw new Error(`Índice de objeto ${objectIndex} fuera de rango. Total InlineShapes: ${doc.InlineShapes.Count}, Total Shapes: ${doc.Shapes.Count}.`);
+          }
+        }
+
+        // Verificar si el objeto es OLE antes de eliminar
+        const isOLE = shapeToDelete.Type === 7 || shapeToDelete.Type === 8 || shapeToDelete.Type === 10 || shapeToDelete.OLEFormat;
+
+        if (!isOLE) {
+           throw new Error(`El objeto en el índice ${objectIndex} no es un objeto OLE incrustado o vinculado y no puede ser eliminado por esta herramienta.`);
+        }
+
+        shapeToDelete.Delete(); // Eliminar el objeto
+        doc.Save(); // Guardar cambios
+        log.info(`Objeto en índice ${objectIndex} eliminado.`);
+        return { success: true, message: `Objeto en índice ${objectIndex} eliminado.` };
+      }
+
+      case 'extractAll': {
         log.info('Iniciando operación "extractAll".');
-        const { outputDirectory } = input; // Asegurarse que está definido en ExtractAllSchema
-        // Validar el directorio de salida también
+        const { outputDirectory } = input;
         const absoluteOutputDir = validateFilePath(outputDirectory);
         log.debug(`[EmbeddedObjects] Validated output directory: ${absoluteOutputDir}`);
 
-        // Asegurarse de que el directorio de salida exista (validateFilePath no lo hace por defecto)
+        // Asegurarse de que el directorio de salida exista, crearlo si no
         try {
             await fs.access(absoluteOutputDir);
             const stats = await fs.stat(absoluteOutputDir);
@@ -149,8 +285,9 @@ const embeddedObjectsExecute = async (input: EmbeddedObjectsInput, context: { lo
             log.debug(`[EmbeddedObjects] Output directory exists: ${absoluteOutputDir}`);
         } catch (error: any) {
              if (error.code === 'ENOENT') {
-                 log.error(`El directorio de salida no existe: ${absoluteOutputDir}`);
-                 throw new Error(`El directorio de salida no existe: ${absoluteOutputDir}`);
+                 log.info(`El directorio de salida no existe, intentando crearlo: ${absoluteOutputDir}`);
+                 await fs.mkdir(absoluteOutputDir, { recursive: true });
+                 log.info(`Directorio de salida creado: ${absoluteOutputDir}`);
              } else {
                  log.error(`Error al acceder al directorio de salida ${absoluteOutputDir}: ${error.message}`);
                  throw new Error(`Error al acceder al directorio de salida: ${error.message}`);
@@ -160,63 +297,147 @@ const embeddedObjectsExecute = async (input: EmbeddedObjectsInput, context: { lo
         const extractedFiles: string[] = [];
         let oleObjectCount = 0;
 
-        // Iterar sobre InlineShapes y Shapes (algunos objetos pueden estar en la capa de dibujo)
-        // La API COM exacta para guardar/extraer necesita investigación profunda.
-        // Podría ser algo como shape.OLEFormat.Object.SaveAs(...) o shape.OLEFormat.Activate() y luego interactuar.
-
-        // Ejemplo conceptual (requiere validación API COM):
-        /*
+        // Extraer de InlineShapes
         for (let i = 1; i <= doc.InlineShapes.Count; i++) {
             const shape = doc.InlineShapes.Item(i);
-            // wdInlineShapeOLEObject = 7, wdInlineShapeLinkedOLEObject = 8? Check constants.
+            // wdInlineShapeOLEObject = 7, wdInlineShapeLinkedOLEObject = 8
             if (shape.Type === 7 || shape.Type === 8 || shape.OLEFormat) {
                 oleObjectCount++;
                 try {
-                    // Intento 1: Usar SaveAs si existe en el objeto OLE directamente
-                    // const oleObject = shape.OLEFormat.Object; // Esto puede variar mucho
-                    // if (oleObject && typeof oleObject.SaveAs === 'function') { // SaveAs puede no existir o requerir formato específico
-                    //     // Generar nombre de archivo único y seguro
-                    //     const progId = shape.OLEFormat?.ProgID?.replace(/[^a-zA-Z0-9.-]/g, '_') || 'UnknownObject';
-                    //     const filename = `embedded_inline_${i}_${progId}_${Date.now()}.ole`; // Usar extensión .ole o específica si se conoce
-                    //     const outputPath = path.join(absoluteOutputDir, filename); // Usar ruta absoluta validada
-                    //     // oleObject.SaveAs(outputPath); // La llamada exacta puede variar
-                    //     // Necesita manejo de errores específico para SaveAs
-                    //     extractedFiles.push(outputPath);
-                    //     log.info(`Intentando extraer objeto InlineShape ${i} a ${outputPath}`);
-                    // } else {
-                    //     // Intento 2: Activar y copiar/pegar o guardar desde la aplicación OLE (MUY complejo)
-                    //     log.warn(`No se pudo extraer el objeto InlineShape ${i} directamente. Método alternativo no implementado.`);
-                    // }
+                    const oleFormat = shape.OLEFormat;
+                    if (oleFormat && oleFormat.Object && typeof oleFormat.Object.SaveAs === 'function') {
+                        // Generar nombre de archivo único y seguro
+                        const progId = oleFormat?.ProgID?.replace(/[^a-zA-Z0-9.-]/g, '_') || 'UnknownObject';
+                        let baseFilename = `embedded_inline_${i}_${progId}`;
+                        let filename = `${baseFilename}.ole`; // Extensión por defecto
+                        let outputPath = path.join(absoluteOutputDir, filename);
+                        let counter = 1;
 
-                    // Intento 3: Extraer representación de icono/imagen (si aplica)
-                    // if (shape.Picture) { ... shape.Picture.SaveAs(...) ... }
+                        // Manejar colisiones de nombres
+                        while (await fs.access(outputPath).then(() => true).catch(() => false)) {
+                            filename = `${baseFilename}_${counter++}.ole`;
+                            outputPath = path.join(absoluteOutputDir, filename);
+                        }
 
-                    log.warn(`Extracción real para InlineShape ${i} no implementada.`);
+                        // Intentar guardar el objeto OLE
+                        // La API SaveAs puede requerir un formato específico o no estar disponible para todos los tipos.
+                        // Si falla, intentaremos un método alternativo si es posible.
+                        try {
+                           oleFormat.Object.SaveAs(outputPath);
+                           extractedFiles.push(outputPath);
+                           log.info(`Extraído InlineShape ${i} a ${outputPath}`);
+                        } catch (saveError: any) {
+                           log.warn(`Error al usar SaveAs en InlineShape ${i} (${progId}): ${saveError.message}. Intentando método alternativo (si aplica).`);
+                           // Método alternativo: Si es una imagen OLE, intentar guardar la imagen
+                           if (shape.Type === 7 && shape.OLEFormat?.ProgID?.toLowerCase().includes('package')) {
+                              // Los objetos "Package" a menudo son archivos incrustados.
+                              // No hay un método SaveAs directo en el objeto OLE.
+                              // La extracción de Packages es compleja y a menudo requiere activar el objeto.
+                              log.warn(`Extracción de objeto Package (InlineShape ${i}) no implementada directamente.`);
+                           } else if (shape.Picture) {
+                              // Si tiene una representación de imagen, intentar guardarla
+                              try {
+                                 filename = `${baseFilename}.png`; // O determinar extensión
+                                 outputPath = path.join(absoluteOutputDir, filename);
+                                 counter = 1;
+                                 while (await fs.access(outputPath).then(() => true).catch(() => false)) {
+                                     filename = `${baseFilename}_${counter++}.png`;
+                                     outputPath = path.join(absoluteOutputDir, filename);
+                                 }
+                                 shape.Picture.SaveAs(outputPath); // wdFormatPNG = 13 (o usar constante)
+                                 extractedFiles.push(outputPath);
+                                 log.info(`Extraída imagen de InlineShape ${i} a ${outputPath}`);
+                              } catch (pictureSaveError: any) {
+                                 log.error(`Error al extraer imagen de InlineShape ${i}: ${pictureSaveError.message}`);
+                              }
+                           } else {
+                              log.error(`No se pudo extraer InlineShape ${i} (${progId}) usando SaveAs ni método alternativo.`);
+                           }
+                        }
 
-
+                    } else {
+                        log.warn(`InlineShape ${i} no parece tener un objeto OLE con método SaveAs o no es un tipo OLE manejable directamente.`);
+                    }
                 } catch (extractError: any) {
-                    log.error(`Error extrayendo InlineShape ${i}: ${extractError.message}`);
+                    log.error(`Error general extrayendo InlineShape ${i}: ${extractError.message}`);
+                } finally {
+                    // Liberar el objeto shape si es necesario, aunque winax a menudo maneja esto
+                    releaseObject(shape);
                 }
             }
         }
-        // Repetir bucle similar para doc.Shapes si es necesario (objetos flotantes)
+
+        // Extraer de Shapes (objetos flotantes)
         for (let i = 1; i <= doc.Shapes.Count; i++) {
              const shape = doc.Shapes.Item(i);
-             // msoEmbeddedOLEObject = 7, msoLinkedOLEObject = 10? Check constants.
+             // msoEmbeddedOLEObject = 7, msoLinkedOLEObject = 10
              if (shape.Type === 7 || shape.Type === 10 || shape.OLEFormat) {
                  oleObjectCount++;
-                 // Lógica de extracción similar a InlineShapes
-                 log.warn(`Extracción real para Shape ${i} (flotante) no implementada.`);
+                 try {
+                     const oleFormat = shape.OLEFormat;
+                     if (oleFormat && oleFormat.Object && typeof oleFormat.Object.SaveAs === 'function') {
+                         // Generar nombre de archivo único y seguro
+                         const progId = oleFormat?.ProgID?.replace(/[^a-zA-Z0-9.-]/g, '_') || 'UnknownObject';
+                         let baseFilename = `embedded_shape_${i}_${progId}`;
+                         let filename = `${baseFilename}.ole`; // Extensión por defecto
+                         let outputPath = path.join(absoluteOutputDir, filename);
+                         let counter = 1;
+
+                         // Manejar colisiones de nombres
+                         while (await fs.access(outputPath).then(() => true).catch(() => false)) {
+                             filename = `${baseFilename}_${counter++}.ole`;
+                             outputPath = path.join(absoluteOutputDir, filename);
+                         }
+
+                         // Intentar guardar el objeto OLE
+                         try {
+                            oleFormat.Object.SaveAs(outputPath);
+                            extractedFiles.push(outputPath);
+                            log.info(`Extraído Shape ${i} a ${outputPath}`);
+                         } catch (saveError: any) {
+                            log.warn(`Error al usar SaveAs en Shape ${i} (${progId}): ${saveError.message}. Intentando método alternativo (si aplica).`);
+                            // Método alternativo: Si es una imagen OLE, intentar guardar la imagen
+                            if (shape.Type === 7 && shape.OLEFormat?.ProgID?.toLowerCase().includes('package')) {
+                               log.warn(`Extracción de objeto Package (Shape ${i}) no implementada directamente.`);
+                            } else if (shape.Picture) {
+                               try {
+                                  filename = `${baseFilename}.png`; // O determinar extensión
+                                  outputPath = path.join(absoluteOutputDir, filename);
+                                  counter = 1;
+                                  while (await fs.access(outputPath).then(() => true).catch(() => false)) {
+                                      filename = `${baseFilename}_${counter++}.png`;
+                                      outputPath = path.join(absoluteOutputDir, filename);
+                                  }
+                                  shape.Picture.SaveAs(outputPath); // wdFormatPNG = 13 (o usar constante)
+                                  extractedFiles.push(outputPath);
+                                  log.info(`Extraída imagen de Shape ${i} a ${outputPath}`);
+                               } catch (pictureSaveError: any) {
+                                  log.error(`Error al extraer imagen de Shape ${i}: ${pictureSaveError.message}`);
+                               }
+                            } else {
+                               log.error(`No se pudo extraer Shape ${i} (${progId}) usando SaveAs ni método alternativo.`);
+                            }
+                         }
+
+                     } else {
+                         log.warn(`Shape ${i} no parece tener un objeto OLE con método SaveAs o no es un tipo OLE manejable directamente.`);
+                     }
+                 } catch (extractError: any) {
+                     log.error(`Error general extrayendo Shape ${i}: ${extractError.message}`);
+                 } finally {
+                     // Liberar el objeto shape si es necesario
+                     releaseObject(shape);
+                 }
              }
         }
-        */
+
 
         if (oleObjectCount === 0) {
-          return { success: true, message: 'No se encontraron objetos OLE incrustados en el documento.' };
+          return { success: true, message: 'No se encontraron objetos OLE incrustados o vinculados en el documento.' };
         } else {
-          // Actualizar mensaje cuando la extracción funcione
-          return { success: false, message: `Se encontraron ${oleObjectCount} objetos OLE (inline o flotantes), pero la extracción aún no está implementada. Archivos extraídos: ${extractedFiles.length}`, details: { extractedPaths: extractedFiles } };
+          return { success: true, message: `Se encontraron ${oleObjectCount} objetos OLE (inline o flotantes). Archivos extraídos: ${extractedFiles.length}.`, details: { extractedPaths: extractedFiles } };
         }
+      }
 
       // case 'getProperties':
       //   // Lógica para obtener propiedades
@@ -232,7 +453,6 @@ const embeddedObjectsExecute = async (input: EmbeddedObjectsInput, context: { lo
          log.error(`Caso inalcanzable en switch detectado: ${JSON.stringify(unreachableCase)}`);
          throw new Error(`Operación desconocida o no manejada.`);
     }
-
   } catch (error: any) {
     const message = error instanceof Error ? error.message : String(error);
     // Usar context.log si está disponible

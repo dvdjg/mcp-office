@@ -87,6 +87,31 @@ export function releaseObject(comObject: any): void {
   }
 }
 
+/**
+ * Opens a Word document.
+ * @param wordApp The Word application COM object.
+ * @param filePath The path to the document.
+ * @param readOnly Whether to open the document as read-only.
+ * @param visible Whether to make the document visible.
+ * @returns A promise resolving to the document's COM object.
+ */
+export async function openWordDocument(wordApp: any, filePath: string, readOnly: boolean = false, visible: boolean = false): Promise<any> {
+  logger.info(`[OfficeInterop] Attempting to open document: ${filePath}`);
+  const absoluteFilePath = path.resolve(filePath);
+  try {
+    const doc = wordApp.Documents.Open(absoluteFilePath, false, readOnly, false, "", "", false, "", "", 0, visible);
+    if (!doc) {
+      throw new Error(`Failed to open document: ${filePath}`);
+    }
+    logger.info(`[OfficeInterop] Document opened successfully: ${filePath}`);
+    return doc;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`[OfficeInterop] Error opening document ${filePath}: ${errorMessage}`, { error });
+    throw new Error(`Failed to open document: ${errorMessage}`);
+  }
+}
+
 
 // --- Image and Element Handling ---
 

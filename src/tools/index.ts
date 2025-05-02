@@ -25,6 +25,10 @@ import { wordGenerateAndInsertTextTool } from './word/generateAndInsertText.tool
 import { wordPageTool } from './word/page.tool'; // Exports McpResource (single object)
 import { wordHeadersFootersTool } from './word/headersFooters.tool'; // Exports McpResource (single object)
 import { embeddedObjectsTool as embeddedObjectsToolDefinition } from './word/embeddedObjects.tool'; // Import the FastMCP definition
+import { batchTool } from './word/batch.tool'; // Import the new batch tool
+import mermaidImportTool from './word/mermaidImport.tool'; // Import the mermaid import tool
+import mermaidExportTool from './word/mermaidExport.tool'; // Import the mermaid export tool
+import reformatTool from './word/reformat.tool'; // Import the new reformat tool
 
 // Import static resources
 import aiAssistantGuideResource from '../resources/static/ai_assistant_guide.resource';
@@ -62,6 +66,10 @@ const nestedToolsList = [
     wordPageTool,
     wordHeadersFootersTool,
     embeddedObjectsMcpResource,
+    batchTool, // Añadida la nueva herramienta batchTool
+    mermaidImportTool, // Añadida la herramienta de importación de Mermaid
+    mermaidExportTool, // Añadida la herramienta de exportación de Mermaid
+    reformatTool, // Añadida la herramienta reformatTool
     // ...excelRangeTool,
     // ...powerpointSlidesTool,
     // ...officePdfTool,
@@ -74,11 +82,11 @@ const allImplementedTools: McpResource[] = nestedToolsList.flat();
 // Placeholder tools for unimplemented features (ensure they conform to McpResource)
 const placeholderTools: McpResource[] = [
     // { path: 'word/embedded-objects', ... }, // REMOVED
-    { path: 'word/metadata', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/metadata not implemented.'), description: 'Manage document properties and comments (Not Implemented)', schema: z.object({}) },
-    { path: 'word/batch', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/batch not implemented.'), description: 'Execute multiple operations (Not Implemented)', schema: z.object({}) },
-    { path: 'word/mermaid/import', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/mermaid/import not implemented.'), description: 'Import and render Mermaid diagrams (Not Implemented)', schema: z.object({}) },
-    { path: 'word/mermaid/export', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/mermaid/export not implemented.'), description: 'Export Mermaid diagrams (Not Implemented)', schema: z.object({}) },
-    { path: 'word/reformat', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/reformat not implemented.'), description: 'Reformat a document professionally (Not Implemented)', schema: z.object({}) },
+    // { path: 'word/metadata', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/metadata not implemented.'), description: 'Manage document properties and comments (Not Implemented)', schema: z.object({}) }, // REMOVED - Implemented
+    // { path: 'word/batch', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/batch not implemented.'), description: 'Execute multiple operations (Not Implemented)', schema: z.object({}) }, // Eliminado el placeholder
+    // { path: 'word/mermaid/import', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/mermaid/import not implemented.'), description: 'Import and render Mermaid diagrams (Not Implemented)', schema: z.object({}) }, // Eliminado el placeholder
+    // { path: 'word/mermaid/export', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/mermaid/export not implemented.'), description: 'Export Mermaid diagrams (Not Implemented)', schema: z.object({}) }, // Eliminado el placeholder
+    // { path: 'word/reformat', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/reformat not implemented.'), description: 'Reformat a document professionally (Not Implemented)', schema: z.object({}) }, // Eliminado el placeholder
     { path: 'word/analyze', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/analyze not implemented.'), description: 'Analyze content and add comments (Not Implemented - Requires AI integration)', schema: z.object({}) },
     { path: 'word/code-format', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/code-format not implemented.'), description: 'Format code and metadata with syntax highlighting (Not Implemented)', schema: z.object({}) },
     // Excel (Placeholders)
@@ -86,7 +94,6 @@ const placeholderTools: McpResource[] = [
     { path: 'excel/range', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool excel/range not implemented.'), description: 'Manipulate cell ranges (Not Implemented - Requires Office JS/Scripts)', schema: z.object({}) },
     // PowerPoint (Placeholders)
     { path: 'powerpoint/slides', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool powerpoint/slides not implemented.'), description: 'Manage PowerPoint slides (Not Implemented - Requires Office JS/VBA)', schema: z.object({}) },
-    // Office (Placeholders)
     { path: 'office/transfer', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool office/transfer not implemented.'), description: 'Move data between applications (Not Implemented - Requires COM/VBA)', schema: z.object({}) },
     { path: 'office/pdf/export', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool office/pdf/export not implemented.'), description: 'Export documents to PDF (Not Implemented - Requires Office JS/VBA)', schema: z.object({}) },
     { path: 'office/combine', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool office/combine not implemented.'), description: 'Combine multiple files into a Word document (Not Implemented)', schema: z.object({}) },

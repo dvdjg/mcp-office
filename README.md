@@ -464,7 +464,36 @@ curl -X POST "http://localhost:3000/word/embedded-objects/extractAll?document=/d
 ```
 Office MCP pulls out every embedded file (e.g., `embedded_1.pdf`) and saves them neatly. You’re now the hero of the project audit, no shovel required!
 
-### Use Case 7: Mermaid Import Marvel
+### Use Case 7: Embedded Object Insertion Innovation
+**Scenario**: You need to add a spreadsheet (`data.xlsx`) as an embedded object into your report (`Reporte.docx`). Copy-pasting can mess up formatting, and linking might break if the source file moves. You need a clean, embedded solution! 📊
+
+**Solution**:
+```bash
+curl -X POST "http://localhost:3000/word/embedded-objects/insert?filePath=/docs/Reporte.docx&objectPath=/docs/data.xlsx"
+```
+Office MCP uses `word/embedded-objects/insert` to cleanly embed the Excel file into your Word document. The data is now self-contained, and your report is ready to impress!
+
+### Use Case 8: Embedded Object Modification Magic
+**Scenario**: The embedded chart in your presentation (`Presentacion.docx`) needs updating with the latest data from a new Excel file (`updated_data.xlsx`). Manually replacing it is a fiddly process. ✨
+
+**Solution**:
+```bash
+# Assuming the chart is the first embedded object (index 1)
+curl -X POST "http://localhost:3000/word/embedded-objects/modify?filePath=/docs/Presentacion.docx&objectIndex=1&newObjectPath=/docs/updated_data.xlsx"
+```
+Office MCP uses `word/embedded-objects/modify` to replace the existing embedded object with the new file. Your presentation is now up-to-date with minimal effort!
+
+### Use Case 9: Embedded Object Deletion Duty
+**Scenario**: Your document (`DocumentoLargo.docx`) has an old, unnecessary embedded file that's making the file size huge. You need to remove it without breaking anything. 🗑️
+
+**Solution**:
+```bash
+# Assuming the object to delete is the third embedded object (index 3)
+curl -X POST "http://localhost:3000/word/embedded-objects/delete?filePath=/docs/DocumentoLargo.docx&objectIndex=3"
+```
+Office MCP uses `word/embedded-objects/delete` to precisely remove the embedded object at the specified index. Your document is now leaner and cleaner!
+
+### Use Case 10: Mermaid Import Marvel
 **Scenario**: Your tech doc needs a flowchart, but typing Mermaid syntax in Word is like teaching a cat to code. Office MCP makes it purr-fect! 🐱
 
 **Solution**:
