@@ -119,6 +119,18 @@ pm2 start dist/server/index.js --name mcp-office
 
 AI agents (e.g., Claude) can hit the API at `http://localhost:3000`. For cloud deployment, try AWS or Azure.
 
+### Debugging with mcp-cli
+
+```bash
+npx fastmcp dev dist/server/index.js
+```
+
+### Inspect with MCP Inspector
+
+```bash
+npx fastmcp inspect src/tools/index.ts
+```
+
 ### Basic Examples
 
 Here’s a sneak peek at Office MCP’s powers using `curl`. Prefer Postman or Python? It’s all good!
@@ -755,7 +767,23 @@ Office MCP is tougher than a double-sided spreadsheet. Our testing strategy incl
 - **Performance Tests**: Ensure complex tasks (e.g., reformatting 100 pages) finish in <10 seconds.
 - **Security Tests**: Block malicious inputs (e.g., path traversal).
 
-**Coverage**: >90%, checked with `jest --coverage`. Run tests:
+### End-to-End Use Case Tests
+
+The 10 use cases detailed in the implementation plan (`office-mcp-plan copy.md`, Section 5.2) have been implemented as automated end-to-end tests. These tests are located in the `tests/e2e/` directory and validate the functionality of the implemented MCP tools by interacting with a running instance of the Office MCP server.
+
+To run these end-to-end tests, first ensure the Office MCP server is running (see [Running the Server](#running-the-server)). Then, execute the following command:
+
+```bash
+npm run test:e2e # Assuming this script is configured in package.json
+```
+
+Alternatively, you can run all tests, including unit and integration tests, using the standard test command:
+
+```bash
+npm test
+```
+
+**Coverage**: >90%, checked with `jest --coverage`. Run all tests:
 ```bash
 npm test
 ```
