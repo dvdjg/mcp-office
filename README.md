@@ -588,7 +588,7 @@ We picked dependencies like choosing toppings for the perfect pizza:
 
 ### Security and Performance
 - **Security**:
-  - Path validation (`path.resolve`) stops directory traversal.
+  - Path validation (`path.resolve`) stops directory traversal. **Nota:** Ahora también puedes usar el prefijo `HOME/` en las rutas definidas en `ALLOWED_BASE_PATHS` (en `src/utils/security.ts`) para referenciar directorios relativos al directorio home del usuario (p. ej., `HOME/Documents/MyProject`). Esto mejora la portabilidad de la configuración entre diferentes entornos.
   - `zod` schemas enforce input sanity.
   - Role-based access controls protect sensitive ops.
 - **Performance**:

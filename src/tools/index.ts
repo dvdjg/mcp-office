@@ -34,7 +34,6 @@ const allTools: McpResource[] = [
     ...wordSearchReplaceTool, // Añadir la nueva herramienta
     ...wordTablesTool, // Añadir la herramienta de tablas
     ...wordChartsTool, // Añadir la herramienta de gráficos
-    ...aiAssistantGuideResource, // Added the new resource
     // ...excelRangeTool,
     // ...powerpointSlidesTool,
     // ...officePdfTool,
@@ -73,4 +72,5 @@ const placeholderTools: McpResource[] = [
 ];
 
 
-export default [...allTools, ...placeholderTools];
+const allRegisteredTools = [...allTools, ...placeholderTools];
+export { allRegisteredTools, aiAssistantGuideResource };
