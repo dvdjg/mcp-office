@@ -1,5 +1,6 @@
 import * as Zod from 'zod';
-export { Context as FastMCPContext } from 'fastmcp'; // Import and re-export FastMCP Context
+import { Context } from 'fastmcp'; // Import only Context
+export { Context as FastMCPContext }; // Export with alias
 /**
  * @file Defines common types and interfaces used across the MCP server.
  */
@@ -43,12 +44,12 @@ export interface ToolRequestParams {
  * Defines the structure for a FastMCP resource (tool or resource).
  * The handler now accepts the FastMCP context.
  */
-export interface McpResource {
+export interface McpResource { // Remove generic parameter entirely
   path: string; // e.g., 'word/styles/apply' or 'memory/ai_assistant_guide/read'
   // Handler context is now optional to support both tools (context provided) and resources (context might be undefined)
-  handler: (params: ToolRequestParams, context?: FastMCPContext<undefined>) => Promise<ApiResponse<any>>;
+  handler: (params: ToolRequestParams, context?: Context<any>) => Promise<ApiResponse<any>>; // Use Context<any>
   schema?: Zod.ZodSchema<any>; // Optional Zod schema for input validation (for tools)
   // Completions might need adjustment if they also need the FastMCP context
-  completions?: (context?: FastMCPContext<undefined>) => Promise<Record<string, any[]>>; // For AI completions (make context optional here too for consistency)
+  completions?: (context?: Context<any>) => Promise<Record<string, any[]>>; // Use Context<any>
   description?: string; // Tool/Resource description for documentation/AI
 }

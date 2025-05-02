@@ -1,141 +1,450 @@
 import * as winax from 'winax';
-import logger from './logger'; // Asegúrate de que la ruta al logger sea correcta
+import * as fs from 'fs/promises'; // For async file operations
+import * as path from 'path';     // For path manipulation
+import * as os from 'os';         // For temporary directory
+import logger from './logger';     // Ensure logger path is correct
 
 type OfficeAppName = 'Word.Application' | 'Excel.Application' | 'PowerPoint.Application';
 
 /**
- * Obtiene una instancia de una aplicación de Office (existente o nueva).
- * @param appName El nombre ProgID de la aplicación de Office (ej. 'Word.Application').
- * @returns Una promesa que resuelve con el objeto COM de la aplicación.
+ * Gets an instance of an Office application (existing or new).
+ * @param appName The ProgID name of the Office application (e.g., 'Word.Application').
+ * @returns A promise resolving to the application's COM object.
  */
 export async function getOfficeApplication(appName: OfficeAppName): Promise<any> {
-  logger.info(`[OfficeInterop] Intentando obtener/crear instancia de ${appName}...`);
+  logger.info(`[OfficeInterop] Attempting to get/create instance of ${appName}...`);
   let app: any = null;
 
   try {
-    // Winax intenta conectar a una instancia existente o crear una nueva con new ActiveXObject
-    // No hay un método separado como GetActiveObject en win32ole que sea estándar en winax.
-    // Crear un nuevo objeto a menudo adjunta a uno existente si está disponible.
-    app = new winax.Object(appName, { activate: true }); // { activate: true } intenta traerla al frente si existe
+    // winax attempts to connect to an existing instance or create a new one with new ActiveXObject.
+    // Creating a new object often attaches to an existing one if available.
+    app = new winax.Object(appName, { activate: true }); // { activate: true } tries to bring it to the foreground if it exists
 
     if (!app) {
-      throw new Error(`No se pudo crear ni conectar a ${appName}.`);
+      throw new Error(`Could not create or connect to ${appName}.`);
     }
 
-    logger.info(`[OfficeInterop] Instancia de ${appName} obtenida/creada.`);
+    logger.info(`[OfficeInterop] Instance of ${appName} obtained/created.`);
 
-    // Hacer visible la aplicación para depuración
+    // Make the application visible for debugging purposes
     try {
-      if (app.Visible === false || app.Visible === 0) {
-         // Para PowerPoint, la ventana principal podría no ser directamente 'Visible'
-         // Necesitamos verificar si la aplicación tiene una ventana principal y hacerla visible.
+      // Check if Visible property exists and is false
+      if (typeof app.Visible !== 'undefined' && (app.Visible === false || app.Visible === 0)) {
+         // Specific handling for PowerPoint visibility might be needed
          if (appName === 'PowerPoint.Application') {
-            // PowerPoint puede no tener ventanas si se inicia sin interfaz gráfica.
-            // Si hay presentaciones, la ventana de la aplicación podría ser visible.
-            // O podríamos necesitar crear una presentación para forzar la visibilidad.
-            // Por simplicidad inicial, intentaremos establecer Visible, pero puede fallar.
+            // PowerPoint might start without a visible window.
+            // Attempting to set Visible might require an open presentation.
             try {
                  app.Visible = true;
             } catch (visError) {
-                 logger.warn(`[OfficeInterop] No se pudo establecer Visible=true directamente para ${appName}. Puede requerir abrir/crear un archivo.`);
-                 // Podríamos intentar crear una ventana si es necesario: app.NewWindow();
+                 logger.warn(`[OfficeInterop] Could not set Visible=true directly for ${appName}. May require opening/creating a file. Error: ${visError instanceof Error ? visError.message : String(visError)}`);
+                 // Could attempt app.NewWindow() if necessary.
             }
          } else {
-             app.Visible = true;
+             app.Visible = true; // For Word/Excel, this usually works
          }
-         logger.info(`[OfficeInterop] ${appName} establecida como visible.`);
+         logger.info(`[OfficeInterop] ${appName} set to visible.`);
       }
     } catch (visError) {
-      logger.warn(`[OfficeInterop] No se pudo establecer la propiedad Visible para ${appName}. Error: ${visError instanceof Error ? visError.message : String(visError)}`);
-      // Continuar incluso si no se puede hacer visible
+      logger.warn(`[OfficeInterop] Could not set Visible property for ${appName}. Error: ${visError instanceof Error ? visError.message : String(visError)}`);
+      // Continue even if visibility cannot be set
     }
 
     return app;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error(`[OfficeInterop] Error al obtener/crear ${appName}: ${errorMessage}`, { error });
-    // Intentar liberar el objeto si se creó parcialmente y falló después
+    logger.error(`[OfficeInterop] Error getting/creating ${appName}: ${errorMessage}`, { error });
+    // Attempt to release the object if partially created before failure
     if (app) {
       releaseObject(app);
     }
-    throw new Error(`Fallo al obtener la aplicación ${appName}: ${errorMessage}`);
+    throw new Error(`Failed to get application ${appName}: ${errorMessage}`);
   }
 }
 
 /**
- * Libera un objeto COM.
- * @param comObject El objeto COM a liberar.
+ * Releases a COM object.
+ * @param comObject The COM object to release.
  */
 export function releaseObject(comObject: any): void {
   if (!comObject) {
     return;
   }
   try {
-    // winax puede usar __release o simplemente dejar que el GC lo maneje.
-    // Llamar a __release si existe es más seguro para liberar recursos inmediatamente.
+    // winax might use __release or rely on GC.
+    // Calling __release if it exists is safer for immediate resource cleanup.
     if (typeof comObject.__release === 'function') {
       comObject.__release();
-      logger.info('[OfficeInterop] Objeto COM liberado usando __release().');
+      logger.info('[OfficeInterop] COM object released using __release().');
     } else {
-      logger.info('[OfficeInterop] El objeto COM no tiene método __release(). Confiando en GC.');
-      // Alternativamente, simplemente asignar a null ayuda al GC
+      logger.info('[OfficeInterop] COM object has no __release() method. Relying on GC.');
+      // Alternatively, setting to null helps GC
       // comObject = null;
     }
   } catch (error) {
-    logger.warn(`[OfficeInterop] Advertencia al liberar objeto COM: ${error instanceof Error ? error.message : String(error)}`);
-    // No relanzar el error, solo registrar la advertencia.
+    logger.warn(`[OfficeInterop] Warning releasing COM object: ${error instanceof Error ? error.message : String(error)}`);
+    // Do not rethrow, just log the warning.
   }
 }
 
-// Opcional: Añadir un pequeño test aquí si es necesario, pero mejor en index.ts como se sugirió.
-// async function test() {
-//   try {
-//     const word = await getOfficeApplication('Word.Application');
-//     console.log('Word Version:', word.Version);
-//     releaseObject(word);
-//   } catch(e) {
-//     console.error(e);
-//   }
-// }
-// test();
-// --- Placeholder Functions for Image Handling ---
+
+// --- Image and Element Handling ---
 
 /**
- * Placeholder for extracting an image from a Word document.
+ * Extracts an image from a Word document.
+ * Note: COM Interop for image extraction is complex and might require workarounds like using the clipboard
+ * or saving parts of the document. This implementation attempts a common approach using InlineShapes and saving to a temp file.
+ * String identifiers are not supported in this basic implementation.
  * @param filePath Path to the Word document.
- * @param identifier Image identifier (index or text).
- * @param outputFormat Desired output format.
+ * @param imageIdentifier Image index (1-based). String identifiers are not supported.
  * @returns A Promise resolving to a Buffer containing the image data.
  */
 export async function extractImageFromWord(
   filePath: string,
-  identifier: number | string,
-  outputFormat: string
+  imageIdentifier: string | number
 ): Promise<Buffer> {
-  logger.warn(`[OfficeInterop] extractImageFromWord called but not implemented. File: ${filePath}, Identifier: ${identifier}`);
-  // In a real implementation, use COM interop to find the image (e.g., InlineShapes or Shapes collection)
-  // and export it (e.g., using SaveAsPicture or similar methods if available, or clipboard).
-  throw new Error('extractImageFromWord is not implemented yet.');
-  // return Buffer.from(''); // Placeholder return
+  logger.info(`[OfficeInterop] Attempting to extract image '${imageIdentifier}' from ${filePath}`);
+  if (typeof imageIdentifier !== 'number') {
+      throw new Error('extractImageFromWord currently only supports numeric (index-based) identifiers.');
+  }
+  if (imageIdentifier <= 0) {
+      throw new Error('Image index must be 1-based.');
+  }
+
+  let wordApp: any = null;
+  let doc: any = null;
+  const tempDir = os.tmpdir();
+  // Using a relatively safe temporary filename pattern
+  const tempFileName = `mcp_office_img_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.png`;
+  const tempFilePath = path.join(tempDir, tempFileName);
+  let imageBuffer: Buffer | null = null;
+
+  try {
+    wordApp = await getOfficeApplication('Word.Application');
+    // Open the document as read-only if possible, make it invisible during processing
+    // Use absolute path for COM
+    const absoluteFilePath = path.resolve(filePath);
+    logger.debug(`[OfficeInterop] Opening document: ${absoluteFilePath}`);
+    doc = wordApp.Documents.Open(absoluteFilePath, false, true, false); // ReadOnly=true, Visible=false
+
+    if (!doc) {
+      throw new Error(`Failed to open document: ${filePath}`);
+    }
+    logger.debug(`[OfficeInterop] Document opened successfully.`);
+
+    const inlineShapes = doc.InlineShapes;
+    if (!inlineShapes || typeof inlineShapes.Count === 'undefined') {
+        throw new Error('Could not access InlineShapes collection.');
+    }
+
+    const count = inlineShapes.Count;
+    logger.debug(`[OfficeInterop] Document has ${count} inline shapes.`);
+    if (imageIdentifier > count) {
+      throw new Error(`Image index ${imageIdentifier} out of bounds. Document has ${count} inline shapes.`);
+    }
+
+    const shape = inlineShapes.Item(imageIdentifier); // 1-based index
+
+    if (!shape) {
+        throw new Error(`Could not find inline shape at index ${imageIdentifier}.`);
+    }
+    logger.debug(`[OfficeInterop] Found inline shape at index ${imageIdentifier}.`);
+
+    // --- Workaround: Save shape by copying and pasting into a temporary chart ---
+    // Direct saving of InlineShape is often not available. This is a common workaround.
+    logger.debug('[OfficeInterop] Selecting shape and copying as picture...');
+    shape.Select();
+    wordApp.Selection.CopyAsPicture();
+
+    // Create a temporary chart object to paste into and export
+    // The chart needs to be added to the document temporarily
+    logger.debug('[OfficeInterop] Adding temporary chart...');
+    // wdChart=-1, xlXYScatter=2 - These constants might vary or need definition
+    const tempChartShape = inlineShapes.AddChart2(-1, 2);
+    if (!tempChartShape || !tempChartShape.Chart || !tempChartShape.Chart.ChartArea) {
+        releaseObject(tempChartShape); // Clean up chart if creation failed partially
+        throw new Error('Failed to create temporary chart for image extraction.');
+    }
+    logger.debug('[OfficeInterop] Temporary chart created. Pasting image...');
+
+    tempChartShape.Chart.ChartArea.Format.Fill.UserPicture(null); // Clears previous picture just in case
+    tempChartShape.Chart.ChartArea.Paste(); // Paste the copied image
+    logger.debug('[OfficeInterop] Image pasted into chart area. Exporting chart...');
+
+    // Export the chart area (which now contains the image)
+    // Ensure the temp directory exists
+    await fs.mkdir(tempDir, { recursive: true });
+    tempChartShape.Chart.Export(tempFilePath, "PNG"); // Export as PNG
+    logger.debug(`[OfficeInterop] Chart exported to temporary file: ${tempFilePath}`);
+
+    // Delete the temporary chart from the document
+    logger.debug('[OfficeInterop] Deleting temporary chart...');
+    tempChartShape.Delete();
+
+    // Read the exported image file into a buffer
+    logger.debug('[OfficeInterop] Reading temporary image file into buffer...');
+    imageBuffer = await fs.readFile(tempFilePath);
+
+    logger.info(`[OfficeInterop] Successfully extracted image ${imageIdentifier} to buffer.`);
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`[OfficeInterop] Error extracting image ${imageIdentifier} from ${filePath}: ${errorMessage}`, { error });
+    throw new Error(`Failed to extract image: ${errorMessage}`);
+  } finally {
+    // Clean up temporary file if it exists
+    try {
+      if (await fs.stat(tempFilePath).catch(() => false)) {
+        await fs.unlink(tempFilePath);
+        logger.debug(`[OfficeInterop] Deleted temporary image file: ${tempFilePath}`);
+      }
+    } catch (cleanupError) {
+      logger.warn(`[OfficeInterop] Failed to delete temporary image file ${tempFilePath}: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`);
+    }
+
+    // Close document without saving changes
+    if (doc) {
+      try {
+        doc.Close(0); // wdDoNotSaveChanges = 0
+        logger.debug('[OfficeInterop] Document closed without saving.');
+      } catch (closeError) {
+        logger.warn(`[OfficeInterop] Failed to close document: ${closeError instanceof Error ? closeError.message : String(closeError)}`);
+      }
+      releaseObject(doc); // Release document object
+    }
+    // Quit Word only if we opened it and there are no other documents open (tricky to determine reliably)
+    // For simplicity, we might leave Word running if it was already open.
+    // Consider adding logic to quit if wordApp.Documents.Count === 0, but be cautious.
+    // releaseObject(wordApp); // Release app object - careful not to close user's instance unintentionally
+  }
+
+  if (!imageBuffer) {
+      throw new Error('Image extraction process completed, but no buffer was generated.');
+  }
+  return imageBuffer;
 }
 
 /**
- * Placeholder for inserting an image into a Word document.
+ * Inserts an image into a Word document.
  * @param filePath Path to the Word document.
  * @param imageBuffer Buffer containing the image data.
- * @param position Insertion position (e.g., 'end', 'bookmark:name').
+ * @param position Insertion position identifier (e.g., 'end', 'start', 'paragraph:N'). Bookmarks not implemented.
  * @param options Optional parameters (width, height, altText).
  * @returns A Promise resolving when the image is inserted.
  */
 export async function insertImageIntoWord(
   filePath: string,
   imageBuffer: Buffer,
-  position: string,
+  position: string | number, // Allow number for paragraph index
   options?: { width?: number; height?: number; altText?: string }
 ): Promise<void> {
-  logger.warn(`[OfficeInterop] insertImageIntoWord called but not implemented. File: ${filePath}, Position: ${position}`);
-  // In a real implementation, use COM interop to navigate to the position (e.g., Range, Selection, Bookmark)
-  // and insert the image (e.g., InlineShapes.AddPicture, Shapes.AddPicture).
-  // This might involve saving the buffer to a temporary file first.
-  throw new Error('insertImageIntoWord is not implemented yet.');
+  logger.info(`[OfficeInterop] Attempting to insert image into ${filePath} at position '${position}'`);
+
+  let wordApp: any = null;
+  let doc: any = null;
+  const tempDir = os.tmpdir();
+  // Using a relatively safe temporary filename pattern
+  const tempFileName = `mcp_office_img_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.tmp`; // Use generic extension
+  const tempFilePath = path.join(tempDir, tempFileName);
+
+  try {
+    // Ensure the temp directory exists
+    await fs.mkdir(tempDir, { recursive: true });
+    // Write the buffer to a temporary file
+    await fs.writeFile(tempFilePath, imageBuffer);
+    logger.debug(`[OfficeInterop] Image buffer saved to temporary file: ${tempFilePath}`);
+
+    wordApp = await getOfficeApplication('Word.Application');
+    // Use absolute path for COM
+    const absoluteFilePath = path.resolve(filePath);
+    logger.debug(`[OfficeInterop] Opening document for editing: ${absoluteFilePath}`);
+    doc = wordApp.Documents.Open(absoluteFilePath); // Open normally for editing
+
+    if (!doc) {
+      throw new Error(`Failed to open document: ${filePath}`);
+    }
+    logger.debug(`[OfficeInterop] Document opened successfully.`);
+
+    let targetRange: any = null;
+
+    // Determine the target range based on the position identifier
+    // Word COM constants: wdCollapseEnd = 0, wdCollapseStart = 1
+    if (position === 'end') {
+      logger.debug('[OfficeInterop] Position is "end", targeting end of document content.');
+      targetRange = doc.Content;
+      targetRange.Collapse(0); // wdCollapseEnd
+    } else if (position === 'start') {
+      logger.debug('[OfficeInterop] Position is "start", targeting start of document content.');
+      targetRange = doc.Content;
+      targetRange.Collapse(1); // wdCollapseStart
+    } else if (typeof position === 'number' || (typeof position === 'string' && position.startsWith('paragraph:'))) {
+        const paraIndex = typeof position === 'number' ? position : parseInt(position.split(':')[1], 10);
+        logger.debug(`[OfficeInterop] Position is paragraph index: ${paraIndex}`);
+        if (isNaN(paraIndex) || paraIndex <= 0) {
+            throw new Error(`Invalid paragraph index specified: ${position}`);
+        }
+        if (paraIndex > doc.Paragraphs.Count) {
+            throw new Error(`Paragraph index ${paraIndex} out of bounds. Document has ${doc.Paragraphs.Count} paragraphs.`);
+        }
+        targetRange = doc.Paragraphs(paraIndex).Range;
+        // Decide whether to insert before or at the start of the paragraph range. Start is usually safer.
+        targetRange.Collapse(1); // wdCollapseStart
+        logger.debug(`[OfficeInterop] Targeting start of paragraph ${paraIndex}.`);
+    }
+    // TODO: Add support for bookmarks if needed: e.g., if (doc.Bookmarks.Exists("bookmarkName")) targetRange = doc.Bookmarks("bookmarkName").Range;
+    else {
+      logger.warn(`[OfficeInterop] Unsupported position identifier: '${position}'. Inserting at the end.`);
+      targetRange = doc.Content;
+      targetRange.Collapse(0); // wdCollapseEnd
+    }
+
+    if (!targetRange) {
+        throw new Error(`Could not determine insertion range for position: ${position}`);
+    }
+
+    // Insert the picture from the temporary file
+    logger.debug(`[OfficeInterop] Inserting picture from temp file: ${tempFilePath}`);
+    const inlineShape = targetRange.InlineShapes.AddPicture(tempFilePath);
+
+    if (!inlineShape) {
+        throw new Error('Failed to insert image using AddPicture.');
+    }
+    logger.debug('[OfficeInterop] Image inserted as InlineShape.');
+
+    // Apply options if provided
+    if (options) {
+        logger.debug('[OfficeInterop] Applying options:', options);
+        if (typeof options.width === 'number') {
+            inlineShape.Width = options.width;
+        }
+        if (typeof options.height === 'number') {
+            inlineShape.Height = options.height;
+        }
+        if (typeof options.altText === 'string') {
+            inlineShape.AlternativeText = options.altText;
+        }
+    }
+
+    logger.info(`[OfficeInterop] Successfully inserted image into ${filePath}`);
+
+    // Save the document
+    logger.debug('[OfficeInterop] Saving document...');
+    doc.Save();
+    logger.info(`[OfficeInterop] Document saved: ${filePath}`);
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`[OfficeInterop] Error inserting image into ${filePath}: ${errorMessage}`, { error });
+    throw new Error(`Failed to insert image: ${errorMessage}`);
+  } finally {
+    // Clean up temporary file if it exists
+    try {
+      if (await fs.stat(tempFilePath).catch(() => false)) {
+        await fs.unlink(tempFilePath);
+        logger.debug(`[OfficeInterop] Deleted temporary image file: ${tempFilePath}`);
+      }
+    } catch (cleanupError) {
+      logger.warn(`[OfficeInterop] Failed to delete temporary image file ${tempFilePath}: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`);
+    }
+
+    // Close document
+    if (doc) {
+      try {
+        // Close, but don't save again (already saved if successful)
+        doc.Close(0); // wdDoNotSaveChanges = 0 (or handle based on success/failure)
+        logger.debug('[OfficeInterop] Document closed.');
+      } catch (closeError) {
+        logger.warn(`[OfficeInterop] Failed to close document: ${closeError instanceof Error ? closeError.message : String(closeError)}`);
+      }
+      releaseObject(doc); // Release document object
+    }
+    // Release app object cautiously
+    // releaseObject(wordApp);
+  }
+}
+
+
+/**
+ * Gets content (text or image buffer) from a specific element in a Word document.
+ * @param filePath Path to the Word document.
+ * @param elementType Type of element ('paragraph' or 'image').
+ * @param identifier Index of the element (1-based).
+ * @returns A Promise resolving to the text content (string) or image data (Buffer).
+ */
+export async function getWordElementContent(
+    filePath: string,
+    elementType: 'paragraph' | 'image',
+    identifier: number // Assuming 1-based index for simplicity
+): Promise<string | Buffer> {
+    logger.info(`[OfficeInterop] Attempting to get content for ${elementType} ${identifier} from ${filePath}`);
+
+    if (identifier <= 0) {
+        throw new Error('Element index must be 1-based.');
+    }
+
+    let wordApp: any = null;
+    let doc: any = null;
+
+    try {
+        wordApp = await getOfficeApplication('Word.Application');
+        // Open read-only and invisible
+        const absoluteFilePath = path.resolve(filePath);
+        logger.debug(`[OfficeInterop] Opening document read-only: ${absoluteFilePath}`);
+        doc = wordApp.Documents.Open(absoluteFilePath, false, true, false); // ReadOnly=true, Visible=false
+
+        if (!doc) {
+            throw new Error(`Failed to open document: ${filePath}`);
+        }
+        logger.debug(`[OfficeInterop] Document opened successfully.`);
+
+        if (elementType === 'paragraph') {
+            const paraCount = doc.Paragraphs.Count;
+            logger.debug(`[OfficeInterop] Document has ${paraCount} paragraphs. Accessing index ${identifier}.`);
+            if (identifier > paraCount) {
+                throw new Error(`Paragraph index ${identifier} out of bounds. Document has ${paraCount} paragraphs.`);
+            }
+            const paragraph = doc.Paragraphs(identifier); // 1-based index
+            const text = paragraph.Range.Text;
+            logger.info(`[OfficeInterop] Successfully retrieved text for paragraph ${identifier}.`);
+            return text;
+
+        } else if (elementType === 'image') {
+            // Reuse extractImageFromWord logic - Note: extractImageFromWord handles opening/closing doc internally.
+            // This is slightly inefficient as we open the doc twice, but simplifies code reuse.
+            // A refactor could pass the 'doc' object to extractImageFromWord.
+            logger.info(`[OfficeInterop] Delegating image extraction to extractImageFromWord for index ${identifier}.`);
+            // Close the doc opened in *this* function before calling extractImageFromWord
+            doc.Close(0); // wdDoNotSaveChanges = 0
+            releaseObject(doc);
+            doc = null; // Prevent closing again in finally block
+            // releaseObject(wordApp); // Release app temporarily? Risky.
+            // wordApp = null;
+
+            const imageBuffer = await extractImageFromWord(filePath, identifier);
+            logger.info(`[OfficeInterop] Successfully retrieved image buffer for image ${identifier}.`);
+            return imageBuffer;
+
+        } else {
+            // Should not happen due to type checking, but good practice
+            throw new Error(`Unsupported element type: ${elementType}`);
+        }
+
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logger.error(`[OfficeInterop] Error getting content for ${elementType} ${identifier} from ${filePath}: ${errorMessage}`, { error });
+        throw new Error(`Failed to get element content: ${errorMessage}`);
+    } finally {
+        // Close document only if it wasn't closed earlier (e.g., for image extraction delegation)
+        if (doc) {
+            try {
+                doc.Close(0); // wdDoNotSaveChanges = 0
+                logger.debug('[OfficeInterop] Document closed without saving.');
+            } catch (closeError) {
+                logger.warn(`[OfficeInterop] Failed to close document: ${closeError instanceof Error ? closeError.message : String(closeError)}`);
+            }
+            releaseObject(doc); // Release document object
+        }
+        // Release app object cautiously
+        // releaseObject(wordApp);
+    }
 }

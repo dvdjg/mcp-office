@@ -11,6 +11,8 @@ import { allRegisteredTools, aiAssistantGuideResource } from '@/tools'; // Updat
 import logger from '@/utils/logger';
 import { handleToolError, createErrorResponse } from '@/utils/errorHandler';
 import { validateFilePath } from '@/utils/security'; // Import validateFilePath
+// Import the actual getWordElementContent function
+import { getWordElementContent as getOfficeElementContentInterop } from '@/utils/officeInterop';
 import { McpResource, ToolRequestParams, ApiResponse } from '@/types/common.types'; // Removed SerializableValue import from here
 import { version as packageVersion, name as packageName } from '../../package.json'; // Import name and version
 
@@ -254,30 +256,6 @@ try {
 // --- Register Resource Templates ---
 logger.info("Registering resource templates...");
 
-// Placeholder functions for resource handling (to be moved/implemented in officeInterop.ts)
-// These are simplified placeholders for demonstration within the handler
-// Return TextContent or Buffer directly. Throw error if not found/supported.
-async function getWordElementContent(filePath: string, elementType: string, identifier: string): Promise<TextContent | Buffer> {
-    logger.info(`[ResourceTemplate] Placeholder: Getting Word element`, { filePath, elementType, identifier });
-    await validateFilePath(filePath); // Validate path
-    if (elementType === 'paragraph') {
-        // Placeholder: Fetch paragraph text
-        const text = `Placeholder text for paragraph ${identifier} in ${filePath}`;
-        // Return TextContent structure
-        return { type: 'text', text };
-    } else if (elementType === 'image') {
-        // Placeholder: Fetch image data (e.g., a small dummy PNG buffer)
-        const dummyPngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
-        const buffer = Buffer.from(dummyPngBase64, 'base64');
-        // Return the raw buffer
-        return buffer;
-    }
-    // Add more element types as needed
-
-    // Throw error if element type is not supported
-    throw new UserError(`Element type '${elementType}' not supported for Word documents.`);
-}
-
 // Define the resource template load function
 // It only receives the parsed arguments from the uriTemplate, not the context
 async function loadOfficeResource(
@@ -306,8 +284,25 @@ async function loadOfficeResource(
         // Route based on application
         switch (app.toLowerCase()) {
             case 'word':
-                // Call specific Word interop function based on elementType
-                rawContent = await getWordElementContent(decodedFilepath, elementType.toLowerCase(), identifier);
+                // Validate element type and identifier for Word
+                const elementTypeLower = elementType.toLowerCase();
+                const elementIdentifierNum = parseInt(identifier, 10);
+
+                if (isNaN(elementIdentifierNum)) {
+                    throw new UserError(`Invalid numeric identifier for Word element: ${identifier}`);
+                }
+                if (elementTypeLower !== 'paragraph' && elementTypeLower !== 'image') {
+                     throw new UserError(`Unsupported element type for Word resource: ${elementType}`);
+                }
+
+                // Call the actual interop function
+                const elementContent = await getOfficeElementContentInterop(decodedFilepath, elementTypeLower, elementIdentifierNum);
+                // Assign to rawContent based on type
+                if (typeof elementContent === 'string') {
+                    rawContent = { type: 'text', text: elementContent };
+                } else { // It must be a Buffer
+                    rawContent = elementContent;
+                }
                 break;
             case 'excel':
                 // TODO: Implement Excel handling - Placeholder
@@ -339,10 +334,13 @@ async function loadOfficeResource(
             const base64Data = rawContent.toString('base64');
             logger.info(`[ResourceTemplate] Successfully loaded resource as blob.`, { durationMs: Date.now() - startTime, app, filepath: decodedFilepath, elementType, identifier, size: base64Data.length }); // Use logger
             return { blob: base64Data };
+        } else if (typeof rawContent === 'string') {
+             // If it's a string (e.g., paragraph text), return as text
+             logger.info(`[ResourceTemplate] Successfully loaded resource as text.`, { durationMs: Date.now() - startTime, app, filepath: decodedFilepath, elementType, identifier }); // Use logger
+             return { text: rawContent };
         } else {
-            // Otherwise, it should be TextContent structure, return its text property
-            logger.info(`[ResourceTemplate] Successfully loaded resource as text.`, { durationMs: Date.now() - startTime, app, filepath: decodedFilepath, elementType, identifier }); // Use logger
-            return { text: rawContent.text }; // Assuming rawContent is { type: 'text', text: ... }
+             // Should not happen if interop function returns string or Buffer
+             throw new UnexpectedStateError('Unexpected content type returned from interop function.');
         }
 
     } catch (error: any) {

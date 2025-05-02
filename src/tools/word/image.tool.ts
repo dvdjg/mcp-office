@@ -60,7 +60,7 @@ async function handleExtractImage(
     await validateFilePath(args.filePath); // Ensure path is safe
 
     // Placeholder: Implement actual COM interop call
-    const imageBuffer = await extractImageFromWord(args.filePath, args.identifier, args.outputFormat);
+    const imageBuffer = await extractImageFromWord(args.filePath, args.identifier); // Removed outputFormat argument
 
     if (!imageBuffer || imageBuffer.length === 0) {
       throw new UserError(`Image with identifier '${args.identifier}' not found or could not be extracted.`);
