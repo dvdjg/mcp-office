@@ -77,6 +77,7 @@ const handler = async (input: CodeFormatInput, context: any) => {
 /**
  * @tool_description Identifica bloques de código en un documento Word.
  * Busca párrafos con un estilo específico o patrones de texto para identificar bloques de código.
+ * Nota: La detección basada en patrones de texto es una heurística básica y puede no ser precisa.
  * @param doc El objeto del documento Word.
  * @param style Opcional. El nombre del estilo de párrafo a buscar.
  * @returns Una lista de rangos identificados como bloques de código.
@@ -121,10 +122,11 @@ function identifyCodeBlocks(doc: any, style?: string): { start: number, end: num
 
 /**
  * @tool_description Detecta el lenguaje de programación de un bloque de texto.
- * Utiliza guesslang si está disponible, o una heurística simple.
+ * Utiliza highlight.js. Si no se especifica un lenguaje, intenta la detección automática.
+ * Nota: La detección automática puede no ser siempre precisa.
  * @param doc El objeto del documento Word.
  * @param range El rango de texto que contiene el código.
- * @returns El lenguaje detectado.
+ * @returns El lenguaje detectado por highlight.js.
  */
 async function detectLanguage(doc: any, range: { start: number, end: number }): Promise<string> {
   const textRange = doc.Range(range.start, range.end);
@@ -151,33 +153,143 @@ async function detectLanguage(doc: any, range: { start: number, end: number }): 
 
 /**
  * @tool_description Aplica formato de resaltado de sintaxis a un bloque de código en Word.
- * Utiliza highlight.js para obtener el formato y aplica las propiedades de fuente en Word.
+ * Utiliza highlight.js para obtener el formato (basado en clases CSS) y aplica las propiedades de fuente (color, negrita, cursiva) en el rango de texto de Word.
+ * Nota: La aplicación de formato se basa en un parser simple de HTML y un mapeo básico de clases CSS a estilos de Word. Puede no ser perfecta para todos los casos.
  * @param doc El objeto del documento Word.
  * @param range El rango de texto que contiene el código.
  * @param code El bloque de código a formatear.
- * @param language El lenguaje de programación del código.
+ * @param language El lenguaje de programación del código (opcional, highlight.js intentará detectar si no se proporciona).
  * @returns Un objeto indicando el éxito de la operación.
  */
+// Función auxiliar para aplicar formato basado en HTML resaltado
+function applyFormattingFromHtml(textRange: any, highlightedHtml: string) {
+    // Limpiar formato existente en el rango
+    textRange.Font.Reset();
+    textRange.Font.Name = 'Consolas';
+    textRange.Font.Size = 10;
+
+    // Simple parser de HTML para extraer texto y clases
+    let currentTextIndex = 0;
+    // Regex para encontrar <span> con clase y contenido, o texto fuera de <span>
+    const regex = /<span class="([^"]+)">([^<]+)<\/span>|([^<]+)/g;
+    let match;
+
+    // Obtener el texto plano del rango de Word para un mapeo de índices más preciso
+    const wordPlainText = textRange.Text.replace(/\r\n/g, '\n').replace(/\r/g, '\n'); // Normalizar saltos de línea
+
+    // Iterar sobre el HTML resaltado
+    while ((match = regex.exec(highlightedHtml)) !== null) {
+        let text = '';
+        let classes = '';
+
+        if (match[1] && match[2]) { // Coincide con <span class="...">...</span>
+            classes = match[1];
+            text = match[2];
+        } else if (match[3]) { // Coincide con texto fuera de span
+            text = match[3];
+        }
+
+        if (text) {
+            // Encontrar la posición de este texto en el texto plano de Word
+            // Esto sigue siendo una simplificación. Un mapeo de caracteres sería más robusto.
+            // Asumimos que el texto en el HTML aparece en el mismo orden en el texto plano de Word.
+            const startIndexInWord = wordPlainText.indexOf(text, currentTextIndex);
+
+            if (startIndexInWord !== -1) {
+                 const subRange = textRange.Duplicate;
+                 subRange.Start = textRange.Start + startIndexInWord;
+                 subRange.End = subRange.Start + text.length;
+
+                 // Aplicar formato basado en clases
+                 const font = subRange.Font;
+                 font.Bold = false;
+                 font.Italic = false;
+                 font.Color = 0x000000; // Color por defecto (negro)
+
+                 const classList = classes.split(' ');
+                 for (const cls of classList) {
+                     switch (cls) {
+                         case 'hljs-keyword':
+                             font.Color = 0xFF0000; // Azul
+                             font.Bold = true;
+                             break;
+                         case 'hljs-built_in':
+                             font.Color = 0xFFFF00; // Cian
+                             break;
+                         case 'hljs-literal':
+                             font.Color = 0x00A5FF; // Naranja
+                             break;
+                         case 'hljs-number':
+                             font.Color = 0x0000FF; // Rojo
+                             break;
+                         case 'hljs-string':
+                             font.Color = 0x008000; // Verde
+                             break;
+                         case 'hljs-comment':
+                             font.Color = 0x808080; // Gris
+                             font.Italic = true;
+                             break;
+                         case 'hljs-variable':
+                             // Color por defecto (negro)
+                             break;
+                         case 'hljs-title':
+                             font.Color = 0x800080; // Púrpura
+                             font.Bold = true;
+                             break;
+                         case 'hljs-params':
+                             font.Italic = true;
+                             break;
+                         case 'hljs-operator':
+                             // Color por defecto (negro)
+                             break;
+                         case 'hljs-punctuation':
+                             // Color por defecto (negro)
+                             break;
+                         // Añadir más casos según sea necesario para otras clases de highlight.js
+                     }
+                 }
+
+                 currentTextIndex = startIndexInWord + text.length; // Actualizar el índice para la próxima búsqueda
+            } else {
+                // Si no se encuentra el texto, esto indica un problema con el mapeo o el parser.
+                // Podríamos loggear una advertencia o lanzar un error.
+                console.warn(`Texto "${text}" del HTML no encontrado en el rango de Word a partir del índice ${currentTextIndex}.`);
+                // Intentar avanzar el índice basado en la longitud del texto en el HTML de todas formas,
+                // aunque el formato no se aplique correctamente a este segmento.
+                 currentTextIndex += text.length;
+            }
+        }
+    }
+}
+
 function applyCodeFormatting(doc: any, range: { start: number, end: number }, code: string, language: string): { success: boolean } {
-  const textRange = doc.Range(range.start, range.end);
+    const textRange = doc.Range(range.start, range.end);
 
-  // Integrar highlight.js aquí
-  const highlightedCode = hljs.highlight(code, { language: language || 'plaintext' }).value;
+    // Integrar highlight.js
+    // Usar highlightAuto si el lenguaje no está especificado o es 'plaintext'
+    const highlightedResult = language && language !== 'plaintext'
+        ? hljs.highlight(code, { language: language })
+        : hljs.highlightAuto(code);
 
-  // Por ahora, solo aplicar una fuente de ancho fijo como Consolas
-  textRange.Font.Name = 'Consolas';
-  textRange.Font.Size = 10; // Tamaño de fuente de ejemplo
+    const highlightedHtml = highlightedResult.value;
 
-  // Implementar la aplicación de colores y estilos basados en el output de highlight.js
-  // Esto requeriría parsear el HTML/texto de highlight.js y aplicar formato a sub-rangos.
-  // Esto puede ser complejo con COM Interop y rangos.
-  // Por ahora, solo aplicar una fuente de ancho fijo y un color básico.
-  // TODO: Implementar un parser de HTML simple para aplicar estilos más detallados.
-  textRange.Font.Name = 'Consolas';
-  textRange.Font.Size = 10; // Tamaño de fuente de ejemplo
-  textRange.Font.Color = 0x000000; // Color negro (BGR) - ajustar según el tema de highlight.js
+    // Obtener el texto plano del HTML resaltado para reemplazar el contenido en Word
+    const plainText = highlightedHtml.replace(/<[^>]*>/g, '');
 
-  return { success: true };
+    // Reemplazar el texto en el rango de Word con el texto plano
+    // Esto es crucial para que los índices del HTML coincidan con el texto en Word.
+    // Advertencia: Esto elimina cualquier formato preexistente en el rango.
+    textRange.Text = plainText;
+
+    // El rango puede haber cambiado de tamaño después de reemplazar el texto.
+    // Obtener el rango actualizado.
+    const updatedTextRange = doc.Range(range.start, range.start + plainText.length);
+
+    // Aplicar formato basado en el HTML resaltado
+    applyFormattingFromHtml(updatedTextRange, highlightedHtml);
+
+
+    return { success: true };
 }
 
 
