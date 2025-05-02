@@ -30,6 +30,8 @@ import mermaidImportTool from './word/mermaidImport.tool'; // Import the mermaid
 import mermaidExportTool from './word/mermaidExport.tool'; // Import the mermaid export tool
 import reformatTool from './word/reformat.tool'; // Import the new reformat tool
 
+import analyzeToolDefinition from './word/analyze.tool'; // Import the new analyze tool definition
+
 // Import static resources
 import aiAssistantGuideResource from '../resources/static/ai_assistant_guide.resource';
 
@@ -47,6 +49,22 @@ const embeddedObjectsMcpResource: McpResource = {
     schema: embeddedObjectsToolDefinition.parameters as z.ZodSchema<any>, // Use parameters as schema
     description: embeddedObjectsToolDefinition.description,
 };
+
+// Adapt the analyze tool definition to the McpResource interface
+const analyzeMcpResource: McpResource = {
+    path: analyzeToolDefinition.name, // Use name as path
+    handler: async (params, context) => {
+        try {
+             // Placeholder handler, execution delegated to server.ts wrapper
+             return { success: true, data: "Handler called, but execution delegated to server.ts wrapper." };
+        } catch (error) {
+             return handleToolError(error, 'ANALYZE_ERROR'); // Usar un código de error específico
+        }
+    },
+    schema: analyzeToolDefinition.inputSchema as z.ZodSchema<any>, // Use inputSchema as schema
+    description: analyzeToolDefinition.description,
+};
+
 
 // Combine all tools into a potentially nested array first
 const nestedToolsList = [
@@ -70,6 +88,7 @@ const nestedToolsList = [
     mermaidImportTool, // Añadida la herramienta de importación de Mermaid
     mermaidExportTool, // Añadida la herramienta de exportación de Mermaid
     reformatTool, // Añadida la herramienta reformatTool
+    analyzeMcpResource, // Añadida la herramienta analyzeTool adaptada
     // ...excelRangeTool,
     // ...powerpointSlidesTool,
     // ...officePdfTool,
@@ -87,7 +106,6 @@ const placeholderTools: McpResource[] = [
     // { path: 'word/mermaid/import', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/mermaid/import not implemented.'), description: 'Import and render Mermaid diagrams (Not Implemented)', schema: z.object({}) }, // Eliminado el placeholder
     // { path: 'word/mermaid/export', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/mermaid/export not implemented.'), description: 'Export Mermaid diagrams (Not Implemented)', schema: z.object({}) }, // Eliminado el placeholder
     // { path: 'word/reformat', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/reformat not implemented.'), description: 'Reformat a document professionally (Not Implemented)', schema: z.object({}) }, // Eliminado el placeholder
-    { path: 'word/analyze', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/analyze not implemented.'), description: 'Analyze content and add comments (Not Implemented - Requires AI integration)', schema: z.object({}) },
     { path: 'word/code-format', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/code-format not implemented.'), description: 'Format code and metadata with syntax highlighting (Not Implemented)', schema: z.object({}) },
     // Excel (Placeholders)
     { path: 'excel/worksheets', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool excel/worksheets not implemented.'), description: 'Manage Excel worksheets (Not Implemented - Requires Office JS/Scripts)', schema: z.object({}) },
