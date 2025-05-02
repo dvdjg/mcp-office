@@ -21,12 +21,14 @@ type Extras = Record<string, unknown>;
 // --- FastMCP Server Configuration ---
 const OFFICE_MCP_PORT = process.env.OFFICE_MCP_PORT;
 
+logger.debug('Creating FastMCP server instance...'); // Added log
 // Instantiate FastMCP with name and version from package.json
 const mcpServer = new FastMCP({
     name: packageName,
     version: packageVersion as `${number}.${number}.${number}`, // Assert type for version
     // instructions: "Optional instructions for the AI assistant on how to use this server",
 });
+logger.debug('FastMCP server instance created.'); // Added log
 
 // --- Register Tools ---
 logger.info(`Registering ${allTools.length} MCP resources...`);
@@ -61,7 +63,7 @@ allTools.forEach((item: McpResource) => {
                 name: item.path, // Use the unique path as the tool name
                 description: item.description,
                 // Use item.schema as parameters if it exists and conforms to StandardSchemaV1
-                parameters: item.schema as unknown as ToolParameters | undefined, // Cast schema, ensure it's compatible
+                parameters: item.schema ? (item.schema as unknown as ToolParameters) : undefined, // Cast schema conditionally
                 // annotations: { title: item.path }, // Optional: Add annotations like title
                 // Adjust return type based on removed imports if necessary, FastMCP handles ContentResult union
                 execute: async (args: StandardSchemaV1.InferOutput<any>, context: ServerContext): Promise<ContentResult | string | TextContent> => {
@@ -111,7 +113,7 @@ allTools.forEach((item: McpResource) => {
                             context.log.warn(`[${item.path}] Request failed`, { durationMs: duration, code: apiResponse.error?.code, message: apiResponse.error?.message, details: errorDetailsString });
                             // Pass serializable details to UserError
                             const userErrorDetails = errorDetailsString ? { details: errorDetailsString } : undefined;
-                            throw new UserError(apiResponse.error?.message || 'An unexpected error occurred during tool execution.', userErrorDetails);
+                            throw new UserError(apiResponse.error?.message || 'Tool execution failed.', userErrorDetails);
                         }
 
                     } catch (error) {
@@ -206,6 +208,7 @@ async function testCom() {
 }
 testCom(); // Llama a la función de prueba al inicio
 // --- Fin Prueba COM Interop ---
+logger.debug('Attempting to start MCP server...'); // Added log
 // Start the server
 if (OFFICE_MCP_PORT) {
     // Use SSE transport if port is defined
@@ -229,7 +232,7 @@ if (OFFICE_MCP_PORT) {
         transportType: "stdio"
     })
     .then(() => {
-        logger.info('🚀 msoffice-mcp server started in STDIO mode');
+        logger.info('🚀 msoffice-mcp server started successfully in STDIO mode'); // Added log
     })
     .catch((error: Error) => {
         logger.error('Failed to start msoffice-mcp server in STDIO mode:', error);
