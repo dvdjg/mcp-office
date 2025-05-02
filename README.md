@@ -171,6 +171,15 @@ Dive into the [API Documentation](#api-documentation) for more endpoints and the
 ---
 
 ## API Documentation
+### Generating API Documentation
+
+To generate the API documentation using TypeDoc, run the following command:
+
+```bash
+npm run docs:api
+```
+
+This will generate the documentation in the `docs/api/` directory.
 
 The Office MCP Server serves a RESTful API via **FastMCP**, with resource templates for file system ops, Office automation, and resource management. Every endpoint is type-safe (thanks, `zod`!), documented with JSDoc, and ready for AI or developer consumption. Let’s break it down.
 

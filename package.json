@@ -10,7 +10,7 @@
     "test": "jest",
     "test:coverage": "jest --coverage",
     "lint": "eslint . --ext .ts",
-    "docs": "typedoc --out docs src"
+    "docs:api": "typedoc --out docs/api --entryPoints src/tools src/resources --excludePrivate"
   },
   "keywords": [
     "mcp",

@@ -1,0 +1,584 @@
+<!DOCTYPE html><html class="default" lang="en"><head><meta charSet="utf-8"/><meta http-equiv="x-ua-compatible" content="IE=edge"/><title>msoffice-mcp</title><meta name="description" content="Documentation for msoffice-mcp"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="assets/style.css"/><link rel="stylesheet" href="assets/highlight.css"/><script defer src="assets/main.js"></script><script async src="assets/icons.js" id="tsd-icons-script"></script><script async src="assets/search.js" id="tsd-search-script"></script><script async src="assets/navigation.js" id="tsd-nav-script"></script></head><body><script>document.documentElement.dataset.theme = localStorage.getItem("tsd-theme") || "os";document.body.style.display="none";setTimeout(() => app?app.showPage():document.body.style.removeProperty("display"),500)</script><header class="tsd-page-toolbar"><div class="tsd-toolbar-contents container"><div class="table-cell" id="tsd-search" data-base="."><div class="field"><label for="tsd-search-field" class="tsd-widget tsd-toolbar-icon search no-caption"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><use href="assets/icons.svg#icon-search"></use></svg></label><input type="text" id="tsd-search-field" aria-label="Search"/></div><div class="field"><div id="tsd-toolbar-links"></div></div><ul class="results"><li class="state loading">Preparing search index...</li><li class="state failure">The search index is not available</li></ul><a href="index.html" class="title">msoffice-mcp</a></div><div class="table-cell" id="tsd-widgets"><a href="#" class="tsd-widget tsd-toolbar-icon menu no-caption" data-toggle="menu" aria-label="Menu"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><use href="assets/icons.svg#icon-menu"></use></svg></a></div></div></header><div class="container container-main"><div class="col-content"><div class="tsd-page-title"><h2>msoffice-mcp</h2></div><div class="tsd-panel tsd-typography"><a id="md:mcp-office" class="tsd-anchor"></a><h1><a href="#md:mcp-office">mcp-office</a></h1><p>Office MCP AI server for Microsoft Office automation.</p>
+<hr>
+<a id="md:office-mcp-server-supercharge-your-office-automation-with-ai-🚀" class="tsd-anchor"></a><h1><a href="#md:office-mcp-server-supercharge-your-office-automation-with-ai-🚀">Office MCP Server: Supercharge Your Office Automation with AI 🚀</a></h1><p>Welcome to the <strong>Office MCP Server</strong>, your one-stop shop for automating Microsoft Office like a wizard wielding a magic wand! Built with <strong>FastMCP</strong> in TypeScript, this server unleashes a treasure trove of tools to tame Word, Excel, and PowerPoint. From tweaking styles to rendering Mermaid diagrams, merging documents, or exporting to PDF, Office MCP does it all with a dash of AI flair. Whether you&#39;re a developer wrangling reports or an AI agent dreaming of document domination, Office MCP is your ticket to Office nirvana.</p>
+<p>Why Office MCP? Forget the soul-crushing grind of manual Office tasks or wrestling with outdated COM scripts. Office MCP offers:</p>
+<ul>
+<li><strong>Granular Control</strong>: Fiddle with every paragraph, table, or embedded object like a pro.</li>
+<li><strong>AI Superpowers</strong>: FastMCP’s prompt system lets AI suggest styles, resolve conflicts, or even format code like it’s starring in a tech rom-com. Leverages advanced FastMCP features like <code>instructions</code>, <code>annotations</code>, <code>reportProgress</code>, <code>imageContent</code>/<code>audioContent</code>, <code>addPrompt</code>, and <code>requestSampling</code> for sophisticated AI interactions.</li>
+<li><strong>Cross-Platform Glory</strong>: Works with Office 365, desktop Office, and even Power Automate for workflow wizardry.</li>
+<li><strong>Developer Love</strong>: Type-safe, modular, and documented to make your coding sessions feel like a sunny day at the beach. Includes features like <code>addResourceTemplate</code> for easy extension.</li>
+<li><strong>Rock-Solid</strong>: &gt;90% test coverage means it’s ready for your wildest automation adventures. Includes basic <code>authenticate</code> support.</li>
+</ul>
+<p>This README is your map to Office MCP mastery. Hit the <strong>Quick Start</strong> for instant action, then explore the <strong>API Documentation</strong>, <strong>Word Use Cases</strong> (with a side of humor), and <strong>AI Interaction</strong> for the full scoop. Let’s make Office automation fun again! 🎉</p>
+<hr>
+<a id="md:table-of-contents" class="tsd-anchor"></a><h2><a href="#md:table-of-contents">Table of Contents</a></h2><ol>
+<li><a href="#md:why-mcp">Why Office MCP?</a></li>
+<li><a href="#md:quick-start">Quick Start</a><ul>
+<li><a href="#md:installation">Installation</a></li>
+<li><a href="#md:running-the-server">Running the Server</a></li>
+<li><a href="#md:basic-examples">Basic Examples</a></li>
+</ul>
+</li>
+<li><a href="#md:api-documentation">API Documentation</a><ul>
+<li><a href="#md:resource-structure">Resource Structure</a></li>
+<li><a href="#md:file-system-tools">File System Tools</a></li>
+<li><a href="#md:word-tools">Word Tools</a></li>
+<li><a href="#md:excel-tools">Excel Tools</a></li>
+<li><a href="#md:powerpoint-tools">PowerPoint Tools</a></li>
+<li><a href="#md:cross-application-tools">Cross-Application Tools</a></li>
+<li><a href="#md:static-and-dynamic-resources">Static and Dynamic Resources</a></li>
+</ul>
+</li>
+<li><a href="#md:word-use-cases-with-a-chuckle">Word Use Cases (with a Chuckle)</a><ul>
+<li><a href="#md:use-case-1-markdown-magic">Use Case 1: Markdown Magic</a></li>
+<li><a href="#md:use-case-2-merge-mayhem">Use Case 2: Merge Mayhem</a></li>
+<li><a href="#md:use-case-3-template-trickery">Use Case 3: Template Trickery</a></li>
+<li><a href="#md:use-case-4-markdown-import-mania">Use Case 4: Markdown Import Mania</a></li>
+<li><a href="#md:use-case-5-reformatting-rescue">Use Case 5: Reformatting Rescue</a></li>
+<li><a href="#md:use-case-6-embedded-object-extraction-extravaganza">Use Case 6: Embedded Object Extraction Extravaganza</a></li>
+<li><a href="#md:use-case-7-mermaid-import-marvel">Use Case 7: Mermaid Import Marvel</a></li>
+<li><a href="#md:use-case-8-mermaid-export-escapade">Use Case 8: Mermaid Export Escapade</a></li>
+<li><a href="#md:use-case-9-analysis-antics">Use Case 9: Analysis Antics</a></li>
+<li><a href="#md:use-case-10-code-formatting-fiesta">Use Case 10: Code Formatting Fiesta</a></li>
+</ul>
+</li>
+<li><a href="#md:interacting-with-an-ai-using-mcp">Interacting with an AI Using Office MCP</a><ul>
+<li><a href="#md:example-1-merging-documents">Example 1: Merging Documents</a></li>
+<li><a href="#md:example-2-formatting-code">Example 2: Formatting Code</a></li>
+</ul>
+</li>
+<li><a href="#md:implementation-details">Implementation Details</a><ul>
+<li><a href="#md:why-typescript-and-fastmcp">Why TypeScript and FastMCP?</a></li>
+<li><a href="#md:dependency-choices">Dependency Choices</a></li>
+<li><a href="#md:security-and-performance">Security and Performance</a></li>
+</ul>
+</li>
+<li><a href="#md:testing-and-reliability">Testing and Reliability</a></li>
+<li><a href="#md:future-improvements">Future Improvements</a></li>
+<li><a href="#md:useful-links">Useful Links</a></li>
+<li><a href="#md:license">License</a></li>
+</ol>
+<hr>
+<a id="md:why-office-mcp" class="tsd-anchor"></a><h2><a href="#md:why-office-mcp">Why Office MCP?</a></h2><p>Picture this: You’re drowning in a sea of Word documents, Excel spreadsheets, and PowerPoint slides, with your boss demanding a polished report by EOD. Manual editing? A nightmare. Legacy COM scripts? A time machine to 1999. Office add-ins? Cute, but limited. Enter <strong>Office MCP</strong>, the superhero of Office automation:</p>
+<ul>
+<li><strong>Unrivaled Power</strong>: Control every nook and cranny of Office documents, from headers to embedded PDFs.</li>
+<li><strong>AI Smarts</strong>: FastMCP prompts let AI suggest formatting, analyze content, or merge documents like a seasoned editor.</li>
+<li><strong>Modern and Scalable</strong>: Built for 2025, with TypeScript, RESTful APIs, and cross-platform support.</li>
+<li><strong>Developer-Friendly</strong>: Modular tools, clear docs, and a static guide (<code>memory://ai_assistant_guide</code>) make integration a breeze.</li>
+</ul>
+<p>Office MCP leaves alternatives in the dust. Python’s <code>win32com</code> is Windows-only and verbose. Office add-ins can’t handle complex tasks like merging or Markdown conversion. Office MCP is the future, and it’s here to make your Office life <em>fabulous</em>.</p>
+<hr>
+<a id="md:quick-start" class="tsd-anchor"></a><h2><a href="#md:quick-start">Quick Start</a></h2><p>Ready to unleash Office MCP’s power? Let’s get you up and running faster than you can say “track changes”!</p>
+<a id="md:installation" class="tsd-anchor"></a><h3><a href="#md:installation">Installation</a></h3><p>Office MCP is a Node.js project with TypeScript. You’ll need:</p>
+<ul>
+<li><strong>Node.js</strong> (v18 or higher)</li>
+<li><strong>Microsoft Office</strong> (desktop for VBA/COM, or Office 365 for JavaScript APIs)</li>
+<li><strong>Git</strong> for cloning</li>
+</ul>
+<a id="md:clone-the-repository" class="tsd-anchor"></a><h4><a href="#md:clone-the-repository">Clone the Repository</a></h4><pre><code class="language-bash"><span class="hl-0">git</span><span class="hl-1"> </span><span class="hl-2">clone</span><span class="hl-1"> </span><span class="hl-2">https://github.com/dvdjg/mcp-office.git</span><br/><span class="hl-0">cd</span><span class="hl-1"> </span><span class="hl-2">mcp-office</span>
+</code><button>Copy</button></pre>
+<a id="md:install-dependencies" class="tsd-anchor"></a><h4><a href="#md:install-dependencies">Install Dependencies</a></h4><p>Office MCP uses a lean set of dependencies for Office automation, Markdown, Mermaid, and more:</p>
+<pre><code class="language-bash"><span class="hl-0">npm</span><span class="hl-1"> </span><span class="hl-2">install</span>
+</code><button>Copy</button></pre>
+<p>Or use Docker for a zero-hassle setup:</p>
+<pre><code class="language-bash"><span class="hl-0">docker</span><span class="hl-1"> </span><span class="hl-2">build</span><span class="hl-1"> </span><span class="hl-3">-t</span><span class="hl-1"> </span><span class="hl-2">mcp-office</span><span class="hl-1"> </span><span class="hl-2">.</span><br/><span class="hl-0">docker</span><span class="hl-1"> </span><span class="hl-2">run</span><span class="hl-1"> </span><span class="hl-3">-p</span><span class="hl-1"> </span><span class="hl-4">3000</span><span class="hl-2">:3000</span><span class="hl-1"> </span><span class="hl-2">mcp-office</span>
+</code><button>Copy</button></pre>
+<a id="md:compile-typescript" class="tsd-anchor"></a><h4><a href="#md:compile-typescript">Compile TypeScript</a></h4><p>Turn TypeScript into JavaScript magic:</p>
+<pre><code class="language-bash"><span class="hl-0">npm</span><span class="hl-1"> </span><span class="hl-2">run</span><span class="hl-1"> </span><span class="hl-2">build</span>
+</code><button>Copy</button></pre>
+<a id="md:running-the-server" class="tsd-anchor"></a><h3><a href="#md:running-the-server">Running the Server</a></h3><p>Launch the server on port 3000:</p>
+<pre><code class="language-bash"><span class="hl-0">npm</span><span class="hl-1"> </span><span class="hl-2">start</span>
+</code><button>Copy</button></pre>
+<p>For production, use PM2:</p>
+<pre><code class="language-bash"><span class="hl-0">npm</span><span class="hl-1"> </span><span class="hl-2">install</span><span class="hl-1"> </span><span class="hl-3">-g</span><span class="hl-1"> </span><span class="hl-2">pm2</span><br/><span class="hl-0">pm2</span><span class="hl-1"> </span><span class="hl-2">start</span><span class="hl-1"> </span><span class="hl-2">dist/server/index.js</span><span class="hl-1"> </span><span class="hl-3">--name</span><span class="hl-1"> </span><span class="hl-2">mcp-office</span>
+</code><button>Copy</button></pre>
+<p>AI agents (e.g., Claude) can hit the API at <code>http://localhost:3000</code>. For cloud deployment, try AWS or Azure.</p>
+<a id="md:debugging-with-mcp-cli" class="tsd-anchor"></a><h3><a href="#md:debugging-with-mcp-cli">Debugging with mcp-cli</a></h3><pre><code class="language-bash"><span class="hl-0">npx</span><span class="hl-1"> </span><span class="hl-2">fastmcp</span><span class="hl-1"> </span><span class="hl-2">dev</span><span class="hl-1"> </span><span class="hl-2">dist/server/index.js</span>
+</code><button>Copy</button></pre>
+<a id="md:inspect-with-mcp-inspector" class="tsd-anchor"></a><h3><a href="#md:inspect-with-mcp-inspector">Inspect with MCP Inspector</a></h3><pre><code class="language-bash"><span class="hl-0">npx</span><span class="hl-1"> </span><span class="hl-2">fastmcp</span><span class="hl-1"> </span><span class="hl-2">inspect</span><span class="hl-1"> </span><span class="hl-2">src/tools/index.ts</span>
+</code><button>Copy</button></pre>
+<a id="md:basic-examples" class="tsd-anchor"></a><h3><a href="#md:basic-examples">Basic Examples</a></h3><p>Here’s a sneak peek at Office MCP’s powers using <code>curl</code>. Prefer Postman or Python? It’s all good!</p>
+<p>Can you believe it? This is how AI accesses the MCPs! 😯 It was so nice believing in magic! 😒</p>
+<a id="md:list-word-styles" class="tsd-anchor"></a><h4><a href="#md:list-word-styles">List Word Styles</a></h4><pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">GET</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/styles/list?document=/docs/sample.docx&quot;</span>
+</code><button>Copy</button></pre>
+<p><strong>Response</strong>:</p>
+<pre><code class="language-json"><span class="hl-1">{</span><br/><span class="hl-1">  </span><span class="hl-5">&quot;styles&quot;</span><span class="hl-1">: [</span><span class="hl-2">&quot;Heading1&quot;</span><span class="hl-1">, </span><span class="hl-2">&quot;Normal&quot;</span><span class="hl-1">, </span><span class="hl-2">&quot;Title&quot;</span><span class="hl-1">]</span><br/><span class="hl-1">}</span>
+</code><button>Copy</button></pre>
+<a id="md:apply-a-style" class="tsd-anchor"></a><h4><a href="#md:apply-a-style">Apply a Style</a></h4><pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/styles/apply?document=/docs/sample.docx&amp;style=Heading1&amp;range=paragraph:1&quot;</span>
+</code><button>Copy</button></pre>
+<p><strong>Response</strong>:</p>
+<pre><code class="language-json"><span class="hl-1">{ </span><span class="hl-5">&quot;success&quot;</span><span class="hl-1">: </span><span class="hl-3">true</span><span class="hl-1"> }</span>
+</code><button>Copy</button></pre>
+<a id="md:convert-word-to-markdown" class="tsd-anchor"></a><h4><a href="#md:convert-word-to-markdown">Convert Word to Markdown</a></h4><pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/markdown/export?document=/docs/CV.docx&amp;output=/docs/CV.md&amp;comments=append&quot;</span>
+</code><button>Copy</button></pre>
+<p><strong>Response</strong>:</p>
+<pre><code class="language-json"><span class="hl-1">{ </span><span class="hl-5">&quot;success&quot;</span><span class="hl-1">: </span><span class="hl-3">true</span><span class="hl-1">, </span><span class="hl-5">&quot;output&quot;</span><span class="hl-1">: </span><span class="hl-2">&quot;/docs/CV.md&quot;</span><span class="hl-1"> }</span>
+</code><button>Copy</button></pre>
+<p>Dive into the <a href="#md:api-documentation">API Documentation</a> for more endpoints and the <a href="#md:word-use-cases-with-a-chuckle">Word Use Cases</a> for laughs and inspiration!</p>
+<hr>
+<a id="md:api-documentation" class="tsd-anchor"></a><h2><a href="#md:api-documentation">API Documentation</a></h2><p>The Office MCP Server serves a RESTful API via <strong>FastMCP</strong>, with resource templates for file system ops, Office automation, and resource management. Every endpoint is type-safe (thanks, <code>zod</code>!), documented with JSDoc, and ready for AI or developer consumption. Let’s break it down.</p>
+<a id="md:resource-structure" class="tsd-anchor"></a><h3><a href="#md:resource-structure">Resource Structure</a></h3><p>Office MCP’s API is clean and predictable:</p>
+<ul>
+<li><strong>Path</strong>: <code>/{module}/{tool}/{operation}</code> (e.g., <code>/word/styles/apply</code>)</li>
+<li><strong>Parameters</strong>: Query params (GET) or JSON body (POST)</li>
+<li><strong>Completions</strong>: Dynamic suggestions for inputs (e.g., style names, file paths)</li>
+<li><strong>Response</strong>: JSON with <code>success</code>, <code>data</code>, or <code>error</code></li>
+<li><strong>Resource URIs</strong>: Uses standard file paths and introduces the <code>office://&lt;document_path&gt;?range=&lt;range_specifier&gt;</code> URI scheme via <code>addResourceTemplate</code> for accessing specific parts of Office documents dynamically (e.g., <code>office://docs/report.docx?range=paragraph:5</code>). <em>Note: Full implementation for dynamic range access via COM interop is pending.</em></li>
+</ul>
+<p><strong>Workflow Example</strong>:</p>
+<pre><code class="language-mermaid"><span class="hl-6">graph</span><span class="hl-1"> </span><span class="hl-0">TD</span><br/><span class="hl-1">  </span><span class="hl-7">A</span><span class="hl-6">[</span><span class="hl-2">Client</span><span class="hl-6">]</span><span class="hl-1"> </span><span class="hl-6">--&gt;|</span><span class="hl-2">GET /word/styles/list</span><span class="hl-6">|</span><span class="hl-1"> </span><span class="hl-7">B</span><span class="hl-6">[</span><span class="hl-2">Office MCP Server</span><span class="hl-6">]</span><br/><span class="hl-1">  </span><span class="hl-7">B </span><span class="hl-6">--&gt;|</span><span class="hl-2">Validate with zod</span><span class="hl-6">|</span><span class="hl-1"> </span><span class="hl-7">C</span><span class="hl-6">[</span><span class="hl-2">Office JavaScript API</span><span class="hl-6">]</span><br/><span class="hl-1">  </span><span class="hl-7">C </span><span class="hl-6">--&gt;|</span><span class="hl-2">Retrieve styles</span><span class="hl-6">|</span><span class="hl-1"> </span><span class="hl-7">D</span><span class="hl-6">[</span><span class="hl-2">Word Document</span><span class="hl-6">]</span><br/><span class="hl-1">  </span><span class="hl-7">D </span><span class="hl-6">--&gt;|</span><span class="hl-2">Return styles</span><span class="hl-6">|</span><span class="hl-1"> </span><span class="hl-7">C</span><br/><span class="hl-1">  </span><span class="hl-7">C </span><span class="hl-6">--&gt;|</span><span class="hl-2">JSON response</span><span class="hl-6">|</span><span class="hl-1"> </span><span class="hl-7">B</span><br/><span class="hl-1">  </span><span class="hl-7">B </span><span class="hl-6">--&gt;|</span><span class="hl-2">Response: </span><span class="hl-1">{ </span><span class="hl-2">styles: </span><span class="hl-1">[</span><span class="hl-2">...</span><span class="hl-1">]</span><span class="hl-2"> </span><span class="hl-1">}</span><span class="hl-6">|</span><span class="hl-1"> </span><span class="hl-7">A</span>
+</code><button>Copy</button></pre>
+<a id="md:file-system-tools" class="tsd-anchor"></a><h3><a href="#md:file-system-tools">File System Tools</a></h3><p>Manage directories, files, and blobs like a filesystem ninja.</p>
+<a id="md:fsdirectory" class="tsd-anchor"></a><h4><a href="#md:fsdirectory"><code>fs/directory</code></a></h4><ul>
+<li><strong>Description</strong>: Read and manage directories.</li>
+<li><strong>Operations</strong>:<ul>
+<li><code>list</code>: List files/subdirs (<code>GET /fs/directory/list?path=/docs&amp;filter=*.docx</code>)</li>
+<li><code>create</code>: Create a directory (<code>POST /fs/directory/create?path=/docs/new</code>)</li>
+<li><code>delete</code>: Delete a directory (<code>POST /fs/directory/delete?path=/docs/old</code>)</li>
+</ul>
+</li>
+<li><strong>Example</strong>:<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">GET</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/fs/directory/list?path=/docs&amp;filter=*.docx&quot;</span>
+</code><button>Copy</button></pre>
+<strong>Response</strong>:<pre><code class="language-json"><span class="hl-1">[</span><br/><span class="hl-1">  </span><span class="hl-2">&quot;/docs/sample.docx&quot;</span><span class="hl-1">,</span><br/><span class="hl-1">  </span><span class="hl-2">&quot;/docs/report.docx&quot;</span><br/><span class="hl-1">]</span>
+</code><button>Copy</button></pre>
+</li>
+</ul>
+<a id="md:fsfile" class="tsd-anchor"></a><h4><a href="#md:fsfile"><code>fs/file</code></a></h4><ul>
+<li><strong>Description</strong>: Read/write file contents.</li>
+<li><strong>Operations</strong>:<ul>
+<li><code>read</code>: Read as text/binary (<code>GET /fs/file/read?path=/docs/sample.docx&amp;format=binary</code>)</li>
+<li><code>write</code>: Write content (<code>POST /fs/file/write?path=/docs/sample.txt&amp;content=Hello</code>)</li>
+<li><code>delete</code>: Delete a file (<code>POST /fs/file/delete?path=/docs/sample.txt</code>)</li>
+</ul>
+</li>
+<li><strong>Example</strong>:<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/fs/file/write?path=/docs/note.txt&amp;content=Meeting notes&quot;</span>
+</code><button>Copy</button></pre>
+</li>
+</ul>
+<a id="md:fsblob" class="tsd-anchor"></a><h4><a href="#md:fsblob"><code>fs/blob</code></a></h4><ul>
+<li><strong>Description</strong>: Handle document blobs for AI or external tools.</li>
+<li><strong>Operations</strong>:<ul>
+<li><code>save</code>: Save a blob (<code>POST /fs/blob/save?filename=doc1.docx</code>)</li>
+<li><code>read</code>: Read as blob (<code>GET /fs/blob/read?path=/docs/doc1.docx</code>)</li>
+</ul>
+</li>
+</ul>
+<a id="md:word-tools" class="tsd-anchor"></a><h3><a href="#md:word-tools">Word Tools</a></h3><p>Master Word documents with these power tools.</p>
+<a id="md:wordstyles" class="tsd-anchor"></a><h4><a href="#md:wordstyles"><code>word/styles</code></a></h4><ul>
+<li><strong>Description</strong>: Manage document styles.</li>
+<li><strong>Operations</strong>:<ul>
+<li><code>list</code>: List styles</li>
+<li><code>apply</code>: Apply a style</li>
+<li><code>create</code>: Create a style</li>
+<li><code>modify</code>: Modify a style</li>
+<li><code>delete</code>: Delete a style</li>
+</ul>
+</li>
+<li><strong>Parameters</strong>:<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+<th>Optional</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>style</td>
+<td>string</td>
+<td>Style name (e.g., Heading1)</td>
+<td>No</td>
+</tr>
+<tr>
+<td>range</td>
+<td>string</td>
+<td>Range (e.g., paragraph:1)</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>props</td>
+<td>object</td>
+<td>Style properties</td>
+<td>Yes</td>
+</tr>
+</tbody></table>
+</li>
+<li><strong>Example</strong>:<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/styles/apply?document=/docs/report.docx&amp;style=Heading1&amp;range=paragraph:1&quot;</span>
+</code><button>Copy</button></pre>
+</li>
+</ul>
+<a id="md:wordmarkdownimport" class="tsd-anchor"></a><h4><a href="#md:wordmarkdownimport"><code>word/markdown/import</code></a></h4><ul>
+<li><strong>Description</strong>: Convert Markdown to Word with templates.</li>
+<li><strong>Operations</strong>:<ul>
+<li><code>parse</code>: Parse Markdown</li>
+<li><code>applyTemplate</code>: Apply a Word template</li>
+</ul>
+</li>
+<li><strong>Example</strong>:<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/markdown/import?path=/docs/input.md&amp;template=/docs/template.docx&amp;output=/docs/output.docx&quot;</span>
+</code><button>Copy</button></pre>
+</li>
+</ul>
+<a id="md:wordmerge" class="tsd-anchor"></a><h4><a href="#md:wordmerge"><code>word/merge</code></a></h4><ul>
+<li><strong>Description</strong>: Merge Word documents.</li>
+<li><strong>Operations</strong>:<ul>
+<li><code>compare</code>: Compare documents</li>
+<li><code>merge</code>: Merge content</li>
+<li><code>resolve</code>: Resolve conflicts (AI-driven)</li>
+</ul>
+</li>
+<li><strong>Example</strong>:<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/merge?docs=/docs/doc1.docx,/docs/doc2.docx&amp;output=/docs/merged.docx&quot;</span>
+</code><button>Copy</button></pre>
+</li>
+</ul>
+<a id="md:wordembedded-objects" class="tsd-anchor"></a><h4><a href="#md:wordembedded-objects"><code>word/embedded-objects</code></a></h4><ul>
+<li><strong>Description</strong>: Gestiona objetos OLE incrustados y vinculados en documentos Word. Permite insertar, modificar, eliminar y extraer objetos. La extracción (<code>extractAll</code>) intenta guardar objetos OLE y, si es posible, sus representaciones de imagen, pero puede tener limitaciones con ciertos tipos (como Packages). Requiere COM Interop.</li>
+<li><strong>Operations</strong>:<ul>
+<li><code>insert</code>: Inserta un objeto OLE desde un archivo.</li>
+<li><code>modify</code>: Reemplaza un objeto OLE existente por uno nuevo.</li>
+<li><code>delete</code>: Elimina un objeto OLE por índice.</li>
+<li><code>extractAll</code>: Extrae todos los objetos OLE a un directorio.</li>
+</ul>
+</li>
+<li><strong>Example</strong>:<pre><code class="language-bash"><span class="hl-8"># Extraer todos los objetos</span><br/><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/embedded-objects/extractAll?filePath=/docs/Composición.docx&amp;outputDirectory=/docs/objetos_extraidos&quot;</span><br/><span class="hl-8"># Insertar un objeto</span><br/><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/embedded-objects/insert?filePath=/docs/Reporte.docx&amp;objectPath=/docs/data.xlsx&quot;</span><br/><span class="hl-8"># Eliminar el segundo objeto</span><br/><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/embedded-objects/delete?filePath=/docs/DocumentoLargo.docx&amp;objectIndex=2&quot;</span>
+</code><button>Copy</button></pre>
+</li>
+</ul>
+<a id="md:wordembedded-objects-1" class="tsd-anchor"></a><h4><a href="#md:wordembedded-objects-1"><code>word/embedded-objects</code></a></h4><ul>
+<li><strong>Description</strong>: Gestiona objetos OLE incrustados y vinculados en documentos Word. Permite insertar, modificar, eliminar y extraer objetos. La extracción (<code>extractAll</code>) intenta guardar objetos OLE y, si es posible, sus representaciones de imagen, pero puede tener limitaciones con ciertos tipos (como Packages). Requiere COM Interop.</li>
+<li><strong>Operations</strong>:<ul>
+<li><code>insert</code>: Inserta un objeto OLE desde un archivo.</li>
+<li><code>modify</code>: Reemplaza un objeto OLE existente por uno nuevo.</li>
+<li><code>delete</code>: Elimina un objeto OLE por índice.</li>
+<li><code>extractAll</code>: Extrae todos los objetos OLE a un directorio.</li>
+</ul>
+</li>
+<li><strong>Example</strong>:<pre><code class="language-bash"><span class="hl-8"># Extraer todos los objetos</span><br/><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/embedded-objects/extractAll?filePath=/docs/Composición.docx&amp;outputDirectory=/docs/objetos_extraidos&quot;</span><br/><span class="hl-8"># Insertar un objeto</span><br/><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/embedded-objects/insert?filePath=/docs/Reporte.docx&amp;objectPath=/docs/data.xlsx&quot;</span><br/><span class="hl-8"># Eliminar el segundo objeto</span><br/><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/embedded-objects/delete?filePath=/docs/DocumentoLargo.docx&amp;objectIndex=2&quot;</span>
+</code><button>Copy</button></pre>
+</li>
+</ul>
+<a id="md:wordimage" class="tsd-anchor"></a><h4><a href="#md:wordimage"><code>word/image</code></a></h4><ul>
+<li><strong>Description</strong>: Extract and insert images in Word documents. <em>Note: Requires COM interop, implementation status may vary.</em></li>
+<li><strong>Operations</strong>:<ul>
+<li><code>extract</code>: Extract images from a document (<code>POST /word/image/extract?document=/docs/report.docx&amp;outputDir=/images/</code>)</li>
+<li><code>insert</code>: Insert an image into a document (<code>POST /word/image/insert?document=/docs/report.docx&amp;imagePath=/images/logo.png&amp;position=paragraph:3</code>)</li>
+</ul>
+</li>
+</ul>
+<a id="md:wordgenerate-and-insert-text" class="tsd-anchor"></a><h4><a href="#md:wordgenerate-and-insert-text"><code>word/generate-and-insert-text</code></a></h4><ul>
+<li><strong>Description</strong>: Uses AI (via FastMCP&#39;s <code>requestSampling</code>) to generate text based on context and insert it into a Word document. <em>Note: Requires COM interop for insertion.</em></li>
+<li><strong>Operations</strong>:<ul>
+<li><code>generate</code>: Generate text based on surrounding content or a prompt.</li>
+<li><code>insert</code>: Insert the generated text at a specified position.</li>
+</ul>
+</li>
+<li><strong>Example</strong>:<pre><code class="language-bash"><span class="hl-8"># Example using a hypothetical prompt template &#39;summarize-section&#39;</span><br/><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/generate-and-insert-text?document=/docs/report.docx&amp;range=paragraph:5&amp;prompt=summarize-section&amp;position=after&quot;</span>
+</code><button>Copy</button></pre>
+</li>
+</ul>
+<a id="md:wordpage" class="tsd-anchor"></a><h4><a href="#md:wordpage"><code>word/page</code></a></h4><ul>
+<li><strong>Description</strong>: Configures page layout settings (size, margins, orientation, headers/footers) for a specific section (default: first) in a Word document. Uses COM Interop.</li>
+<li><strong>Operations</strong>:<ul>
+<li><code>get</code>: Retrieves the current page setup.</li>
+<li><code>set</code>: Sets the entire page setup configuration for the specified properties.</li>
+<li><code>modify</code>: Modifies specific page setup properties.</li>
+</ul>
+</li>
+<li><strong>Key Parameters</strong>: <code>filePath</code>, <code>sectionIndex</code> (optional), <code>size</code>, <code>orientation</code>, <code>pageWidth</code>, <code>pageHeight</code>, <code>topMargin</code>, <code>bottomMargin</code>, <code>leftMargin</code>, <code>rightMargin</code>, <code>gutter</code>, <code>headerDistance</code>, <code>footerDistance</code>, <code>differentFirstPage</code> (boolean), <code>oddAndEvenPages</code> (boolean). Margins/dimensions require units (in, cm, mm, pt).</li>
+<li><strong>Example</strong>:<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/page/modify?document=/docs/report.docx&amp;orientation=wdOrientPortrait&amp;differentFirstPage=true&quot;</span>
+</code><button>Copy</button></pre>
+</li>
+</ul>
+<p><em>See the <a href="#md:word-use-cases-with-a-chuckle">Word Use Cases</a> for more Word tools in action!</em></p>
+<a id="md:excel-tools" class="tsd-anchor"></a><h3><a href="#md:excel-tools">Excel Tools</a></h3><p>Automate Excel like a spreadsheet sorcerer.</p>
+<a id="md:excelrange" class="tsd-anchor"></a><h4><a href="#md:excelrange"><code>excel/range</code></a></h4><ul>
+<li><strong>Description</strong>: Manipulate cell ranges.</li>
+<li><strong>Operations</strong>:<ul>
+<li><code>read</code>: Read values</li>
+<li><code>write</code>: Write values</li>
+<li><code>format</code>: Format cells</li>
+<li><code>apply</code>: Apply formulas</li>
+</ul>
+</li>
+<li><strong>Example</strong>:<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/excel/range/write?document=/docs/data.xlsx&amp;range=A1:B2&amp;values=[[1,2],[3,4]]&quot;</span>
+</code><button>Copy</button></pre>
+</li>
+</ul>
+<a id="md:powerpoint-tools" class="tsd-anchor"></a><h3><a href="#md:powerpoint-tools">PowerPoint Tools</a></h3><p>Rule PowerPoint presentations with ease.</p>
+<a id="md:powerpointslides" class="tsd-anchor"></a><h4><a href="#md:powerpointslides"><code>powerpoint/slides</code></a></h4><ul>
+<li><strong>Description</strong>: Manage slides.</li>
+<li><strong>Operations</strong>:<ul>
+<li><code>add</code>: Add a slide</li>
+<li><code>delete</code>: Delete a slide</li>
+<li><code>set</code>: Set layout/transition</li>
+</ul>
+</li>
+<li><strong>Example</strong>:<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/powerpoint/slides/add?document=/docs/presentation.pptx&amp;layout=TitleSlide&quot;</span>
+</code><button>Copy</button></pre>
+</li>
+</ul>
+<a id="md:cross-application-tools" class="tsd-anchor"></a><h3><a href="#md:cross-application-tools">Cross-Application Tools</a></h3><p>Bridge Word, Excel, and PowerPoint or export to PDF.</p>
+<a id="md:officepdfexport" class="tsd-anchor"></a><h4><a href="#md:officepdfexport"><code>office/pdf/export</code></a></h4><ul>
+<li><strong>Description</strong>: Export to PDF.</li>
+<li><strong>Operations</strong>:<ul>
+<li><code>convert</code>: Convert to PDF</li>
+<li><code>configure</code>: Set options</li>
+<li><code>save</code>: Save or return blob</li>
+</ul>
+</li>
+<li><strong>Example</strong>:<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/office/pdf/export?document=/docs/report.docx&amp;output=/docs/report.pdf&quot;</span>
+</code><button>Copy</button></pre>
+</li>
+</ul>
+<a id="md:officecombine" class="tsd-anchor"></a><h4><a href="#md:officecombine"><code>office/combine</code></a></h4><ul>
+<li><strong>Description</strong>: Combine Word, Excel, PowerPoint, and PDF into Word.</li>
+<li><strong>Example</strong>:<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/office/combine?directory=/docs/Oferta&amp;output=/docs/combined.docx&quot;</span>
+</code><button>Copy</button></pre>
+</li>
+</ul>
+<a id="md:static-and-dynamic-resources" class="tsd-anchor"></a><h3><a href="#md:static-and-dynamic-resources">Static and Dynamic Resources</a></h3><p>Manage guides and user content.</p>
+<a id="md:memoryai_assistant_guide" class="tsd-anchor"></a><h4><a href="#md:memoryai_assistant_guide"><code>memory/ai_assistant_guide</code></a></h4><ul>
+<li><strong>Description</strong>: Static guide for Office MCP API usage.</li>
+<li><strong>Operations</strong>:<ul>
+<li><code>read</code>: Retrieve guide/section</li>
+<li><code>list</code>: List sections</li>
+</ul>
+</li>
+<li><strong>Example</strong>:<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">GET</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/memory/ai_assistant_guide?section=tool_usage&quot;</span>
+</code><button>Copy</button></pre>
+</li>
+</ul>
+<a id="md:dynamicresources" class="tsd-anchor"></a><h4><a href="#md:dynamicresources"><code>dynamic/resources</code></a></h4><ul>
+<li><strong>Description</strong>: Manage user-generated content (docs, images, etc.).</li>
+<li><strong>Operations</strong>:<ul>
+<li><code>list</code>: List resources</li>
+<li><code>read</code>: Retrieve content</li>
+<li><code>write</code>: Upload/modify</li>
+<li><code>delete</code>: Remove</li>
+<li><code>metadata</code>: Get/set metadata</li>
+<li><code>search</code>: Search by content/metadata</li>
+</ul>
+</li>
+<li><strong>Example</strong>:<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">GET</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/dynamic/resources/list?type=docx&quot;</span>
+</code><button>Copy</button></pre>
+</li>
+</ul>
+<p><strong>Visual Overview</strong>:</p>
+<pre><code class="language-mermaid"><span class="hl-6">classDiagram</span><br/><span class="hl-1">  </span><span class="hl-6">class</span><span class="hl-1"> </span><span class="hl-9">MCP_Server</span><span class="hl-1"> </span><span class="hl-6">{</span><br/><span class="hl-1">    </span><span class="hl-6">+</span><span class="hl-3">FastMCP</span><span class="hl-1"> </span><span class="hl-7">API</span><br/><span class="hl-1">    +word/styles</span><br/><span class="hl-1">    +excel/range</span><br/><span class="hl-1">    +powerpoint/slides</span><br/><span class="hl-1">    +office/pdf/export</span><br/><span class="hl-1">    +dynamic/resources</span><br/><span class="hl-1">    +memory/ai_assistant_guide</span><br/><span class="hl-1">  </span><span class="hl-6">}</span><br/><span class="hl-1">  </span><span class="hl-6">class</span><span class="hl-1"> </span><span class="hl-9">Dynamic_Resources</span><span class="hl-1"> </span><span class="hl-6">{</span><br/><span class="hl-1">    </span><span class="hl-6">+</span><span class="hl-0">list</span><span class="hl-1">()</span><br/><span class="hl-1">    </span><span class="hl-6">+</span><span class="hl-0">read</span><span class="hl-1">()</span><br/><span class="hl-1">    </span><span class="hl-6">+</span><span class="hl-0">write</span><span class="hl-1">()</span><br/><span class="hl-1">    </span><span class="hl-6">+</span><span class="hl-0">delete</span><span class="hl-1">()</span><br/><span class="hl-1">    </span><span class="hl-6">+</span><span class="hl-0">metadata</span><span class="hl-1">()</span><br/><span class="hl-1">    </span><span class="hl-6">+</span><span class="hl-0">search</span><span class="hl-1">()</span><br/><span class="hl-1">  </span><span class="hl-6">}</span><br/><span class="hl-1">  </span><span class="hl-6">class</span><span class="hl-1"> </span><span class="hl-9">Static_Resources</span><span class="hl-1"> </span><span class="hl-6">{</span><br/><span class="hl-1">    </span><span class="hl-6">+</span><span class="hl-0">read</span><span class="hl-1">()</span><br/><span class="hl-1">    </span><span class="hl-6">+</span><span class="hl-0">list</span><span class="hl-1">()</span><br/><span class="hl-1">  </span><span class="hl-6">}</span><br/><span class="hl-1">  </span><span class="hl-9">MCP_Server</span><span class="hl-1"> </span><span class="hl-6">--&gt;</span><span class="hl-1"> </span><span class="hl-9">Dynamic_Resources</span><br/><span class="hl-1">  </span><span class="hl-9">MCP_Server</span><span class="hl-1"> </span><span class="hl-6">--&gt;</span><span class="hl-1"> </span><span class="hl-9">Static_Resources</span>
+</code><button>Copy</button></pre>
+<hr>
+<a id="md:word-use-cases-with-a-chuckle" class="tsd-anchor"></a><h2><a href="#md:word-use-cases-with-a-chuckle">Word Use Cases (with a Chuckle)</a></h2><p>Office MCP’s Word tools are like a Swiss Army knife for documents—versatile, sharp, and ready for anything. Below are the 10 Word-specific use cases from the implementation plan, served with humor to show how Office MCP saves the day. Each includes an API call and a glimpse of the chaos it resolves.</p>
+<a id="md:use-case-1-markdown-magic" class="tsd-anchor"></a><h3><a href="#md:use-case-1-markdown-magic">Use Case 1: Markdown Magic</a></h3><p><strong>Scenario</strong>: Your boss drops a Word CV (<code>CV.docx</code>) and demands a Markdown version for the company wiki, with comments preserved. Manually copying comments? That’s a one-way ticket to Snoozeville! 😴</p>
+<p><strong>Solution</strong>:</p>
+<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/markdown/export?document=/docs/CV.docx&amp;output=/docs/CV.md&amp;comments=append&quot;</span>
+</code><button>Copy</button></pre>
+<p>Office MCP extracts the content, converts it to VS Code-compatible Markdown, and appends comments as a tidy <code>## Comments</code> section. Your wiki is now the envy of the tech team, and you’re sipping coffee like a champ.</p>
+<a id="md:use-case-2-merge-mayhem" class="tsd-anchor"></a><h3><a href="#md:use-case-2-merge-mayhem">Use Case 2: Merge Mayhem</a></h3><p><strong>Scenario</strong>: Two teammates sent conflicting drafts of <code>cuentoAladdin.docx</code>. Merging them manually is like mediating a toddler tantrum. Office MCP’s AI steps in to save your sanity! 🦁</p>
+<p><strong>Solution</strong>:</p>
+<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/merge?docs=/docs/cuentoAladdin.docx,/docs/Cuentos/cuentoAladdin.docx&amp;output=/docs/merged.docx&quot;</span>
+</code><button>Copy</button></pre>
+<p>Office MCP compares, merges, and uses AI to resolve conflicts (e.g., picking the best paragraph). The result? A single, harmonious fairy tale ready for storytime.</p>
+<a id="md:use-case-3-template-trickery" class="tsd-anchor"></a><h3><a href="#md:use-case-3-template-trickery">Use Case 3: Template Trickery</a></h3><p><strong>Scenario</strong>: Your startup’s budget doc (<code>PresupuestosEvolutio.docx</code>) is full of client names. Sharing it risks a data leak bigger than a reality TV scandal! 😱</p>
+<p><strong>Solution</strong>:</p>
+<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/template?document=/docs/PresupuestosEvolutio.docx&amp;output=/docs/Template.docx&quot;</span>
+</code><button>Copy</button></pre>
+<p>Office MCP’s AI swaps sensitive text for placeholders like <code>[CompanyName]</code>. Your intern can now churn out budgets without accidentally emailing secrets to the competition.</p>
+<a id="md:use-case-4-markdown-import-mania" class="tsd-anchor"></a><h3><a href="#md:use-case-4-markdown-import-mania">Use Case 4: Markdown Import Mania</a></h3><p><strong>Scenario</strong>: You’ve got a Markdown file (<code>input.md</code>) that needs to become a polished Word doc using your company’s template (<code>PlantillaEvolutio.docx</code>). Copy-pasting? That’s so 2010.</p>
+<p><strong>Solution</strong>:</p>
+<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/markdown/import?path=/docs/input.md&amp;template=/docs/PlantillaEvolutio.docx&amp;output=/docs/output.docx&quot;</span>
+</code><button>Copy</button></pre>
+<p>Office MCP parses the Markdown, maps headers to template styles, and delivers a Word doc that screams “professional.” Your boss thinks you spent hours on it—shh, let’s keep Office MCP our little secret! 😉</p>
+<a id="md:use-case-5-reformatting-rescue" class="tsd-anchor"></a><h3><a href="#md:use-case-5-reformatting-rescue">Use Case 5: Reformatting Rescue</a></h3><p><strong>Scenario</strong>: A client sent <code>PropuestasRandom.docx</code>, a formatting disaster that looks like it was styled by a caffeinated squirrel. Fixing it manually? Pass the aspirin!</p>
+<p><strong>Solution</strong>:</p>
+<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/reformat?document=/docs/PropuestasRandom.docx&amp;styleSet=Professional&amp;output=/docs/PropuestasFormatted.docx&quot;</span>
+</code><button>Copy</button></pre>
+<p>Office MCP analyzes the structure, applies professional styles, and adds page breaks. The result is a document so sleek, it could star in a corporate photoshoot.</p>
+<a id="md:use-case-6-embedded-object-extraction-extravaganza" class="tsd-anchor"></a><h3><a href="#md:use-case-6-embedded-object-extraction-extravaganza">Use Case 6: Embedded Object Extraction Extravaganza</a></h3><p><strong>Scenario</strong>: <code>Composición.docx</code> is stuffed with embedded PDFs and Excel files, and you need them extracted. Digging through Word’s UI feels like an archaeological expedition. 🦴</p>
+<p><strong>Solution</strong>:</p>
+<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/embedded-objects/extractAll?document=/docs/Composición.docx&amp;outputDir=/docs/&quot;</span>
+</code><button>Copy</button></pre>
+<p>Office MCP pulls out every embedded file (e.g., <code>embedded_1.pdf</code>) and saves them neatly. You’re now the hero of the project audit, no shovel required!</p>
+<a id="md:use-case-7-embedded-object-insertion-innovation" class="tsd-anchor"></a><h3><a href="#md:use-case-7-embedded-object-insertion-innovation">Use Case 7: Embedded Object Insertion Innovation</a></h3><p><strong>Scenario</strong>: You need to add a spreadsheet (<code>data.xlsx</code>) as an embedded object into your report (<code>Reporte.docx</code>). Copy-pasting can mess up formatting, and linking might break if the source file moves. You need a clean, embedded solution! 📊</p>
+<p><strong>Solution</strong>:</p>
+<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/embedded-objects/insert?filePath=/docs/Reporte.docx&amp;objectPath=/docs/data.xlsx&quot;</span>
+</code><button>Copy</button></pre>
+<p>Office MCP uses <code>word/embedded-objects/insert</code> to cleanly embed the Excel file into your Word document. The data is now self-contained, and your report is ready to impress!</p>
+<a id="md:use-case-8-embedded-object-modification-magic" class="tsd-anchor"></a><h3><a href="#md:use-case-8-embedded-object-modification-magic">Use Case 8: Embedded Object Modification Magic</a></h3><p><strong>Scenario</strong>: The embedded chart in your presentation (<code>Presentacion.docx</code>) needs updating with the latest data from a new Excel file (<code>updated_data.xlsx</code>). Manually replacing it is a fiddly process. ✨</p>
+<p><strong>Solution</strong>:</p>
+<pre><code class="language-bash"><span class="hl-8"># Assuming the chart is the first embedded object (index 1)</span><br/><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/embedded-objects/modify?filePath=/docs/Presentacion.docx&amp;objectIndex=1&amp;newObjectPath=/docs/updated_data.xlsx&quot;</span>
+</code><button>Copy</button></pre>
+<p>Office MCP uses <code>word/embedded-objects/modify</code> to replace the existing embedded object with the new file. Your presentation is now up-to-date with minimal effort!</p>
+<a id="md:use-case-9-embedded-object-deletion-duty" class="tsd-anchor"></a><h3><a href="#md:use-case-9-embedded-object-deletion-duty">Use Case 9: Embedded Object Deletion Duty</a></h3><p><strong>Scenario</strong>: Your document (<code>DocumentoLargo.docx</code>) has an old, unnecessary embedded file that&#39;s making the file size huge. You need to remove it without breaking anything. 🗑️</p>
+<p><strong>Solution</strong>:</p>
+<pre><code class="language-bash"><span class="hl-8"># Assuming the object to delete is the third embedded object (index 3)</span><br/><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/embedded-objects/delete?filePath=/docs/DocumentoLargo.docx&amp;objectIndex=3&quot;</span>
+</code><button>Copy</button></pre>
+<p>Office MCP uses <code>word/embedded-objects/delete</code> to precisely remove the embedded object at the specified index. Your document is now leaner and cleaner!</p>
+<a id="md:use-case-10-mermaid-import-marvel" class="tsd-anchor"></a><h3><a href="#md:use-case-10-mermaid-import-marvel">Use Case 10: Mermaid Import Marvel</a></h3><p><strong>Scenario</strong>: Your tech doc needs a flowchart, but typing Mermaid syntax in Word is like teaching a cat to code. Office MCP makes it purr-fect! 🐱</p>
+<p><strong>Solution</strong>:</p>
+<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/mermaid/import?syntax=graph TD; A--&gt;B&amp;format=svg&amp;position=paragraph:5&amp;document=/docs/tech.docx&quot;</span>
+</code><button>Copy</button></pre>
+<p>Office MCP renders the Mermaid diagram as SVG and inserts it into your doc. Your flowchart is now the star of the show, and you didn’t touch a single pixel.</p>
+<a id="md:use-case-8-mermaid-export-escapade" class="tsd-anchor"></a><h3><a href="#md:use-case-8-mermaid-export-escapade">Use Case 8: Mermaid Export Escapade</a></h3><p><strong>Scenario</strong>: Your Word doc has a Mermaid diagram buried inside, and you need it as a PNG for a presentation. Finding it manually? That’s a scavenger hunt gone wrong.</p>
+<p><strong>Solution</strong>:</p>
+<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/mermaid/export?diagram=1&amp;format=png&amp;output=/docs/diagram.png&amp;document=/docs/tech.docx&quot;</span>
+</code><button>Copy</button></pre>
+<p>Office MCP extracts the diagram, renders it as a PNG, and saves it. Your slide deck just got a visual upgrade, and you’re ready to dazzle the boardroom.</p>
+<a id="md:use-case-9-analysis-antics" class="tsd-anchor"></a><h3><a href="#md:use-case-9-analysis-antics">Use Case 9: Analysis Antics</a></h3><p><strong>Scenario</strong>: <code>PropuestaTécnica.docx</code> is a technical proposal, but it’s riddled with jargon and unclear bits. Reviewing it feels like decoding an alien transmission. 👽</p>
+<p><strong>Solution</strong>:</p>
+<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/analyze?document=/docs/PropuestaTécnica.docx&amp;criteria=technical&amp;output=/docs/PropuestaTécnica_Commented.docx&quot;</span>
+</code><button>Copy</button></pre>
+<p>Office MCP’s AI analyzes the text, adds comments on problematic sections, and generates a summary. Your proposal is now clearer than a sunny day, and you’re the team’s new tech whisperer.</p>
+<a id="md:use-case-10-code-formatting-fiesta" class="tsd-anchor"></a><h3><a href="#md:use-case-10-code-formatting-fiesta">Use Case 10: Code Formatting Fiesta</a></h3><p><strong>Scenario</strong>: <code>BuenasPrácticas.docx</code> has code snippets that look like they were typed by a monkey on a keyboard. Formatting them manually? No fiesta for you!</p>
+<p><strong>Solution</strong>:</p>
+<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/code-format?document=/docs/BuenasPrácticas.docx&amp;style=Código&amp;font=Consolas&amp;output=/docs/BuenasPrácticas_Formatted.docx&quot;</span>
+</code><button>Copy</button></pre>
+<p>Office MCP detects languages (XML, JS, JSON, Java), applies syntax highlighting with <code>highlight.js</code>, and styles code in Consolas. Your doc is now a coder’s dream, ready for the tech conference spotlight! 🎉</p>
+<a id="md:use-case-11-instant-image-injection" class="tsd-anchor"></a><h3><a href="#md:use-case-11-instant-image-injection">Use Case 11: Instant Image Injection</a></h3><p><strong>Scenario</strong>: Your quarterly report (<code>ReporteTrimestral.docx</code>) is drier than the Sahara desert. It desperately needs some visual flair, maybe the company logo... or perhaps a strategically placed cat meme? 😹</p>
+<p><strong>Solution</strong>:</p>
+<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/image/insert?document=/docs/ReporteTrimestral.docx&amp;imagePath=/memes/cat_typing.png&amp;position=paragraph:3&quot;</span>
+</code><button>Copy</button></pre>
+<p>Office MCP uses <code>word/image/insert</code> to inject your chosen image right after paragraph 3. Suddenly, the report isn&#39;t just informative; it&#39;s <em>art</em>. Your boss might raise an eyebrow, but hey, engagement is engagement!</p>
+<a id="md:use-case-12-ai-ghostwriter-for-the-win" class="tsd-anchor"></a><h3><a href="#md:use-case-12-ai-ghostwriter-for-the-win">Use Case 12: AI Ghostwriter for the Win</a></h3><p><strong>Scenario</strong>: You&#39;ve written a masterpiece (<code>MiNovela.docx</code>), but the conclusion feels... flat. Staring at the blinking cursor is giving you existential dread. Writer&#39;s block is real! 😩</p>
+<p><strong>Solution</strong>:</p>
+<pre><code class="language-bash"><span class="hl-8"># Assuming a prompt &#39;write-conclusion&#39; is defined</span><br/><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/generate-and-insert-text?document=/docs/MiNovela.docx&amp;prompt=write-conclusion&amp;position=end&quot;</span>
+</code><button>Copy</button></pre>
+<p>With <code>word/generate-and-insert-text</code> and a suitable prompt, Office MCP&#39;s AI crafts a stunning conclusion and appends it to your document. You just beat writer&#39;s block with the power of silicon! Take that, blank page!</p>
+<a id="md:use-case-13-surgical-strike-styling-with-uris" class="tsd-anchor"></a><h3><a href="#md:use-case-13-surgical-strike-styling-with-uris">Use Case 13: Surgical Strike Styling with URIs</a></h3><p><strong>Scenario</strong>: You need to apply the &quot;Emphasis&quot; style <em>only</em> to the fifth paragraph of <code>DiscursoMotivador.docx</code>. Manually finding it is tedious, and applying it document-wide is overkill. You need precision! 🎯</p>
+<p><strong>Solution</strong>:</p>
+<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/styles/apply?document=office://docs/DiscursoMotivador.docx?range=paragraph:5&amp;style=Emphasis&quot;</span>
+</code><button>Copy</button></pre>
+<p>Using the <code>office://</code> URI scheme, <code>word/styles/apply</code> targets <em>exactly</em> paragraph 5. It&#39;s like performing microsurgery on your document, but without the tiny scalpels. Perfect emphasis, zero collateral damage.</p>
+<p><strong>Visual Summary</strong>:</p>
+<pre><code class="language-mermaid"><span class="hl-6">graph</span><span class="hl-1"> </span><span class="hl-0">TD</span><br/><span class="hl-1">  </span><span class="hl-7">A</span><span class="hl-6">[</span><span class="hl-2">Word Use Cases</span><span class="hl-6">]</span><span class="hl-1"> </span><span class="hl-6">--&gt;</span><span class="hl-1"> </span><span class="hl-7">B</span><span class="hl-6">[</span><span class="hl-2">Markdown Export</span><span class="hl-6">]</span><br/><span class="hl-1">  </span><span class="hl-7">A </span><span class="hl-6">--&gt;</span><span class="hl-1"> </span><span class="hl-7">C</span><span class="hl-6">[</span><span class="hl-2">Merge Documents</span><span class="hl-6">]</span><br/><span class="hl-1">  </span><span class="hl-7">A </span><span class="hl-6">--&gt;</span><span class="hl-1"> </span><span class="hl-7">D</span><span class="hl-6">[</span><span class="hl-2">Create Template</span><span class="hl-6">]</span><br/><span class="hl-1">  </span><span class="hl-7">A </span><span class="hl-6">--&gt;</span><span class="hl-1"> </span><span class="hl-7">E</span><span class="hl-6">[</span><span class="hl-2">Markdown Import</span><span class="hl-6">]</span><br/><span class="hl-1">  </span><span class="hl-7">A </span><span class="hl-6">--&gt;</span><span class="hl-1"> </span><span class="hl-7">F</span><span class="hl-6">[</span><span class="hl-2">Reformat</span><span class="hl-6">]</span><br/><span class="hl-1">  </span><span class="hl-7">A </span><span class="hl-6">--&gt;</span><span class="hl-1"> </span><span class="hl-7">G</span><span class="hl-6">[</span><span class="hl-2">Extract Embedded</span><span class="hl-6">]</span><br/><span class="hl-1">  </span><span class="hl-7">A </span><span class="hl-6">--&gt;</span><span class="hl-1"> </span><span class="hl-7">H</span><span class="hl-6">[</span><span class="hl-2">Mermaid Import</span><span class="hl-6">]</span><br/><span class="hl-1">  </span><span class="hl-7">A </span><span class="hl-6">--&gt;</span><span class="hl-1"> </span><span class="hl-7">I</span><span class="hl-6">[</span><span class="hl-2">Mermaid Export</span><span class="hl-6">]</span><br/><span class="hl-1">  </span><span class="hl-7">A </span><span class="hl-6">--&gt;</span><span class="hl-1"> </span><span class="hl-7">J</span><span class="hl-6">[</span><span class="hl-2">Analyze</span><span class="hl-6">]</span><br/><span class="hl-1">  </span><span class="hl-7">A </span><span class="hl-6">--&gt;</span><span class="hl-1"> </span><span class="hl-7">K</span><span class="hl-6">[</span><span class="hl-2">Code Format</span><span class="hl-6">]</span><br/><span class="hl-1">  </span><span class="hl-7">B </span><span class="hl-6">--&gt;|</span><span class="hl-2">Save the wiki!</span><span class="hl-6">|</span><span class="hl-1"> </span><span class="hl-7">L</span><span class="hl-6">[</span><span class="hl-2">CV.md</span><span class="hl-6">]</span><br/><span class="hl-1">  </span><span class="hl-7">C </span><span class="hl-6">--&gt;|</span><span class="hl-2">End the chaos!</span><span class="hl-6">|</span><span class="hl-1"> </span><span class="hl-7">M</span><span class="hl-6">[</span><span class="hl-2">merged.docx</span><span class="hl-6">]</span><br/><span class="hl-1">  </span><span class="hl-7">K </span><span class="hl-6">--&gt;|</span><span class="hl-2">Code party!</span><span class="hl-6">|</span><span class="hl-1"> </span><span class="hl-7">N</span><span class="hl-6">[</span><span class="hl-2">Formatted.docx</span><span class="hl-6">]</span><br/><span class="hl-1">  </span><span class="hl-7">A </span><span class="hl-6">--&gt;</span><span class="hl-1"> </span><span class="hl-7">O</span><span class="hl-6">[</span><span class="hl-2">Image Insert</span><span class="hl-6">]</span><br/><span class="hl-1">  </span><span class="hl-7">A </span><span class="hl-6">--&gt;</span><span class="hl-1"> </span><span class="hl-7">P</span><span class="hl-6">[</span><span class="hl-2">AI Text Gen</span><span class="hl-6">]</span><br/><span class="hl-1">  </span><span class="hl-7">A </span><span class="hl-6">--&gt;</span><span class="hl-1"> </span><span class="hl-7">Q</span><span class="hl-6">[</span><span class="hl-2">URI Styling</span><span class="hl-6">]</span><br/><span class="hl-1">  </span><span class="hl-7">O </span><span class="hl-6">--&gt;|</span><span class="hl-2">Meme magic!</span><span class="hl-6">|</span><span class="hl-1"> </span><span class="hl-7">R</span><span class="hl-6">[</span><span class="hl-2">ReportWithCat.docx</span><span class="hl-6">]</span><br/><span class="hl-1">  </span><span class="hl-7">P </span><span class="hl-6">--&gt;|</span><span class="hl-2">Beat writer&#39;s block!</span><span class="hl-6">|</span><span class="hl-1"> </span><span class="hl-7">S</span><span class="hl-6">[</span><span class="hl-2">NovelFinished.docx</span><span class="hl-6">]</span><br/><span class="hl-1">  </span><span class="hl-7">Q </span><span class="hl-6">--&gt;|</span><span class="hl-2">Precision styling!</span><span class="hl-6">|</span><span class="hl-1"> </span><span class="hl-7">T</span><span class="hl-6">[</span><span class="hl-2">StyledParagraph5.docx</span><span class="hl-6">]</span>
+</code><button>Copy</button></pre>
+<hr>
+<a id="md:interacting-with-an-ai-using-office-mcp" class="tsd-anchor"></a><h2><a href="#md:interacting-with-an-ai-using-office-mcp">Interacting with an AI Using Office MCP</a></h2><p>Office MCP isn’t just for developers—it’s a playground for AI agents like Claude, ready to handle user requests with wit and precision. The standard <code>memory://ai_assistant_guide</code> resource provides a static guide for AI to navigate the API, while <code>dynamic/resources</code> manages user content. Below are two example interactions showing how an AI leverages Office MCP to fulfill user requests, complete with API calls and a conversational tone.</p>
+<a id="md:example-1-merging-documents" class="tsd-anchor"></a><h3><a href="#md:example-1-merging-documents">Example 1: Merging Documents</a></h3><p><strong>User</strong>: “Hey, Claude, I’ve got two Word docs, <code>draft1.docx</code> and <code>draft2.docx</code>, and they’re a mess. Can you merge them into one without losing anything?”</p>
+<p><strong>Claude</strong>: No problem, I’ll use the Office MCP Server to merge those docs faster than you can say “version control nightmare”! Let me check the files...</p>
+<p><em>Claude queries Office MCP:</em></p>
+<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">GET</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/dynamic/resources/list?type=docx&quot;</span>
+</code><button>Copy</button></pre>
+<p><strong>Response</strong>:</p>
+<pre><code class="language-json"><span class="hl-1">[</span><br/><span class="hl-1">  { </span><span class="hl-5">&quot;id&quot;</span><span class="hl-1">: </span><span class="hl-2">&quot;123&quot;</span><span class="hl-1">, </span><span class="hl-5">&quot;path&quot;</span><span class="hl-1">: </span><span class="hl-2">&quot;/docs/draft1.docx&quot;</span><span class="hl-1">, </span><span class="hl-5">&quot;type&quot;</span><span class="hl-1">: </span><span class="hl-2">&quot;docx&quot;</span><span class="hl-1"> },</span><br/><span class="hl-1">  { </span><span class="hl-5">&quot;id&quot;</span><span class="hl-1">: </span><span class="hl-2">&quot;124&quot;</span><span class="hl-1">, </span><span class="hl-5">&quot;path&quot;</span><span class="hl-1">: </span><span class="hl-2">&quot;/docs/draft2.docx&quot;</span><span class="hl-1">, </span><span class="hl-5">&quot;type&quot;</span><span class="hl-1">: </span><span class="hl-2">&quot;docx&quot;</span><span class="hl-1"> }</span><br/><span class="hl-1">]</span>
+</code><button>Copy</button></pre>
+<p><strong>Claude</strong>: Found them! I’ll merge them with AI-driven conflict resolution to keep the best bits. Hold tight...</p>
+<p><em>Claude calls Office MCP:</em></p>
+<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/merge?docs=/docs/draft1.docx,/docs/draft2.docx&amp;output=/docs/merged.docx&quot;</span>
+</code><button>Copy</button></pre>
+<p><strong>Response</strong>:</p>
+<pre><code class="language-json"><span class="hl-1">{ </span><span class="hl-5">&quot;success&quot;</span><span class="hl-1">: </span><span class="hl-3">true</span><span class="hl-1">, </span><span class="hl-5">&quot;output&quot;</span><span class="hl-1">: </span><span class="hl-2">&quot;/docs/merged.docx&quot;</span><span class="hl-1"> }</span>
+</code><button>Copy</button></pre>
+<p><strong>Claude</strong>: Done! Your merged masterpiece is at <code>/docs/merged.docx</code>. Want me to email it to your boss or add some fancy formatting? 😎</p>
+<a id="md:example-2-formatting-code" class="tsd-anchor"></a><h3><a href="#md:example-2-formatting-code">Example 2: Formatting Code</a></h3><p><strong>User</strong>: “Grok, my Word doc <code>code.docx</code> has JavaScript snippets that look like a toddler wrote them. Can you make them pretty?”</p>
+<p><strong>Claude</strong>: Ugly code? Not on my watch! I’ll use Office MCP to format those snippets with syntax highlighting and a snazzy Consolas font. Let’s do this...</p>
+<p><em>Claude checks the doc:</em></p>
+<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">GET</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/dynamic/resources/read?id=125&quot;</span>
+</code><button>Copy</button></pre>
+<p><strong>Response</strong>:</p>
+<pre><code class="language-json"><span class="hl-1">{ </span><span class="hl-5">&quot;path&quot;</span><span class="hl-1">: </span><span class="hl-2">&quot;/docs/code.docx&quot;</span><span class="hl-1">, </span><span class="hl-5">&quot;data&quot;</span><span class="hl-1">: </span><span class="hl-2">&quot;...&quot;</span><span class="hl-1">, </span><span class="hl-5">&quot;metadata&quot;</span><span class="hl-1">: { </span><span class="hl-5">&quot;author&quot;</span><span class="hl-1">: </span><span class="hl-2">&quot;User&quot;</span><span class="hl-1"> } }</span>
+</code><button>Copy</button></pre>
+<p><strong>Claude</strong>: Got it! I’ll apply the “Código” style and highlight the JavaScript. Prepare for a glow-up...</p>
+<p><em>Claude formats the code:</em></p>
+<pre><code class="language-bash"><span class="hl-0">curl</span><span class="hl-1"> </span><span class="hl-3">-X</span><span class="hl-1"> </span><span class="hl-2">POST</span><span class="hl-1"> </span><span class="hl-2">&quot;http://localhost:3000/word/code-format?document=/docs/code.docx&amp;style=Código&amp;font=Consolas&amp;output=/docs/code_formatted.docx&quot;</span>
+</code><button>Copy</button></pre>
+<p><strong>Response</strong>:</p>
+<pre><code class="language-json"><span class="hl-1">{ </span><span class="hl-5">&quot;success&quot;</span><span class="hl-1">: </span><span class="hl-3">true</span><span class="hl-1">, </span><span class="hl-5">&quot;output&quot;</span><span class="hl-1">: </span><span class="hl-2">&quot;/docs/code_formatted.docx&quot;</span><span class="hl-1"> }</span>
+</code><button>Copy</button></pre>
+<p><strong>Claude</strong>: Ta-da! Your code is now dazzling in <code>/docs/code_formatted.docx</code>. It’s so pretty, it might get its own fan club. Want me to export it to PDF for sharing? 🎉</p>
+<p><strong>Why It Works</strong>: Office MCP’s prompt templates (e.g., “format code in {document} with {style}”) and completions (e.g., suggesting “Consolas” or “Código”) make it easy for AI to interpret user requests and execute precise API calls. The <code>memory://ai_assistant_guide</code> ensures the AI knows every tool’s capabilities, turning vague user asks into polished results.</p>
+<hr>
+<a id="md:implementation-details" class="tsd-anchor"></a><h2><a href="#md:implementation-details">Implementation Details</a></h2><p>Office MCP is a love letter to developers, built for robustness and joy. Here’s the why behind our choices.</p>
+<a id="md:why-typescript-and-fastmcp" class="tsd-anchor"></a><h3><a href="#md:why-typescript-and-fastmcp">Why TypeScript and FastMCP?</a></h3><ul>
+<li><strong>TypeScript</strong>: Catches errors at compile-time, making the codebase a safe haven for refactoring. Interfaces for tools and params keep things predictable.</li>
+<li><strong>FastMCP</strong>: A lightweight, AI-ready framework with resource templates and prompt-based automation. Office MCP leverages several key FastMCP features:<ul>
+<li><strong><code>instructions</code> &amp; <code>annotations</code></strong>: Provide detailed context and guidance to the AI for complex tasks.</li>
+<li><strong><code>reportProgress</code></strong>: Offers feedback to the user during long-running operations (e.g., merging large documents).</li>
+<li><strong><code>imageContent</code> / <code>audioContent</code></strong>: Structures for handling multimedia content within prompts and responses, enabling tools like <code>word/image/extract</code> and <code>word/image/insert</code>. <em>(Note: Underlying COM interop for full multimedia handling is partially implemented).</em></li>
+<li><strong><code>addResourceTemplate</code></strong>: Allows defining dynamic resource access patterns, used here for the <code>office://</code> URI scheme to target specific document parts.</li>
+<li><strong><code>authenticate</code></strong>: Basic token-based authentication mechanism for securing server access.</li>
+<li><strong><code>addPrompt</code></strong>: Enables defining reusable prompt templates (like <code>summarize-word-section</code>) for common AI tasks within Office documents.</li>
+<li><strong><code>requestSampling</code></strong>: Core mechanism for AI text generation, powering tools like <code>word/generate-and-insert-text</code>.</li>
+<li>Its completion system powers dynamic suggestions, making Office MCP a dream for AI agents.</li>
+</ul>
+</li>
+</ul>
+<p><strong>Comparison</strong>:</p>
+<pre><code class="language-mermaid"><span class="hl-6">graph</span><span class="hl-1"> </span><span class="hl-0">LR</span><br/><span class="hl-1">  </span><span class="hl-7">A</span><span class="hl-6">[</span><span class="hl-2">COM Scripts</span><span class="hl-6">]</span><span class="hl-1"> </span><span class="hl-6">--&gt;|</span><span class="hl-2">Windows</span><span class="hl-1">-</span><span class="hl-2">only, clunky</span><span class="hl-6">|</span><span class="hl-1"> </span><span class="hl-7">B</span><span class="hl-6">[</span><span class="hl-2">Frustration</span><span class="hl-6">]</span><br/><span class="hl-1">  </span><span class="hl-7">C</span><span class="hl-6">[</span><span class="hl-2">Office Add</span><span class="hl-1">-</span><span class="hl-2">ins</span><span class="hl-6">]</span><span class="hl-1"> </span><span class="hl-6">--&gt;|</span><span class="hl-2">Limited scope</span><span class="hl-6">|</span><span class="hl-1"> </span><span class="hl-7">D</span><span class="hl-6">[</span><span class="hl-2">Basic Tasks</span><span class="hl-6">]</span><br/><span class="hl-1">  </span><span class="hl-7">E</span><span class="hl-6">[</span><span class="hl-2">Office MCP with FastMCP</span><span class="hl-6">]</span><span class="hl-1"> </span><span class="hl-6">--&gt;|</span><span class="hl-2">Cross</span><span class="hl-1">-</span><span class="hl-2">platform, AI</span><span class="hl-1">-</span><span class="hl-2">driven</span><span class="hl-6">|</span><span class="hl-1"> </span><span class="hl-7">F</span><span class="hl-6">[</span><span class="hl-2">Automation Bliss</span><span class="hl-6">]</span>
+</code><button>Copy</button></pre>
+<a id="md:dependency-choices" class="tsd-anchor"></a><h3><a href="#md:dependency-choices">Dependency Choices</a></h3><p>We picked dependencies like choosing toppings for the perfect pizza:</p>
+<ul>
+<li><strong><code>@microsoft/office-js</code></strong>: Cross-platform Office automation for Word, Excel, PowerPoint.</li>
+<li><strong><code>markdown-it</code></strong>: Parses VS Code-compatible Markdown with plugin support.</li>
+<li><strong><code>mermaid</code></strong>: Renders diagrams as SVG/PNG for tech docs.</li>
+<li><strong><code>pdf-parse</code>, <code>pdf2pic</code></strong>: Extract text/images from PDFs for <code>office/pdf/parse</code>.</li>
+<li><strong><code>highlight.js</code></strong>: Syntax highlighting for code, supporting XML, JS, JSON, Java.</li>
+<li><strong><code>zod</code></strong>: Validates inputs to keep the API bulletproof.</li>
+<li><strong><code>winston</code></strong>: Logs for debugging and monitoring.</li>
+<li><strong><code>node-cache</code></strong>: Caches metadata for speed.</li>
+<li><strong><code>jest</code></strong>: Tests with &gt;90% coverage.</li>
+</ul>
+<p><strong>Why These?</strong> They’re lightweight, TypeScript-friendly, and battle-tested. We skipped bloated frameworks to keep Office MCP nimble.</p>
+<a id="md:security-and-performance" class="tsd-anchor"></a><h3><a href="#md:security-and-performance">Security and Performance</a></h3><ul>
+<li><strong>Security</strong>:<ul>
+<li>Path validation (<code>path.resolve</code>) stops directory traversal. <strong>Note:</strong> You can also use the <code>HOME/</code> prefix in paths defined in <code>ALLOWED_BASE_PATHS</code> (in <code>src/utils/security.ts</code>) to reference directories relative to the user&#39;s home directory (e.g., <code>HOME/Documents/MyProject</code>). This improves configuration portability across different environments.</li>
+<li><code>zod</code> schemas enforce input sanity.</li>
+<li>Role-based access controls protect sensitive ops (implementation may vary).</li>
+<li>Basic token authentication via FastMCP&#39;s <code>authenticate</code>.</li>
+</ul>
+</li>
+<li><strong>Performance</strong>:<ul>
+<li><code>node-cache</code> speeds up metadata queries.</li>
+<li>Batch ops (<code>word/batch</code>) minimize API calls.</li>
+<li>Streaming for large files reduces memory hogging.</li>
+</ul>
+</li>
+</ul>
+<p><strong>Example</strong>:</p>
+<pre><code class="language-mermaid"><span class="hl-6">sequenceDiagram</span><br/><span class="hl-1">  </span><span class="hl-7">Client</span><span class="hl-6">-&gt;&gt;</span><span class="hl-7">Office MCP</span><span class="hl-6">:</span><span class="hl-1"> </span><span class="hl-2">POST /word/styles/apply</span><br/><span class="hl-1">  </span><span class="hl-7">Office MCP</span><span class="hl-6">-&gt;&gt;</span><span class="hl-7">Zod</span><span class="hl-6">:</span><span class="hl-1"> </span><span class="hl-2">Validate input</span><br/><span class="hl-1">  </span><span class="hl-7">Zod</span><span class="hl-6">--&gt;&gt;</span><span class="hl-7">Office MCP</span><span class="hl-6">:</span><span class="hl-1"> </span><span class="hl-2">Valid</span><br/><span class="hl-1">  </span><span class="hl-7">Office MCP</span><span class="hl-6">-&gt;&gt;</span><span class="hl-7">NodeCache</span><span class="hl-6">:</span><span class="hl-1"> </span><span class="hl-2">Check style metadata</span><br/><span class="hl-1">  </span><span class="hl-7">NodeCache</span><span class="hl-6">--&gt;&gt;</span><span class="hl-7">Office MCP</span><span class="hl-6">:</span><span class="hl-1"> </span><span class="hl-2">Cached data</span><br/><span class="hl-1">  </span><span class="hl-7">Office MCP</span><span class="hl-6">-&gt;&gt;</span><span class="hl-7">OfficeAPI</span><span class="hl-6">:</span><span class="hl-1"> </span><span class="hl-2">Apply style</span><br/><span class="hl-1">  </span><span class="hl-7">OfficeAPI</span><span class="hl-6">--&gt;&gt;</span><span class="hl-7">Office MCP</span><span class="hl-6">:</span><span class="hl-1"> </span><span class="hl-2">Success</span><br/><span class="hl-1">  </span><span class="hl-7">Office MCP</span><span class="hl-6">--&gt;&gt;</span><span class="hl-7">Client</span><span class="hl-6">:</span><span class="hl-1"> </span><span class="hl-2">{ success: true }</span>
+</code><button>Copy</button></pre>
+<hr>
+<a id="md:testing-and-reliability" class="tsd-anchor"></a><h2><a href="#md:testing-and-reliability">Testing and Reliability</a></h2><p>Office MCP is tougher than a double-sided spreadsheet. Our testing strategy includes:</p>
+<ul>
+<li><strong>Unit Tests</strong>: Test each tool operation (e.g., <code>word/styles/apply</code>) with Jest.</li>
+<li><strong>Integration Tests</strong>: Verify tool combos (e.g., <code>word/markdown/import</code> + <code>word/styles/apply</code>).</li>
+<li><strong>End-to-End Tests</strong>: Simulate workflows (e.g., merge documents, export to Markdown).</li>
+<li><strong>Performance Tests</strong>: Ensure complex tasks (e.g., reformatting 100 pages) finish in &lt;10 seconds.</li>
+<li><strong>Security Tests</strong>: Block malicious inputs (e.g., path traversal).</li>
+</ul>
+<a id="md:end-to-end-use-case-tests" class="tsd-anchor"></a><h3><a href="#md:end-to-end-use-case-tests">End-to-End Use Case Tests</a></h3><p>The 10 use cases detailed in the implementation plan (<code>office-mcp-plan copy.md</code>, Section 5.2) have been implemented as automated end-to-end tests. These tests are located in the <code>tests/e2e/</code> directory and validate the functionality of the implemented MCP tools by interacting with a running instance of the Office MCP server.</p>
+<p>To run these end-to-end tests, first ensure the Office MCP server is running (see <a href="#md:running-the-server">Running the Server</a>). Then, execute the following command:</p>
+<pre><code class="language-bash"><span class="hl-0">npm</span><span class="hl-1"> </span><span class="hl-2">run</span><span class="hl-1"> </span><span class="hl-2">test:e2e</span><span class="hl-1"> </span><span class="hl-8"># Assuming this script is configured in package.json</span>
+</code><button>Copy</button></pre>
+<p>Alternatively, you can run all tests, including unit and integration tests, using the standard test command:</p>
+<pre><code class="language-bash"><span class="hl-0">npm</span><span class="hl-1"> </span><span class="hl-2">test</span>
+</code><button>Copy</button></pre>
+<p><strong>Coverage</strong>: &gt;90%, checked with <code>jest --coverage</code>. Run all tests:</p>
+<pre><code class="language-bash"><span class="hl-0">npm</span><span class="hl-1"> </span><span class="hl-2">test</span>
+</code><button>Copy</button></pre>
+<p><strong>Fun Fact</strong>: We tested edge cases like corrupt PDFs and rogue Mermaid syntax, so Office MCP laughs in the face of document disasters! 😜</p>
+<hr>
+<a id="md:future-improvements" class="tsd-anchor"></a><h2><a href="#md:future-improvements">Future Improvements</a></h2><p>Office MCP is just warming up. Future ideas:</p>
+<ul>
+<li><strong>Real-Time Editing</strong>: WebSocket support for collaborative docs.</li>
+<li><strong>Cloud-Native</strong>: Kubernetes or serverless for scale.</li>
+<li><strong>Deeper AI</strong>: NLP for summarization or style suggestions.</li>
+<li><strong>New Formats</strong>: Support .odt or Google Docs.</li>
+<li><strong>Plugins</strong>: Let devs add custom tools.</li>
+</ul>
+<p>Got a wild idea? Open an issue on GitHub!</p>
+<hr>
+<a id="md:useful-links" class="tsd-anchor"></a><h2><a href="#md:useful-links">Useful Links</a></h2><ul>
+<li><strong>FastMCP Documentation</strong>: <a href="https://x.ai/fastmcp">x.ai/fastmcp</a> (assumed)</li>
+<li><strong>Office JavaScript APIs</strong>: <a href="https://docs.microsoft.com/office/dev/add-ins">docs.microsoft.com/office/dev/add-ins</a></li>
+<li><strong>Markdown-it</strong>: <a href="https://github.com/markdown-it/markdown-it">github.com/markdown-it/markdown-it</a></li>
+<li><strong>Mermaid</strong>: <a href="https://mermaid-js.github.io/">mermaid-js.github.io</a></li>
+<li><strong>Highlight.js</strong>: <a href="https://highlightjs.org/">highlightjs.org</a></li>
+<li><strong>API Docs</strong>: <a href="docs/api">docs/api</a> (typedoc-generated)</li>
+<li><strong>GitHub Issues</strong>: <a href="https://github.com/xai/mcp-office/issues">github.com/xai/mcp-office/issues</a></li>
+</ul>
+<hr>
+<a id="md:license" class="tsd-anchor"></a><h2><a href="#md:license">License</a></h2><p>Office MCP Server is licensed under the <strong>MIT License with Restrictions</strong>, keeping it open while reserving some rights for xAI.</p>
+<pre><code><span class="hl-10">MIT</span><span class="hl-1"> </span><span class="hl-7">License</span><br/><br/><span class="hl-0">Copyright</span><span class="hl-1"> (</span><span class="hl-7">c</span><span class="hl-1">) </span><span class="hl-4">2025</span><span class="hl-1"> </span><span class="hl-7">David</span><span class="hl-1"> </span><span class="hl-7">Jurado</span><br/><br/><span class="hl-7">Permission</span><span class="hl-1"> </span><span class="hl-7">is</span><span class="hl-1"> </span><span class="hl-7">hereby</span><span class="hl-1"> </span><span class="hl-7">granted</span><span class="hl-1">, </span><span class="hl-7">free</span><span class="hl-1"> </span><span class="hl-3">of</span><span class="hl-1"> </span><span class="hl-7">charge</span><span class="hl-1">, </span><span class="hl-7">to</span><span class="hl-1"> </span><span class="hl-7">any</span><span class="hl-1"> </span><span class="hl-7">person</span><span class="hl-1"> </span><span class="hl-7">obtaining</span><span class="hl-1"> </span><span class="hl-7">a</span><span class="hl-1"> </span><span class="hl-7">copy</span><br/><span class="hl-3">of</span><span class="hl-1"> </span><span class="hl-3">this</span><span class="hl-1"> </span><span class="hl-7">software</span><span class="hl-1"> </span><span class="hl-7">and</span><span class="hl-1"> </span><span class="hl-7">associated</span><span class="hl-1"> </span><span class="hl-7">documentation</span><span class="hl-1"> </span><span class="hl-0">files</span><span class="hl-1"> (</span><span class="hl-7">the</span><span class="hl-1"> </span><span class="hl-2">&quot;Software&quot;</span><span class="hl-1">), </span><span class="hl-7">to</span><span class="hl-1"> </span><span class="hl-7">deal</span><br/><span class="hl-3">in</span><span class="hl-1"> </span><span class="hl-7">the</span><span class="hl-1"> </span><span class="hl-7">Software</span><span class="hl-1"> </span><span class="hl-7">without</span><span class="hl-1"> </span><span class="hl-7">restriction</span><span class="hl-1">, </span><span class="hl-7">including</span><span class="hl-1"> </span><span class="hl-7">without</span><span class="hl-1"> </span><span class="hl-7">limitation</span><span class="hl-1"> </span><span class="hl-7">the</span><span class="hl-1"> </span><span class="hl-7">rights</span><br/><span class="hl-7">to</span><span class="hl-1"> </span><span class="hl-7">use</span><span class="hl-1">, </span><span class="hl-7">copy</span><span class="hl-1">, </span><span class="hl-7">modify</span><span class="hl-1">, </span><span class="hl-7">merge</span><span class="hl-1">, </span><span class="hl-7">publish</span><span class="hl-1">, </span><span class="hl-7">distribute</span><span class="hl-1">, </span><span class="hl-7">sublicense</span><span class="hl-1">, </span><span class="hl-7">and</span><span class="hl-1">/</span><span class="hl-7">or</span><span class="hl-1"> </span><span class="hl-7">sell</span><br/><span class="hl-7">copies</span><span class="hl-1"> </span><span class="hl-3">of</span><span class="hl-1"> </span><span class="hl-7">the</span><span class="hl-1"> </span><span class="hl-7">Software</span><span class="hl-1">, </span><span class="hl-7">and</span><span class="hl-1"> </span><span class="hl-7">to</span><span class="hl-1"> </span><span class="hl-7">permit</span><span class="hl-1"> </span><span class="hl-7">persons</span><span class="hl-1"> </span><span class="hl-7">to</span><span class="hl-1"> </span><span class="hl-7">whom</span><span class="hl-1"> </span><span class="hl-7">the</span><span class="hl-1"> </span><span class="hl-7">Software</span><span class="hl-1"> </span><span class="hl-7">is</span><br/><span class="hl-7">furnished</span><span class="hl-1"> </span><span class="hl-7">to</span><span class="hl-1"> </span><span class="hl-6">do</span><span class="hl-1"> </span><span class="hl-7">so</span><span class="hl-1">, </span><span class="hl-7">subject</span><span class="hl-1"> </span><span class="hl-7">to</span><span class="hl-1"> </span><span class="hl-7">the</span><span class="hl-1"> </span><span class="hl-7">following</span><span class="hl-1"> </span><span class="hl-11">conditions</span><span class="hl-1">:</span><br/><br/><span class="hl-7">The</span><span class="hl-1"> </span><span class="hl-7">above</span><span class="hl-1"> </span><span class="hl-7">copyright</span><span class="hl-1"> </span><span class="hl-7">notice</span><span class="hl-1"> </span><span class="hl-7">and</span><span class="hl-1"> </span><span class="hl-3">this</span><span class="hl-1"> </span><span class="hl-7">permission</span><span class="hl-1"> </span><span class="hl-7">notice</span><span class="hl-1"> </span><span class="hl-7">shall</span><span class="hl-1"> </span><span class="hl-7">be</span><span class="hl-1"> </span><span class="hl-7">included</span><span class="hl-1"> </span><span class="hl-3">in</span><span class="hl-1"> </span><span class="hl-7">all</span><br/><span class="hl-7">copies</span><span class="hl-1"> </span><span class="hl-7">or</span><span class="hl-1"> </span><span class="hl-7">substantial</span><span class="hl-1"> </span><span class="hl-7">portions</span><span class="hl-1"> </span><span class="hl-3">of</span><span class="hl-1"> </span><span class="hl-7">the</span><span class="hl-1"> </span><span class="hl-7">Software</span><span class="hl-1">.</span><br/><br/><span class="hl-10">THE</span><span class="hl-1"> </span><span class="hl-10">SOFTWARE</span><span class="hl-1"> </span><span class="hl-10">IS</span><span class="hl-1"> </span><span class="hl-10">PROVIDED</span><span class="hl-1"> </span><span class="hl-2">&quot;AS IS&quot;</span><span class="hl-1">, </span><span class="hl-10">WITHOUT</span><span class="hl-1"> </span><span class="hl-10">WARRANTY</span><span class="hl-1"> </span><span class="hl-10">OF</span><span class="hl-1"> </span><span class="hl-10">ANY</span><span class="hl-1"> </span><span class="hl-10">KIND</span><span class="hl-1">, </span><span class="hl-10">EXPRESS</span><span class="hl-1"> </span><span class="hl-10">OR</span><br/><span class="hl-10">IMPLIED</span><span class="hl-1">, </span><span class="hl-10">INCLUDING</span><span class="hl-1"> </span><span class="hl-10">BUT</span><span class="hl-1"> </span><span class="hl-10">NOT</span><span class="hl-1"> </span><span class="hl-10">LIMITED</span><span class="hl-1"> </span><span class="hl-10">TO</span><span class="hl-1"> </span><span class="hl-10">THE</span><span class="hl-1"> </span><span class="hl-10">WARRANTIES</span><span class="hl-1"> </span><span class="hl-10">OF</span><span class="hl-1"> </span><span class="hl-10">MERCHANTABILITY</span><span class="hl-1">,</span><br/><span class="hl-10">FITNESS</span><span class="hl-1"> </span><span class="hl-10">FOR</span><span class="hl-1"> </span><span class="hl-10">A</span><span class="hl-1"> </span><span class="hl-10">PARTICULAR</span><span class="hl-1"> </span><span class="hl-10">PURPOSE</span><span class="hl-1"> </span><span class="hl-10">AND</span><span class="hl-1"> </span><span class="hl-10">NONINFRINGEMENT</span><span class="hl-1">. </span><span class="hl-10">IN</span><span class="hl-1"> </span><span class="hl-10">NO</span><span class="hl-1"> </span><span class="hl-10">EVENT</span><span class="hl-1"> </span><span class="hl-10">SHALL</span><span class="hl-1"> </span><span class="hl-10">THE</span><br/><span class="hl-10">AUTHORS</span><span class="hl-1"> </span><span class="hl-10">OR</span><span class="hl-1"> </span><span class="hl-10">COPYRIGHT</span><span class="hl-1"> </span><span class="hl-10">HOLDERS</span><span class="hl-1"> </span><span class="hl-10">BE</span><span class="hl-1"> </span><span class="hl-10">LIABLE</span><span class="hl-1"> </span><span class="hl-10">FOR</span><span class="hl-1"> </span><span class="hl-10">ANY</span><span class="hl-1"> </span><span class="hl-10">CLAIM</span><span class="hl-1">, </span><span class="hl-10">DAMAGES</span><span class="hl-1"> </span><span class="hl-10">OR</span><span class="hl-1"> </span><span class="hl-10">OTHER</span><br/><span class="hl-10">LIABILITY</span><span class="hl-1">, </span><span class="hl-10">WHETHER</span><span class="hl-1"> </span><span class="hl-10">IN</span><span class="hl-1"> </span><span class="hl-10">AN</span><span class="hl-1"> </span><span class="hl-10">ACTION</span><span class="hl-1"> </span><span class="hl-10">OF</span><span class="hl-1"> </span><span class="hl-10">CONTRACT</span><span class="hl-1">, </span><span class="hl-10">TORT</span><span class="hl-1"> </span><span class="hl-10">OR</span><span class="hl-1"> </span><span class="hl-10">OTHERWISE</span><span class="hl-1">, </span><span class="hl-10">ARISING</span><span class="hl-1"> </span><span class="hl-10">FROM</span><span class="hl-1">,</span><br/><span class="hl-10">OUT</span><span class="hl-1"> </span><span class="hl-10">OF</span><span class="hl-1"> </span><span class="hl-10">OR</span><span class="hl-1"> </span><span class="hl-10">IN</span><span class="hl-1"> </span><span class="hl-10">CONNECTION</span><span class="hl-1"> </span><span class="hl-10">WITH</span><span class="hl-1"> </span><span class="hl-10">THE</span><span class="hl-1"> </span><span class="hl-10">SOFTWARE</span><span class="hl-1"> </span><span class="hl-10">OR</span><span class="hl-1"> </span><span class="hl-10">THE</span><span class="hl-1"> </span><span class="hl-10">USE</span><span class="hl-1"> </span><span class="hl-10">OR</span><span class="hl-1"> </span><span class="hl-10">OTHER</span><span class="hl-1"> </span><span class="hl-10">DEALINGS</span><span class="hl-1"> </span><span class="hl-10">IN</span><span class="hl-1"> </span><span class="hl-10">THE</span><br/><span class="hl-10">SOFTWARE</span><span class="hl-1">.</span>
+</code><button>Copy</button></pre>
+<hr>
+<p>Thanks for diving into the Office MCP Server! We’re thrilled to see how you’ll use it to conquer Office tasks. Questions? Hit us up on GitHub or peek at <code>memory://ai_assistant_guide</code> for wisdom. Happy automating! 🚀</p>
+</div></div><div class="col-sidebar"><div class="page-menu"><div class="tsd-navigation settings"><details class="tsd-index-accordion"><summary class="tsd-accordion-summary"><h3><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><use href="assets/icons.svg#icon-chevronDown"></use></svg>Settings</h3></summary><div class="tsd-accordion-details"><div class="tsd-filter-visibility"><h4 class="uppercase">Member Visibility</h4><form><ul id="tsd-filter-options"><li class="tsd-filter-item"><label class="tsd-filter-input"><input type="checkbox" id="tsd-filter-protected" name="protected"/><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect class="tsd-checkbox-background" width="30" height="30" x="1" y="1" rx="6" fill="none"></rect><path class="tsd-checkbox-checkmark" d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25" stroke="none" stroke-width="3.5" stroke-linejoin="round" fill="none"></path></svg><span>Protected</span></label></li><li class="tsd-filter-item"><label class="tsd-filter-input"><input type="checkbox" id="tsd-filter-inherited" name="inherited" checked/><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect class="tsd-checkbox-background" width="30" height="30" x="1" y="1" rx="6" fill="none"></rect><path class="tsd-checkbox-checkmark" d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25" stroke="none" stroke-width="3.5" stroke-linejoin="round" fill="none"></path></svg><span>Inherited</span></label></li><li class="tsd-filter-item"><label class="tsd-filter-input"><input type="checkbox" id="tsd-filter-external" name="external"/><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect class="tsd-checkbox-background" width="30" height="30" x="1" y="1" rx="6" fill="none"></rect><path class="tsd-checkbox-checkmark" d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25" stroke="none" stroke-width="3.5" stroke-linejoin="round" fill="none"></path></svg><span>External</span></label></li></ul></form></div><div class="tsd-theme-toggle"><h4 class="uppercase">Theme</h4><select id="tsd-theme"><option value="os">OS</option><option value="light">Light</option><option value="dark">Dark</option></select></div></div></details></div><details open class="tsd-index-accordion tsd-page-navigation"><summary class="tsd-accordion-summary"><h3><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><use href="assets/icons.svg#icon-chevronDown"></use></svg>On This Page</h3></summary><div class="tsd-accordion-details"><a href="#md:mcp-office"><span>mcp-<wbr/>office</span></a><a href="#md:office-mcp-server-supercharge-your-office-automation-with-ai-🚀"><span>Office MCP <wbr/>Server: <wbr/>Supercharge <wbr/>Your <wbr/>Office <wbr/>Automation with AI 🚀</span></a><ul><li><a href="#md:table-of-contents"><span>Table of <wbr/>Contents</span></a></li><li><a href="#md:why-office-mcp"><span>Why <wbr/>Office MCP?</span></a></li><li><a href="#md:quick-start"><span>Quick <wbr/>Start</span></a></li><li><ul><li><a href="#md:installation"><span>Installation</span></a></li><li><ul><li><a href="#md:clone-the-repository"><span>Clone the <wbr/>Repository</span></a></li><li><a href="#md:install-dependencies"><span>Install <wbr/>Dependencies</span></a></li><li><a href="#md:compile-typescript"><span>Compile <wbr/>Type<wbr/>Script</span></a></li></ul></li><li><a href="#md:running-the-server"><span>Running the <wbr/>Server</span></a></li><li><a href="#md:debugging-with-mcp-cli"><span>Debugging with mcp-<wbr/>cli</span></a></li><li><a href="#md:inspect-with-mcp-inspector"><span>Inspect with MCP <wbr/>Inspector</span></a></li><li><a href="#md:basic-examples"><span>Basic <wbr/>Examples</span></a></li><li><ul><li><a href="#md:list-word-styles"><span>List <wbr/>Word <wbr/>Styles</span></a></li><li><a href="#md:apply-a-style"><span>Apply a <wbr/>Style</span></a></li><li><a href="#md:convert-word-to-markdown"><span>Convert <wbr/>Word to <wbr/>Markdown</span></a></li></ul></li></ul></li><li><a href="#md:api-documentation"><span>API <wbr/>Documentation</span></a></li><li><ul><li><a href="#md:resource-structure"><span>Resource <wbr/>Structure</span></a></li><li><a href="#md:file-system-tools"><span>File <wbr/>System <wbr/>Tools</span></a></li><li><ul><li><a href="#md:fsdirectory"><span>fs/directory</span></a></li><li><a href="#md:fsfile"><span>fs/file</span></a></li><li><a href="#md:fsblob"><span>fs/blob</span></a></li></ul></li><li><a href="#md:word-tools"><span>Word <wbr/>Tools</span></a></li><li><ul><li><a href="#md:wordstyles"><span>word/styles</span></a></li><li><a href="#md:wordmarkdownimport"><span>word/markdown/import</span></a></li><li><a href="#md:wordmerge"><span>word/merge</span></a></li><li><a href="#md:wordembedded-objects"><span>word/embedded-<wbr/>objects</span></a></li><li><a href="#md:wordembedded-objects-1"><span>word/embedded-<wbr/>objects</span></a></li><li><a href="#md:wordimage"><span>word/image</span></a></li><li><a href="#md:wordgenerate-and-insert-text"><span>word/generate-<wbr/>and-<wbr/>insert-<wbr/>text</span></a></li><li><a href="#md:wordpage"><span>word/page</span></a></li></ul></li><li><a href="#md:excel-tools"><span>Excel <wbr/>Tools</span></a></li><li><ul><li><a href="#md:excelrange"><span>excel/range</span></a></li></ul></li><li><a href="#md:powerpoint-tools"><span>Power<wbr/>Point <wbr/>Tools</span></a></li><li><ul><li><a href="#md:powerpointslides"><span>powerpoint/slides</span></a></li></ul></li><li><a href="#md:cross-application-tools"><span>Cross-<wbr/>Application <wbr/>Tools</span></a></li><li><ul><li><a href="#md:officepdfexport"><span>office/pdf/export</span></a></li><li><a href="#md:officecombine"><span>office/combine</span></a></li></ul></li><li><a href="#md:static-and-dynamic-resources"><span>Static and <wbr/>Dynamic <wbr/>Resources</span></a></li><li><ul><li><a href="#md:memoryai_assistant_guide"><span>memory/ai_<wbr/>assistant_<wbr/>guide</span></a></li><li><a href="#md:dynamicresources"><span>dynamic/resources</span></a></li></ul></li></ul></li><li><a href="#md:word-use-cases-with-a-chuckle"><span>Word <wbr/>Use <wbr/>Cases (with a <wbr/>Chuckle)</span></a></li><li><ul><li><a href="#md:use-case-1-markdown-magic"><span>Use <wbr/>Case 1: <wbr/>Markdown <wbr/>Magic</span></a></li><li><a href="#md:use-case-2-merge-mayhem"><span>Use <wbr/>Case 2: <wbr/>Merge <wbr/>Mayhem</span></a></li><li><a href="#md:use-case-3-template-trickery"><span>Use <wbr/>Case 3: <wbr/>Template <wbr/>Trickery</span></a></li><li><a href="#md:use-case-4-markdown-import-mania"><span>Use <wbr/>Case 4: <wbr/>Markdown <wbr/>Import <wbr/>Mania</span></a></li><li><a href="#md:use-case-5-reformatting-rescue"><span>Use <wbr/>Case 5: <wbr/>Reformatting <wbr/>Rescue</span></a></li><li><a href="#md:use-case-6-embedded-object-extraction-extravaganza"><span>Use <wbr/>Case 6: <wbr/>Embedded <wbr/>Object <wbr/>Extraction <wbr/>Extravaganza</span></a></li><li><a href="#md:use-case-7-embedded-object-insertion-innovation"><span>Use <wbr/>Case 7: <wbr/>Embedded <wbr/>Object <wbr/>Insertion <wbr/>Innovation</span></a></li><li><a href="#md:use-case-8-embedded-object-modification-magic"><span>Use <wbr/>Case 8: <wbr/>Embedded <wbr/>Object <wbr/>Modification <wbr/>Magic</span></a></li><li><a href="#md:use-case-9-embedded-object-deletion-duty"><span>Use <wbr/>Case 9: <wbr/>Embedded <wbr/>Object <wbr/>Deletion <wbr/>Duty</span></a></li><li><a href="#md:use-case-10-mermaid-import-marvel"><span>Use <wbr/>Case 10: <wbr/>Mermaid <wbr/>Import <wbr/>Marvel</span></a></li><li><a href="#md:use-case-8-mermaid-export-escapade"><span>Use <wbr/>Case 8: <wbr/>Mermaid <wbr/>Export <wbr/>Escapade</span></a></li><li><a href="#md:use-case-9-analysis-antics"><span>Use <wbr/>Case 9: <wbr/>Analysis <wbr/>Antics</span></a></li><li><a href="#md:use-case-10-code-formatting-fiesta"><span>Use <wbr/>Case 10: <wbr/>Code <wbr/>Formatting <wbr/>Fiesta</span></a></li><li><a href="#md:use-case-11-instant-image-injection"><span>Use <wbr/>Case 11: <wbr/>Instant <wbr/>Image <wbr/>Injection</span></a></li><li><a href="#md:use-case-12-ai-ghostwriter-for-the-win"><span>Use <wbr/>Case 12: AI <wbr/>Ghostwriter for the <wbr/>Win</span></a></li><li><a href="#md:use-case-13-surgical-strike-styling-with-uris"><span>Use <wbr/>Case 13: <wbr/>Surgical <wbr/>Strike <wbr/>Styling with URIs</span></a></li></ul></li><li><a href="#md:interacting-with-an-ai-using-office-mcp"><span>Interacting with an AI <wbr/>Using <wbr/>Office MCP</span></a></li><li><ul><li><a href="#md:example-1-merging-documents"><span>Example 1: <wbr/>Merging <wbr/>Documents</span></a></li><li><a href="#md:example-2-formatting-code"><span>Example 2: <wbr/>Formatting <wbr/>Code</span></a></li></ul></li><li><a href="#md:implementation-details"><span>Implementation <wbr/>Details</span></a></li><li><ul><li><a href="#md:why-typescript-and-fastmcp"><span>Why <wbr/>Type<wbr/>Script and <wbr/>FastMCP?</span></a></li><li><a href="#md:dependency-choices"><span>Dependency <wbr/>Choices</span></a></li><li><a href="#md:security-and-performance"><span>Security and <wbr/>Performance</span></a></li></ul></li><li><a href="#md:testing-and-reliability"><span>Testing and <wbr/>Reliability</span></a></li><li><ul><li><a href="#md:end-to-end-use-case-tests"><span>End-<wbr/>to-<wbr/>End <wbr/>Use <wbr/>Case <wbr/>Tests</span></a></li></ul></li><li><a href="#md:future-improvements"><span>Future <wbr/>Improvements</span></a></li><li><a href="#md:useful-links"><span>Useful <wbr/>Links</span></a></li><li><a href="#md:license"><span>License</span></a></li></ul></div></details></div><div class="site-menu"><nav class="tsd-navigation"><a href="modules.html" class="current"><svg class="tsd-kind-icon" viewBox="0 0 24 24"><use href="assets/icons.svg#icon-1"></use></svg><span>msoffice-mcp</span></a><ul class="tsd-small-nested-navigation" id="tsd-nav-container" data-base="."><li>Loading...</li></ul></nav></div></div></div><footer><p class="tsd-generator">Generated using <a href="https://typedoc.org/" target="_blank">TypeDoc</a></p></footer><div class="overlay"></div></body></html>
