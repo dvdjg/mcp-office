@@ -53,7 +53,7 @@ allRegisteredTools.forEach((item: McpResource) => {
             execute: async (args: StandardSchemaV1.InferOutput<any>, context: ServerContext): Promise<ContentResult | string | TextContent> => {
                 const startTime = Date.now();
                 // Use context.log provided by FastMCP
-                context.log.info(`[${item.path}] Request received`, { params: hideSensitiveParams(args) as SerializableValue }); // Ensure logged params are serializable
+                context.log.info(`[${item.path}] EXECUTION START`, { params: hideSensitiveParams(args) as SerializableValue }); // Ensure logged params are serializable
 
                 try {
                     // Validation is typically handled by FastMCP based on 'parameters' schema
@@ -67,7 +67,7 @@ allRegisteredTools.forEach((item: McpResource) => {
 
                     // Transform the ApiResponse to the format expected by FastMCP
                     if (apiResponse.success) {
-                        context.log.info(`[${item.path}] Request successful`, { durationMs: duration });
+                        context.log.info(`[${item.path}] EXECUTION SUCCESS`, { durationMs: duration });
                         const data = apiResponse.data;
 
                         // Map data to FastMCP return types
@@ -94,7 +94,7 @@ allRegisteredTools.forEach((item: McpResource) => {
                         // Throw a UserError for FastMCP to handle client-side errors
                         // Convert error details to string for logging and UserError
                         const errorDetailsString = apiResponse.error?.details ? String(apiResponse.error.details) : undefined;
-                        context.log.warn(`[${item.path}] Request failed`, { durationMs: duration, code: apiResponse.error?.code, message: apiResponse.error?.message, details: errorDetailsString });
+                        context.log.warn(`[${item.path}] EXECUTION FAILED (API Error)`, { durationMs: duration, code: apiResponse.error?.code, message: apiResponse.error?.message, details: errorDetailsString });
                         // Pass serializable details to UserError
                         const userErrorDetails = errorDetailsString ? { details: errorDetailsString } : undefined;
                         throw new UserError(apiResponse.error?.message || 'Tool execution failed.', userErrorDetails);
@@ -103,7 +103,7 @@ allRegisteredTools.forEach((item: McpResource) => {
                 } catch (error) {
                     const duration = Date.now() - startTime;
                      // Convert error to string for logging
-                    context.log.error(`[${item.path}] Unhandled error in tool execution wrapper`, { durationMs: duration, error: String(error) });
+                    context.log.error(`[${item.path}] EXECUTION FAILED (Unhandled Error)`, { durationMs: duration, error: String(error) });
 
                     // Ensure errors are thrown in FastMCP's expected format
                     if (error instanceof UserError || error instanceof UnexpectedStateError) {
@@ -181,16 +181,19 @@ function hideSensitiveParams(params: ToolRequestParams): ToolRequestParams {
 import { getOfficeApplication, releaseObject } from '@/utils/officeInterop'; // Usar alias
 
 async function testCom() {
+  const comStartTime = Date.now();
+  logger.info("[COM TEST START] Testing COM Interop (winax)...");
   try {
-    logger.info("Testing COM Interop (winax): Getting Word Application...");
+    logger.info("[COM TEST] Attempting getOfficeApplication('Word.Application')...");
     const wordApp = await getOfficeApplication('Word.Application');
+    logger.info("[COM TEST] getOfficeApplication completed.");
     // Verificar que el objeto y la propiedad existen antes de acceder
     if (wordApp && typeof wordApp.Version !== 'undefined') {
-        logger.info(`Got Word Application, Version: ${wordApp.Version}`);
+        logger.info(`[COM TEST] Got Word Application, Version: ${wordApp.Version}`);
     } else if (wordApp) {
-        logger.warn("Got Word Application object, but couldn't retrieve Version property.");
+        logger.warn("[COM TEST] Got Word Application object, but couldn't retrieve Version property.");
     } else {
-        logger.warn("Failed to get Word Application object in test.");
+        logger.warn("[COM TEST] Failed to get Word Application object.");
     }
 
     // Intenta abrir un documento (opcional, requiere manejo de errores adicional)
@@ -209,15 +212,21 @@ async function testCom() {
 
     // Intentar liberar el objeto solo si se obtuvo
     if (wordApp) {
+        logger.info("[COM TEST] Attempting releaseObject(wordApp)...");
         releaseObject(wordApp);
-        logger.info("Word Application release attempted.");
+        logger.info("[COM TEST] releaseObject attempted.");
     }
+    const comDuration = Date.now() - comStartTime;
+    logger.info(`[COM TEST SUCCESS] COM Interop test finished successfully. Duration: ${comDuration}ms`);
   } catch (error) {
+    const comDuration = Date.now() - comStartTime;
     // Registrar el error pero no detener el inicio del servidor
-    logger.error("COM Interop test failed:", error);
+    logger.error(`[COM TEST FAILED] COM Interop test failed. Duration: ${comDuration}ms`, { error });
   }
 }
+logger.info("Calling testCom()...");
 testCom(); // Llama a la función de prueba al inicio
+logger.info("testCom() finished.");
 // --- Fin Prueba COM Interop ---
 logger.debug('Attempting to start MCP server...'); // Added log
 // Start the server
@@ -259,6 +268,7 @@ if (OFFICE_MCP_PORT) {
 // Nota: Esto generalmente solo silencia el síntoma, no arregla la causa
 // raíz si el cierre no es limpio (p.ej., con fastmcp dev).
 
+/* // TEMPORALMENTE COMENTADO POR SUGERENCIA DEL USUARIO
 process.stdout.on('error', (err: NodeJS.ErrnoException) => {
   if (err.code === 'EPIPE') {
     // Ignorar EPIPE en stdout, probablemente causado por cierre abrupto.
@@ -282,6 +292,7 @@ process.stderr.on('error', (err: NodeJS.ErrnoException) => {
     // process.exit(1);
   }
 });
+*/
 process.on('SIGTERM', () => {
     logger.info('SIGTERM signal received. Closing server...');
     mcpServer.stop().then(() => { // Assuming a stop method exists
