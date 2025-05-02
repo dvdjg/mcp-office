@@ -252,11 +252,44 @@ if (OFFICE_MCP_PORT) {
 }
 
 // Graceful shutdown handling
+// --- Manejo de Errores EPIPE en Streams ---
+// Estos manejadores intentan capturar errores EPIPE que pueden ocurrir si
+// el proceso intenta escribir en stdout/stderr después de que la tubería
+// se haya cerrado (común cuando el proceso padre termina abruptamente).
+// Nota: Esto generalmente solo silencia el síntoma, no arregla la causa
+// raíz si el cierre no es limpio (p.ej., con fastmcp dev).
+
+process.stdout.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EPIPE') {
+    // Ignorar EPIPE en stdout, probablemente causado por cierre abrupto.
+    logger.warn('Error EPIPE en stdout ignorado durante el cierre.');
+  } else {
+    // Registrar otros errores inesperados de stdout
+    logger.error('Error inesperado en process.stdout:', { error: err });
+    // Considerar salir si es un error crítico no relacionado con EPIPE
+    // process.exit(1);
+  }
+});
+
+process.stderr.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EPIPE') {
+    // Ignorar EPIPE en stderr, probablemente causado por cierre abrupto.
+    logger.warn('Error EPIPE en stderr ignorado durante el cierre.');
+  } else {
+    // Registrar otros errores inesperados de stderr
+    logger.error('Error inesperado en process.stderr:', { error: err });
+    // Considerar salir si es un error crítico no relacionado con EPIPE
+    // process.exit(1);
+  }
+});
 process.on('SIGTERM', () => {
     logger.info('SIGTERM signal received. Closing server...');
     mcpServer.stop().then(() => { // Assuming a stop method exists
          logger.info('Server closed.');
          process.exit(0);
+    }).catch(err => { // Add catch block for stop() errors
+        logger.error('Error during mcpServer.stop() for SIGTERM:', { error: err }); // Use logger
+        process.exit(1);
     });
 });
 
@@ -265,5 +298,8 @@ process.on('SIGINT', () => {
     mcpServer.stop().then(() => {
          logger.info('Server closed.');
          process.exit(0);
+    }).catch(err => { // Add catch block for stop() errors
+        logger.error('Error during mcpServer.stop() for SIGINT:', { error: err }); // Use logger
+        process.exit(1);
     });
 });
