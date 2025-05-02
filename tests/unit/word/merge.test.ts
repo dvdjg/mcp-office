@@ -112,7 +112,11 @@ describe('word/merge unit tests', () => {
         };
 
         test('debería fusionar documentos exitosamente', async () => {
-            const params = { ...baseParams };
+            // Explicitly define params here to ensure 'docs' is always correct for this test
+            const params = {
+                docs: ['C:/test/doc1.docx', 'C:/test/doc2.docx'],
+                output: 'C:/test/output.docx',
+            };
             const result = await mergeDocuments(params, mockContext);
 
             expect(mockValidateFilePath).toHaveBeenCalledWith(params.output, expect.any(Array)); // Check output path validation
@@ -156,12 +160,12 @@ describe('word/merge unit tests', () => {
         test('debería manejar un array de docs vacío', async () => {
             const params = { ...baseParams, docs: [] };
             // Zod validation should catch this before the handler logic
-            try {
-                mergeDocuments(params, mockContext);
-            } catch (error: any) {
-                expect(error).toBeInstanceOf(z.ZodError);
-                expect(error.errors[0].message).toContain('At least two documents are required');
-            }
+            // Use expect().toThrow() for synchronous errors like Zod validation
+            // Use expect().toThrow() for synchronous errors like Zod validation
+            expect(() => mergeDocuments(params, mockContext)).toThrow(z.ZodError);
+            // We can also check the message within the thrown error if needed, but toThrow(ZodError) is the main check.
+            // expect(() => mergeDocuments(params, mockContext)).toThrow(/At least two documents are required/);
+
 
             // No debería llamar a ninguna función COM si la validación falla
             expect(mockGetOfficeApplication).not.toHaveBeenCalled();
