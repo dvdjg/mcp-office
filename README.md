@@ -770,9 +770,9 @@ sequenceDiagram
 ## Testing and Reliability
 
 Office MCP is tougher than a double-sided spreadsheet. Our testing strategy includes:
-- **Unit Tests**: Test each tool operation (e.g., `word/styles/apply`) with Jest. **We have implemented unit tests for key Word tools like `styles`, `text`, and `tables` in `tests/unit/word/`.**
-- **Integration Tests**: Verify tool combinations (e.g., `word/markdown/import` + `word/styles/apply`) or the interaction of a tool with other parts of the server. **We have implemented integration tests for key Word tools like `styles`, `text`, `tables`, and `merge` in `tests/integration/word/`.**
-- **End-to-End Tests**: Simulate workflows (e.g., merge documents, export to Markdown).
+- **Unit Tests**: Test each tool operation in isolation using mocks. **Comprehensive unit tests have been implemented for key Word tools (`merge`, `styles`, `tables`, `text`) and are located in `tests/unit/word/`.**
+- **Integration Tests**: Verify the interaction between different tools or components, still primarily using mocks but testing the sequence of operations. **Integration tests for Word tools (`merge`, `styles`, `tables`, `text`, and a combined `tableAndText` scenario) are located in `tests/integration/word/`.** *Note: These currently rely heavily on mocks; future work could involve tests against a real Office instance in a controlled environment.*
+- **End-to-End Tests**: Simulate complete user workflows by interacting with a running server instance.
 - **Performance Tests**: Ensure complex tasks (e.g., reformatting 100 pages) finish in <10 seconds.
 - **Security Tests**: Block malicious inputs (e.g., directory traversal).
 
@@ -786,7 +786,7 @@ To run these end-to-end tests, first ensure the Office MCP server is running (se
 npm run test:e2e # Assuming this script is configured in package.json
 ```
 
-Alternatively, you can run all tests, including unit and integration tests, using the standard test command:
+Alternatively, you can run all types of tests (unit, integration, and e2e) using the standard test command:
 
 ```bash
 npm test
