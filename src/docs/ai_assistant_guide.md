@@ -20,7 +20,7 @@ This guide provides AI assistants with quick-start instructions to use the Offic
 
 ## Overview
 
-The Office MCP Server provides a set of tools for automating Microsoft Office applications (Word, Excel, PowerPoint) and managing files/resources. AI assistants translate user prompts (e.g., “Merge two Word documents”) into MCP tool invocations (e.g., `word.merge`) to perform tasks like applying styles, creating tables, or exporting documents. This guide helps AI assistants identify tools, invoke them correctly, and access additional resources.
+The Office MCP Server provides a set of tools for automating Microsoft Office applications (Word, Excel, PowerPoint) and managing files/resources. AI assistants translate user prompts (e.g., “Merge two Word documents”) into MCP tool invocations (e.g., `word.merge`) to perform tasks like applying styles, creating tables, or exporting documents. The server leverages FastMCP features like `instructions`, `annotations`, `reportProgress`, `imageContent`/`audioContent`, `addResourceTemplate` (for `office://` URIs), `authenticate`, `addPrompt`, and `requestSampling` to enable sophisticated interactions. This guide helps AI assistants identify tools, invoke them correctly, and access additional resources.
 
 ---
 
@@ -47,7 +47,10 @@ MCP tools are organized into modules, each containing specific operations. Below
   - `mermaid.export`: Exports Mermaid diagrams as images.
   - `analyze`: Analyzes content and adds comments.
   - `code-format`: Formats code with syntax highlighting.
-- **Purpose**: Automate Word document tasks (e.g., style application, diagram insertion).
+  - `image.extract`: Extracts images from documents. *(Uses `imageContent`)*
+  - `image.insert`: Inserts images into documents. *(Uses `imageContent`)*
+  - `generate-and-insert-text`: Generates text using AI (`requestSampling`) and inserts it. *(Can use prompts defined via `addPrompt`)*
+- **Purpose**: Automate Word document tasks (e.g., style application, diagram insertion, image handling, AI text generation).
 
 ### Excel (`excel`)
 - **Tools**:
@@ -74,8 +77,12 @@ MCP tools are organized into modules, each containing specific operations. Below
   - `memory.read`: Reads static resources (e.g., guides).
   - `memory.write`: Updates dynamic resources (e.g., caches).
 - **Purpose**: Access or manage server resources and configurations.
+### Resource URIs (`office://`)
+- **Scheme**: `office://<document_path>?range=<range_specifier>`
+- **Purpose**: Allows tools to target specific parts of Office documents dynamically (e.g., a paragraph, a cell range). Use this URI where a tool parameter accepts a document path or range specifier, if applicable. *(Enabled via `addResourceTemplate`)*.
 
 ---
+
 
 ## How to Use the Tools
 
@@ -97,8 +104,13 @@ AI assistants process user prompts, map them to MCP tool invocations, and valida
      - **Tool**: `word.styles.apply`
      - **Parameters**: `{ document: "/docs/sample.docx", style: "Heading1", range: "paragraph:1" }`
    - Pass parameters as a structured object to the MCP tool.
+   - Use `office://` URIs where appropriate for document/range parameters.
+   - For tools like `word.generate-and-insert-text`, you might use predefined prompt names (setup via `addPrompt`) as the `prompt` parameter.
 
-4. **Validate the Result**:
+4. **Monitor Progress**:
+   - For long-running operations (e.g., `word.merge`, `office.combine`), listen for `reportProgress` updates from the server to provide feedback to the user.
+
+5. **Validate the Result**:
    - Check for a successful outcome or handle errors.
    - Example Results:
      - Success: `{ success: true }`
@@ -107,11 +119,15 @@ AI assistants process user prompts, map them to MCP tool invocations, and valida
 5. **Handle Errors**:
    - If `success: false`, inspect `error.message` and query document state (e.g., invoke `fs.file.read` with `path=/docs/sample.docx`).
    - Adjust parameters or inform the user of the issue.
+   - Pay attention to `instructions` or `annotations` provided by the server in responses, as they might contain guidance for subsequent steps or clarifications.
 
-6. **Provide Feedback**:
+7. **Provide Feedback**:
    - Confirm task completion (e.g., “Style applied successfully”) or explain issues (e.g., “Style not found; available styles are Heading1, Normal”).
+8. **Authentication**:
+   - If the server requires authentication (configured via `authenticate`), ensure the necessary tokens are included in the request headers as per FastMCP standards.
 
 ---
+
 
 ## Resource References
 

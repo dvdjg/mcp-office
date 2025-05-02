@@ -10,10 +10,10 @@ Welcome to the **Office MCP Server**, your one-stop shop for automating Microsof
 
 Why Office MCP? Forget the soul-crushing grind of manual Office tasks or wrestling with outdated COM scripts. Office MCP offers:
 - **Granular Control**: Fiddle with every paragraph, table, or embedded object like a pro.
-- **AI Superpowers**: FastMCP’s prompt system lets AI suggest styles, resolve conflicts, or even format code like it’s starring in a tech rom-com.
+- **AI Superpowers**: FastMCP’s prompt system lets AI suggest styles, resolve conflicts, or even format code like it’s starring in a tech rom-com. Leverages advanced FastMCP features like `instructions`, `annotations`, `reportProgress`, `imageContent`/`audioContent`, `addPrompt`, and `requestSampling` for sophisticated AI interactions.
 - **Cross-Platform Glory**: Works with Office 365, desktop Office, and even Power Automate for workflow wizardry.
-- **Developer Love**: Type-safe, modular, and documented to make your coding sessions feel like a sunny day at the beach.
-- **Rock-Solid**: >90% test coverage means it’s ready for your wildest automation adventures.
+- **Developer Love**: Type-safe, modular, and documented to make your coding sessions feel like a sunny day at the beach. Includes features like `addResourceTemplate` for easy extension.
+- **Rock-Solid**: >90% test coverage means it’s ready for your wildest automation adventures. Includes basic `authenticate` support.
 
 This README is your map to Office MCP mastery. Hit the **Quick Start** for instant action, then explore the **API Documentation**, **Word Use Cases** (with a side of humor), and **AI Interaction** for the full scoop. Let’s make Office automation fun again! 🎉
 
@@ -169,6 +169,7 @@ Office MCP’s API is clean and predictable:
 - **Parameters**: Query params (GET) or JSON body (POST)
 - **Completions**: Dynamic suggestions for inputs (e.g., style names, file paths)
 - **Response**: JSON with `success`, `data`, or `error`
+- **Resource URIs**: Uses standard file paths and introduces the `office://<document_path>?range=<range_specifier>` URI scheme via `addResourceTemplate` for accessing specific parts of Office documents dynamically (e.g., `office://docs/report.docx?range=paragraph:5`). *Note: Full implementation for dynamic range access via COM interop is pending.*
 
 **Workflow Example**:
 ```mermaid
@@ -264,7 +265,24 @@ Master Word documents with these power tools.
   curl -X POST "http://localhost:3000/word/merge?docs=/docs/doc1.docx,/docs/doc2.docx&output=/docs/merged.docx"
   ```
 
-*See the [Word Use Cases](#word-use-cases-with-a-chuckle) for all Word tools in action!*
+#### `word/image`
+- **Description**: Extract and insert images in Word documents. *Note: Requires COM interop, implementation status may vary.*
+- **Operations**:
+  - `extract`: Extract images from a document (`POST /word/image/extract?document=/docs/report.docx&outputDir=/images/`)
+  - `insert`: Insert an image into a document (`POST /word/image/insert?document=/docs/report.docx&imagePath=/images/logo.png&position=paragraph:3`)
+
+#### `word/generate-and-insert-text`
+- **Description**: Uses AI (via FastMCP's `requestSampling`) to generate text based on context and insert it into a Word document. *Note: Requires COM interop for insertion.*
+- **Operations**:
+  - `generate`: Generate text based on surrounding content or a prompt.
+  - `insert`: Insert the generated text at a specified position.
+- **Example**:
+  ```bash
+  # Example using a hypothetical prompt template 'summarize-section'
+  curl -X POST "http://localhost:3000/word/generate-and-insert-text?document=/docs/report.docx&range=paragraph:5&prompt=summarize-section&position=after"
+  ```
+
+*See the [Word Use Cases](#word-use-cases-with-a-chuckle) for more Word tools in action!*
 
 ### Excel Tools
 
@@ -471,6 +489,34 @@ curl -X POST "http://localhost:3000/word/code-format?document=/docs/BuenasPráct
 ```
 Office MCP detects languages (XML, JS, JSON, Java), applies syntax highlighting with `highlight.js`, and styles code in Consolas. Your doc is now a coder’s dream, ready for the tech conference spotlight! 🎉
 
+### Use Case 11: Instant Image Injection
+**Scenario**: Your quarterly report (`ReporteTrimestral.docx`) is drier than the Sahara desert. It desperately needs some visual flair, maybe the company logo... or perhaps a strategically placed cat meme? 😹
+
+**Solution**:
+```bash
+curl -X POST "http://localhost:3000/word/image/insert?document=/docs/ReporteTrimestral.docx&imagePath=/memes/cat_typing.png&position=paragraph:3"
+```
+Office MCP uses `word/image/insert` to inject your chosen image right after paragraph 3. Suddenly, the report isn't just informative; it's *art*. Your boss might raise an eyebrow, but hey, engagement is engagement!
+
+### Use Case 12: AI Ghostwriter for the Win
+**Scenario**: You've written a masterpiece (`MiNovela.docx`), but the conclusion feels... flat. Staring at the blinking cursor is giving you existential dread. Writer's block is real! 😩
+
+**Solution**:
+```bash
+# Assuming a prompt 'write-conclusion' is defined
+curl -X POST "http://localhost:3000/word/generate-and-insert-text?document=/docs/MiNovela.docx&prompt=write-conclusion&position=end"
+```
+With `word/generate-and-insert-text` and a suitable prompt, Office MCP's AI crafts a stunning conclusion and appends it to your document. You just beat writer's block with the power of silicon! Take that, blank page!
+
+### Use Case 13: Surgical Strike Styling with URIs
+**Scenario**: You need to apply the "Emphasis" style *only* to the fifth paragraph of `DiscursoMotivador.docx`. Manually finding it is tedious, and applying it document-wide is overkill. You need precision! 🎯
+
+**Solution**:
+```bash
+curl -X POST "http://localhost:3000/word/styles/apply?document=office://docs/DiscursoMotivador.docx?range=paragraph:5&style=Emphasis"
+```
+Using the `office://` URI scheme, `word/styles/apply` targets *exactly* paragraph 5. It's like performing microsurgery on your document, but without the tiny scalpels. Perfect emphasis, zero collateral damage.
+
 **Visual Summary**:
 ```mermaid
 graph TD
@@ -487,6 +533,12 @@ graph TD
   B -->|Save the wiki!| L[CV.md]
   C -->|End the chaos!| M[merged.docx]
   K -->|Code party!| N[Formatted.docx]
+  A --> O[Image Insert]
+  A --> P[AI Text Gen]
+  A --> Q[URI Styling]
+  O -->|Meme magic!| R[ReportWithCat.docx]
+  P -->|Beat writer's block!| S[NovelFinished.docx]
+  Q -->|Precision styling!| T[StyledParagraph5.docx]
 ```
 
 ---
@@ -562,7 +614,15 @@ Office MCP is a love letter to developers, built for robustness and joy. Here’
 
 ### Why TypeScript and FastMCP?
 - **TypeScript**: Catches errors at compile-time, making the codebase a safe haven for refactoring. Interfaces for tools and params keep things predictable.
-- **FastMCP**: A lightweight, AI-ready framework with resource templates and prompt-based automation. Its completion system powers dynamic suggestions, making Office MCP a dream for AI agents.
+- **FastMCP**: A lightweight, AI-ready framework with resource templates and prompt-based automation. Office MCP leverages several key FastMCP features:
+   - **`instructions` & `annotations`**: Provide detailed context and guidance to the AI for complex tasks.
+   - **`reportProgress`**: Offers feedback to the user during long-running operations (e.g., merging large documents).
+   - **`imageContent` / `audioContent`**: Structures for handling multimedia content within prompts and responses, enabling tools like `word/image/extract` and `word/image/insert`. *(Note: Underlying COM interop for full multimedia handling is partially implemented).*
+   - **`addResourceTemplate`**: Allows defining dynamic resource access patterns, used here for the `office://` URI scheme to target specific document parts.
+   - **`authenticate`**: Basic token-based authentication mechanism for securing server access.
+   - **`addPrompt`**: Enables defining reusable prompt templates (like `summarize-word-section`) for common AI tasks within Office documents.
+   - **`requestSampling`**: Core mechanism for AI text generation, powering tools like `word/generate-and-insert-text`.
+   - Its completion system powers dynamic suggestions, making Office MCP a dream for AI agents.
 
 **Comparison**:
 ```mermaid
@@ -588,9 +648,10 @@ We picked dependencies like choosing toppings for the perfect pizza:
 
 ### Security and Performance
 - **Security**:
-  - Path validation (`path.resolve`) stops directory traversal. **Nota:** Ahora también puedes usar el prefijo `HOME/` en las rutas definidas en `ALLOWED_BASE_PATHS` (en `src/utils/security.ts`) para referenciar directorios relativos al directorio home del usuario (p. ej., `HOME/Documents/MyProject`). Esto mejora la portabilidad de la configuración entre diferentes entornos.
+  - Path validation (`path.resolve`) stops directory traversal. **Note:** You can also use the `HOME/` prefix in paths defined in `ALLOWED_BASE_PATHS` (in `src/utils/security.ts`) to reference directories relative to the user's home directory (e.g., `HOME/Documents/MyProject`). This improves configuration portability across different environments.
   - `zod` schemas enforce input sanity.
-  - Role-based access controls protect sensitive ops.
+  - Role-based access controls protect sensitive ops (implementation may vary).
+  - Basic token authentication via FastMCP's `authenticate`.
 - **Performance**:
   - `node-cache` speeds up metadata queries.
   - Batch ops (`word/batch`) minimize API calls.

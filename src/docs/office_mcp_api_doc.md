@@ -72,6 +72,7 @@ The Office MCP Server exposes a RESTful API via FastMCP, organized as resource t
 - **Authentication**: Role-based access tokens (optional, configured in FastMCP)
 - **Responses**: JSON objects with `success`, `data`, or `error` fields
 - **Completions**: Dynamic suggestions for parameters (e.g., style names, file paths)
+- **Resource URIs**: Supports standard file paths and the `office://<document_path>?range=<range_specifier>` URI scheme for dynamic resource access (e.g., `office://docs/report.docx?range=paragraph:5`). *Note: Full implementation for dynamic range access via COM interop is pending.*
 
 **Example Request**:
 ```bash
@@ -664,8 +665,65 @@ The Office MCP Server integrates with AI agents (e.g., Claude) via FastMCP's pro
   - AI Infers: `POST /word/code-format?document=/docs/BuenasPrácticas.docx&style=Código&font=Consolas`.
 
 **Completions**: Style names, font names.
+### word/image
+**Description**: Extracts and inserts images in Word documents. *Note: Requires COM interop; implementation status may vary.*
+
+**Operations**:
+- **extract**: Extracts images from a document.
+  - **Input**: `document` (string, file path), `outputDir` (string, directory path).
+  - **Output**: `{ success: true, files: string[] }`.
+  - **Example**:
+    ```bash
+    curl -X POST "http://localhost:3000/word/image/extract?document=/docs/report.docx&outputDir=/images/"
+    ```
+    **Response**:
+    ```json
+    { "success": true, "files": ["/images/image1.png"] }
+    ```
+- **insert**: Inserts an image into a document.
+  - **Input**: `document` (string), `imagePath` (string, path to image file), `position` (string, e.g., `paragraph:3`).
+  - **Output**: `{ success: true }`.
+  - **Example**:
+    ```bash
+    curl -X POST "http://localhost:3000/word/image/insert?document=/docs/report.docx&imagePath=/images/logo.png&position=paragraph:3"
+    ```
+
+**AI Request Examples**:
+- User: "Extract all images from report.docx into the /images folder."
+  - AI Infers: `POST /word/image/extract?document=/docs/report.docx&outputDir=/images/`.
+- User: "Insert logo.png into report.docx after the third paragraph."
+  - AI Infers: `POST /word/image/insert?document=/docs/report.docx&imagePath=/images/logo.png&position=paragraph:3`.
+
+**Completions**: File paths, position ranges.
+
+### word/generate-and-insert-text
+**Description**: Uses AI (via FastMCP's `requestSampling`) to generate text based on context and insert it into a Word document. *Note: Requires COM interop for insertion.*
+
+**Operations**:
+- **generate**: Generates text based on surrounding content or a prompt.
+- **insert**: Inserts the generated text at a specified position.
+  - **Input**: `document` (string), `range` (string, context range, optional), `prompt` (string, prompt name or text), `position` (string, insertion point, e.g., `after`, `paragraph:N`).
+  - **Output**: `{ success: true, generatedText: string }`.
+  - **Example (using a predefined prompt)**:
+    ```bash
+    # Assumes a prompt named 'summarize-section' is defined via addPrompt
+    curl -X POST "http://localhost:3000/word/generate-and-insert-text?document=/docs/report.docx&range=paragraph:5&prompt=summarize-section&position=after"
+    ```
+    **Response**:
+    ```json
+    { "success": true, "generatedText": "This section discusses the key findings..." }
+    ```
+
+**AI Request Examples**:
+- User: "Summarize the fifth paragraph of report.docx and insert the summary after it."
+  - AI Infers: `POST /word/generate-and-insert-text?document=/docs/report.docx&range=paragraph:5&prompt=summarize-section&position=after`.
+- User: "Generate an introductory sentence for report.docx and insert it at the beginning."
+  - AI Infers: `POST /word/generate-and-insert-text?document=/docs/report.docx&prompt=generate-intro&position=start`.
+
+**Completions**: Document paths, range formats, prompt names/text, position specifiers.
 
 ---
+
 
 ## Excel Tools
 
