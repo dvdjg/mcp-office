@@ -27,7 +27,7 @@ const readAiAssistantGuide = async (
 
 // Define the resource according to the McpResource interface
 export const aiAssistantGuideReadResource: McpResource = {
-  path: 'memory/ai_assistant_guide/read', // Full path for the operation
+  path: 'office-mcp://ai_assistant_guide', // Full path for the operation
   handler: readAiAssistantGuide,
   // No input schema needed for a simple read operation
   // schema: Zod.object({}), // Example if input validation was needed

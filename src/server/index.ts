@@ -252,6 +252,7 @@ try {
     mcpServer.addResource({
         uri: aiAssistantGuideResource[0].path, // Access first element
         name: aiAssistantGuideResource[0].description || 'Unnamed Resource', // Access first element
+        mimeType: 'text/markdown', // Specify MIME type for Markdown
         load: async () => {
 // --- Register Resource Templates ---
 logger.info("Registering resource templates...");
