@@ -50,6 +50,9 @@ import { OfficeWorkflowTool } from './office/workflow.tool'; // Importar la nuev
 import { pdfExportTool } from './office/pdfExport.tool'; // Importar la nueva herramienta office/pdf/export
 import pdfParseTool from './office/pdfParse.tool'; // Importar la nueva herramienta office/pdf/parse
 import { officeCombineTool } from './office/combine.tool'; // Importar la nueva herramienta office/combine
+// Import dynamic tools
+import { dynamicResourcesTool } from './dynamic/resources.tool';
+
 // Import static resources
 import aiAssistantGuideResource from '../resources/static/ai_assistant_guide.resource';
 
@@ -121,6 +124,7 @@ const nestedToolsList = [
    pdfExportTool, // Añadida la nueva herramienta office/pdf/export
    pdfParseTool, // Añadida la nueva herramienta office/pdf/parse
    officeCombineTool, // Añadida la nueva herramienta office/combine
+   dynamicResourcesTool, // Añadida la herramienta dynamic/resources
      // Add other imported tools here
  ];
 
