@@ -33,6 +33,9 @@ import { registerWordCodeFormatTool } from './word/codeFormat.tool'; // Import t
 
 import analyzeToolDefinition from './word/analyze.tool'; // Import the new analyze tool definition
 
+// Import Excel tools
+import { excelWorksheetsTool } from './excel/worksheets.tool';
+
 // Import static resources
 import aiAssistantGuideResource from '../resources/static/ai_assistant_guide.resource';
 
@@ -90,6 +93,7 @@ const nestedToolsList = [
     mermaidExportTool, // Añadida la herramienta de exportación de Mermaid
     reformatTool, // Añadida la herramienta reformatTool
     analyzeMcpResource, // Añadida la herramienta analyzeTool adaptada
+    excelWorksheetsTool, // Añadida la herramienta excel/worksheets
     // ...excelRangeTool,
     // ...powerpointSlidesTool,
     // ...officePdfTool,
@@ -109,7 +113,7 @@ const placeholderTools: McpResource[] = [
     // { path: 'word/reformat', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/reformat not implemented.'), description: 'Reformat a document professionally (Not Implemented)', schema: z.object({}) }, // Eliminado el placeholder
     // { path: 'word/code-format', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/code-format not implemented.'), description: 'Format code and metadata with syntax highlighting (Not Implemented)', schema: z.object({}) }, // Eliminado el placeholder
     // Excel (Placeholders)
-    { path: 'excel/worksheets', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool excel/worksheets not implemented.'), description: 'Manage Excel worksheets (Not Implemented - Requires Office JS/Scripts)', schema: z.object({}) },
+    // { path: 'excel/worksheets', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool excel/worksheets not implemented.'), description: 'Manage Excel worksheets (Not Implemented - Requires Office JS/Scripts)', schema: z.object({}) }, // Eliminado el placeholder
     { path: 'excel/range', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool excel/range not implemented.'), description: 'Manipulate cell ranges (Not Implemented - Requires Office JS/Scripts)', schema: z.object({}) },
     // PowerPoint (Placeholders)
     { path: 'powerpoint/slides', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool powerpoint/slides not implemented.'), description: 'Manage PowerPoint slides (Not Implemented - Requires Office JS/VBA)', schema: z.object({}) },
