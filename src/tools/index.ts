@@ -29,6 +29,7 @@ import { batchTool } from './word/batch.tool'; // Import the new batch tool
 import mermaidImportTool from './word/mermaidImport.tool'; // Import the mermaid import tool
 import mermaidExportTool from './word/mermaidExport.tool'; // Import the mermaid export tool
 import reformatTool from './word/reformat.tool'; // Import the new reformat tool
+import { registerWordCodeFormatTool } from './word/codeFormat.tool'; // Import the new code format tool registration function
 
 import analyzeToolDefinition from './word/analyze.tool'; // Import the new analyze tool definition
 
@@ -106,7 +107,7 @@ const placeholderTools: McpResource[] = [
     // { path: 'word/mermaid/import', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/mermaid/import not implemented.'), description: 'Import and render Mermaid diagrams (Not Implemented)', schema: z.object({}) }, // Eliminado el placeholder
     // { path: 'word/mermaid/export', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/mermaid/export not implemented.'), description: 'Export Mermaid diagrams (Not Implemented)', schema: z.object({}) }, // Eliminado el placeholder
     // { path: 'word/reformat', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/reformat not implemented.'), description: 'Reformat a document professionally (Not Implemented)', schema: z.object({}) }, // Eliminado el placeholder
-    { path: 'word/code-format', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/code-format not implemented.'), description: 'Format code and metadata with syntax highlighting (Not Implemented)', schema: z.object({}) },
+    // { path: 'word/code-format', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/code-format not implemented.'), description: 'Format code and metadata with syntax highlighting (Not Implemented)', schema: z.object({}) }, // Eliminado el placeholder
     // Excel (Placeholders)
     { path: 'excel/worksheets', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool excel/worksheets not implemented.'), description: 'Manage Excel worksheets (Not Implemented - Requires Office JS/Scripts)', schema: z.object({}) },
     { path: 'excel/range', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool excel/range not implemented.'), description: 'Manipulate cell ranges (Not Implemented - Requires Office JS/Scripts)', schema: z.object({}) },
@@ -123,4 +124,4 @@ const placeholderTools: McpResource[] = [
 const allRegisteredTools = [...allImplementedTools, ...placeholderTools];
 
 // Export the list used by server.ts and the resource
-export { allRegisteredTools, aiAssistantGuideResource };
+export { allRegisteredTools, aiAssistantGuideResource, registerWordCodeFormatTool };
