@@ -31,7 +31,7 @@ const listStyleSchema = z.object({
 /**
  * Applies a style to a specified range in a Word document using COM Interop.
  */
-async function applyStyle(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> { // Use FastMCPContext<undefined>
+export async function applyStyle(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> { // Use FastMCPContext<undefined>
     let wordApp: any = null;
     let doc: any = null;
 
@@ -118,7 +118,7 @@ async function applyStyle(params: ToolRequestParams, context?: FastMCPContext<un
 /**
  * Lists available styles in the document using COM Interop.
  */
-async function listStyles(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<string[]>> { // Use FastMCPContext<undefined>
+export async function listStyles(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<string[]>> { // Use FastMCPContext<undefined>
     let wordApp: any = null;
     let doc: any = null;
      try {

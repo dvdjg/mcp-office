@@ -47,7 +47,7 @@ const createErrorResponse = (message: string, code = 'TOOL_EXECUTION_ERROR', det
  * @returns The COM Range object.
  * @throws Error if the specifier is invalid or the range cannot be obtained.
  */
-function getRangeFromSpecifier(doc: any, rangeSpecifier: string, wordApp: any): any {
+export function getRangeFromSpecifier(doc: any, rangeSpecifier: string, wordApp: any): any {
     const rangeStringLower = rangeSpecifier.toLowerCase();
     let selectedRange: any = null;
 
@@ -93,7 +93,7 @@ function getRangeFromSpecifier(doc: any, rangeSpecifier: string, wordApp: any): 
 
 // --- Handlers ---
 
-async function getText(requestParams: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<string>> { // Use FastMCPContext<undefined>
+export async function getText(requestParams: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<string>> { // Use FastMCPContext<undefined>
   let wordApp: any = null;
   let doc: any = null;
   let selectedRange: any = null;
@@ -137,7 +137,7 @@ async function getText(requestParams: ToolRequestParams, context?: FastMCPContex
   }
 }
 
-async function insertText(requestParams: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> { // Use FastMCPContext<undefined>
+export async function insertText(requestParams: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> { // Use FastMCPContext<undefined>
     let wordApp: any = null;
     let doc: any = null;
     let insertionRange: any = null;
@@ -236,7 +236,7 @@ async function insertText(requestParams: ToolRequestParams, context?: FastMCPCon
     }
 }
 
-async function modifyText(requestParams: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> { // Use FastMCPContext<undefined>
+export async function modifyText(requestParams: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> { // Use FastMCPContext<undefined>
     let wordApp: any = null;
     let doc: any = null;
     let selectedRange: any = null;
@@ -280,7 +280,7 @@ async function modifyText(requestParams: ToolRequestParams, context?: FastMCPCon
     }
 }
 
-async function deleteText(requestParams: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> { // Use FastMCPContext<undefined>
+export async function deleteText(requestParams: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> { // Use FastMCPContext<undefined>
     let wordApp: any = null;
     let doc: any = null;
     let selectedRange: any = null;

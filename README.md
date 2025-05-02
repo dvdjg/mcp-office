@@ -770,11 +770,11 @@ sequenceDiagram
 ## Testing and Reliability
 
 Office MCP is tougher than a double-sided spreadsheet. Our testing strategy includes:
-- **Unit Tests**: Test each tool operation (e.g., `word/styles/apply`) with Jest.
-- **Integration Tests**: Verify tool combos (e.g., `word/markdown/import` + `word/styles/apply`).
+- **Unit Tests**: Test each tool operation (e.g., `word/styles/apply`) with Jest. **We have implemented unit tests for key Word tools like `styles`, `text`, and `tables` in `tests/unit/word/`.**
+- **Integration Tests**: Verify tool combinations (e.g., `word/markdown/import` + `word/styles/apply`) or the interaction of a tool with other parts of the server. **We have implemented integration tests for key Word tools like `styles`, `text`, `tables`, and `merge` in `tests/integration/word/`.**
 - **End-to-End Tests**: Simulate workflows (e.g., merge documents, export to Markdown).
 - **Performance Tests**: Ensure complex tasks (e.g., reformatting 100 pages) finish in <10 seconds.
-- **Security Tests**: Block malicious inputs (e.g., path traversal).
+- **Security Tests**: Block malicious inputs (e.g., directory traversal).
 
 ### End-to-End Use Case Tests
 

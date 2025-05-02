@@ -22,7 +22,7 @@ const mergeSchema = z.object({
 type MergeParams = z.infer<typeof mergeSchema>;
 
 // 2. Implementa el Manejador `mergeDocuments` accepting an optional FastMCPContext
-async function mergeDocuments(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{ outputPath: string }>> {
+export async function mergeDocuments(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{ outputPath: string }>> {
     // Use context logger if available, otherwise fallback to global logger
     const log = context?.log ?? logger;
     const reportProgress = context?.reportProgress; // Get reportProgress function if context exists

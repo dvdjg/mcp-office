@@ -22,7 +22,7 @@ const insertTableSchema = z.object({
 type InsertTableParams = z.infer<typeof insertTableSchema>;
 
 // --- Tool Handler Implementation ---
-async function insertTable(
+export async function insertTable(
     params: unknown,
     context?: FastMCPContext<undefined> // Use FastMCPContext<undefined>
 ): Promise<ApiResponse<{}>> {
