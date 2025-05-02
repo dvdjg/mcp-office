@@ -17,6 +17,7 @@ import { wordChartsTool } from './word/charts.tool'; // Importar la herramienta 
 import { wordImageTools } from './word/image.tool'; // Import image tools
 import { wordGenerateAndInsertTextTool } from './word/generateAndInsertText.tool'; // Import the new tool
 import { wordPageTool } from './word/page.tool'; // Importar la herramienta de página
+import { wordHeadersFootersTool } from './word/headersFooters.tool'; // Importar la nueva herramienta
 // Import static resources
 import aiAssistantGuideResource from '../resources/static/ai_assistant_guide.resource'; // Added import
 // Import other tools (Excel, PowerPoint, Office, etc.) here
@@ -40,6 +41,7 @@ const allTools: McpResource[] = [
     ...wordImageTools, // Add image tools
     wordGenerateAndInsertTextTool, // Add the new tool (it's a single object, no spread)
     wordPageTool, // Añadir la herramienta de página (objeto único)
+    wordHeadersFootersTool, // Añadir la herramienta de cabeceras/pies (objeto único)
     // ...excelRangeTool,
     // ...powerpointSlidesTool,
     // ...officePdfTool,
@@ -51,7 +53,7 @@ const placeholderTools: McpResource[] = [
     // Word
     // { path: 'word/search-replace', handler: async () => ({ success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Tool word/search-replace not implemented.' } }), description: 'Perform advanced search and replace (Not Implemented - Requires VBA/COM)' }, // Placeholder removed
     // { path: 'word/page', handler: async () => ({ success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Tool word/page not implemented.' } }), description: 'Configure page layout (Not Implemented)', schema: z.object({}) }, // Placeholder REMOVED
-    { path: 'word/headers-footers', handler: async () => ({ success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Tool word/headers-footers not implemented.' } }), description: 'Manage headers and footers (Not Implemented)', schema: z.object({}) }, // Added schema
+    // { path: 'word/headers-footers', handler: async () => ({ success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Tool word/headers-footers not implemented.' } }), description: 'Manage headers and footers (Not Implemented)', schema: z.object({}) }, // Placeholder REMOVED
     // { path: 'word/tables', handler: async () => ({ success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Tool word/tables not implemented.' } }), description: 'Create and manage tables (Not Implemented)' }, // Placeholder removed
     // { path: 'word/charts', handler: async () => ({ success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Tool word/charts not implemented.' } }), description: 'Insert and manage charts (Not Implemented)' }, // Placeholder removed
     { path: 'word/embedded-objects', handler: async () => ({ success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Tool word/embedded-objects not implemented.' } }), description: 'Manage embedded objects (Not Implemented - Requires VBA/COM)', schema: z.object({}) }, // Added schema
