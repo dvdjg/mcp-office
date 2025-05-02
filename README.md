@@ -106,9 +106,17 @@ npm run build
 ```
 
 ### Running the Server
-Launch the server on port 3000:
+The Office MCP server runs by default using STDIO for communication.
+
+To run the server using a specific port (e.g., 3000) for network communication, set the `OFFICE_MCP_PORT` environment variable:
 ```bash
-npm start
+OFFICE_MCP_PORT=3000 npm start
+```
+
+For production, use PM2:
+```bash
+npm install -g pm2
+pm2 start dist/server/index.js --name mcp-office
 ```
 
 For production, use PM2:

@@ -20,7 +20,9 @@ This guide provides AI assistants with quick-start instructions to use the Offic
 
 ## Overview
 
-The Office MCP Server provides a set of tools for automating Microsoft Office applications (Word, Excel, PowerPoint) and managing files/resources. AI assistants translate user prompts (e.g., “Merge two Word documents”) into MCP tool invocations (e.g., `word.merge`) to perform tasks like applying styles, creating tables, or exporting documents. The server leverages FastMCP features like `instructions`, `annotations`, `reportProgress`, `imageContent`/`audioContent`, `addResourceTemplate` (for `office://` URIs), `authenticate`, `addPrompt`, and `requestSampling` to enable sophisticated interactions. This guide helps AI assistants identify tools, invoke them correctly, and access additional resources.
+The Office MCP Server provides a set of tools for automating Microsoft Office applications (Word, Excel, PowerPoint) and managing files/resources. By default, the server communicates using STDIO. For network communication, it can be configured to run on a specific port (e.g., 3000) by setting the `OFFICE_MCP_PORT` environment variable.
+
+AI assistants translate user prompts (e.g., “Merge two Word documents”) into MCP tool invocations (e.g., `word.merge`) to perform tasks like applying styles, creating tables, or exporting documents. The server leverages FastMCP features like `instructions`, `annotations`, `reportProgress`, `imageContent`/`audioContent`, `addResourceTemplate` (for `office://` URIs), `authenticate`, `addPrompt`, and `requestSampling` to enable sophisticated interactions. This guide helps AI assistants identify tools, invoke them correctly, and access additional resources.
 
 ---
 
