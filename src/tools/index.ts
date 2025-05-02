@@ -35,6 +35,14 @@ import analyzeToolDefinition from './word/analyze.tool'; // Import the new analy
 
 // Import Excel tools
 import { excelWorksheetsTool } from './excel/worksheets.tool';
+import excelRangeTool from './excel/range.tool'; // Importar la nueva herramienta excel/range
+import excelTablesTool from './excel/tables.tool'; // Importar la nueva herramienta excel/tables
+import excelChartsTool from './excel/charts.tool'; // Importar la nueva herramienta excel/charts
+import { excelDataAnalysisTool } from './excel/dataAnalysis.tool'; // Importar la nueva herramienta excel/data-analysis
+
+// Import PowerPoint tools
+import slidesTool from './powerpoint/slides.tool'; // Importar la nueva herramienta powerpoint/slides
+import powerpointShapesTool from './powerpoint/shapes.tool'; // Importar la nueva herramienta powerpoint/shapes
 
 // Import static resources
 import aiAssistantGuideResource from '../resources/static/ai_assistant_guide.resource';
@@ -93,12 +101,16 @@ const nestedToolsList = [
     mermaidExportTool, // Añadida la herramienta de exportación de Mermaid
     reformatTool, // Añadida la herramienta reformatTool
     analyzeMcpResource, // Añadida la herramienta analyzeTool adaptada
-    excelWorksheetsTool, // Añadida la herramienta excel/worksheets
-    // ...excelRangeTool,
-    // ...powerpointSlidesTool,
-    // ...officePdfTool,
-    // Add other imported tools here
-];
+   excelWorksheetsTool, // Añadida la herramienta excel/worksheets
+   excelRangeTool, // Añadida la nueva herramienta excel/range
+   excelTablesTool, // Añadida la nueva herramienta excel/tables
+   excelChartsTool, // Añadida la nueva herramienta excel/charts
+   excelDataAnalysisTool, // Añadida la nueva herramienta excel/data-analysis
+   slidesTool, // Añadida la nueva herramienta powerpoint/slides
+   powerpointShapesTool, // Añadida la nueva herramienta powerpoint/shapes
+     // ...officePdfTool,
+     // Add other imported tools here
+ ];
 
 // Flatten the array to ensure it only contains McpResource objects
 const allImplementedTools: McpResource[] = nestedToolsList.flat();
@@ -114,9 +126,8 @@ const placeholderTools: McpResource[] = [
     // { path: 'word/code-format', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/code-format not implemented.'), description: 'Format code and metadata with syntax highlighting (Not Implemented)', schema: z.object({}) }, // Eliminado el placeholder
     // Excel (Placeholders)
     // { path: 'excel/worksheets', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool excel/worksheets not implemented.'), description: 'Manage Excel worksheets (Not Implemented - Requires Office JS/Scripts)', schema: z.object({}) }, // Eliminado el placeholder
-    { path: 'excel/range', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool excel/range not implemented.'), description: 'Manipulate cell ranges (Not Implemented - Requires Office JS/Scripts)', schema: z.object({}) },
-    // PowerPoint (Placeholders)
-    { path: 'powerpoint/slides', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool powerpoint/slides not implemented.'), description: 'Manage PowerPoint slides (Not Implemented - Requires Office JS/VBA)', schema: z.object({}) },
+    // { path: 'excel/range', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool excel/range not implemented.'), description: 'Manipulate cell ranges (Not Implemented - Requires Office JS/Scripts)', schema: z.object({}) }, // Eliminado el placeholder
+   // PowerPoint (Placeholders) - REMOVED as implemented
     { path: 'office/transfer', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool office/transfer not implemented.'), description: 'Move data between applications (Not Implemented - Requires COM/VBA)', schema: z.object({}) },
     { path: 'office/pdf/export', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool office/pdf/export not implemented.'), description: 'Export documents to PDF (Not Implemented - Requires Office JS/VBA)', schema: z.object({}) },
     { path: 'office/combine', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool office/combine not implemented.'), description: 'Combine multiple files into a Word document (Not Implemented)', schema: z.object({}) },
