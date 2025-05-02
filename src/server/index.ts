@@ -4,19 +4,17 @@
  * @file Main entry point for the msoffice-mcp server.
  * Initializes FastMCP and registers all defined tools.
  */
-import { FastMCP, UserError, UnexpectedStateError, Context as FastMCPContext, ContentResult, TextContent, ToolParameters, audioContent, imageContent, SerializableValue } from 'fastmcp'; // Import SerializableValue from fastmcp
-import { ZodError } from 'zod';
+import { FastMCP, UserError, UnexpectedStateError, Context as FastMCPContext, ContentResult, TextContent, ToolParameters, audioContent, imageContent, SerializableValue } from 'fastmcp';
 import { StandardSchemaV1 } from '@standard-schema/spec'; // Import StandardSchemaV1
 import { allRegisteredTools, aiAssistantGuideResource } from '@/tools'; // Updated import
 import logger from '@/utils/logger';
 import { handleToolError, createErrorResponse } from '@/utils/errorHandler';
+import { validateFilePath } from '@/utils/security'; // Import validateFilePath
 import { McpResource, ToolRequestParams, ApiResponse } from '@/types/common.types'; // Removed SerializableValue import from here
 import { version as packageVersion, name as packageName } from '../../package.json'; // Import name and version
 
 // Define a type alias for the FastMCP context specific to this server (no auth for now)
 type ServerContext = FastMCPContext<undefined>;
-// Define Extras type based on FastMCP definition if not directly importable
-type Extras = Record<string, unknown>;
 
 // --- FastMCP Server Configuration ---
 const OFFICE_MCP_PORT = process.env.OFFICE_MCP_PORT;
@@ -56,8 +54,8 @@ allRegisteredTools.forEach((item: McpResource) => {
             // Use item.schema as parameters, already checked it exists
             parameters: item.schema as unknown as ToolParameters, // Cast schema
             annotations: annotations, // Add annotations
-            // Adjust return type based on removed imports if necessary, FastMCP handles ContentResult union
-            execute: async (args: StandardSchemaV1.InferOutput<any>, context: ServerContext): Promise<ContentResult | string | TextContent> => {
+            // Adjust return type to Promise<ContentResult>
+            execute: async (args: StandardSchemaV1.InferOutput<any>, context: ServerContext): Promise<ContentResult> => {
                 const startTime = Date.now();
                 // Use context.log provided by FastMCP
                 context.log.info(`[${item.path}] EXECUTION START`, { params: hideSensitiveParams(args) as SerializableValue }); // Ensure logged params are serializable
@@ -79,22 +77,39 @@ allRegisteredTools.forEach((item: McpResource) => {
 
                         // Map data to FastMCP return types
                         if (typeof data === 'string') {
-                            // Return string directly or as TextContent
-                            return data;
+                            // Wrap string in TextContent structure and then in a content array
+                            const textContent: TextContent = { type: 'text', text: data };
+                            return { content: [textContent] }; // Wrap in array
+                        } else if (Buffer.isBuffer(data)) {
+                            // Handle Buffer data (likely images/audio)
+                            // Ensure args is treated as 'any' or validated type to access outputFormat safely
+                            const validatedArgs = args as any;
+                            let mimeType = 'application/octet-stream'; // Default MIME type
+                            if (item.path === 'word/image/extract' && validatedArgs.outputFormat) {
+                                mimeType = `image/${validatedArgs.outputFormat}`;
+                            }
+                            context.log.info(`[${item.path}] Returning Buffer data as imageContent`, { mimeType, size: data.length });
+                            // Await imageContent and wrap its result in ContentResult structure
+                            // Note: We still need to pass mimeType if imageContent supports it. Assuming it does via options.
+                            // If imageContent({ buffer: data }) doesn't support mimeType, this needs adjustment.
+                            // Let's assume for now it might be part of the ImageContent object itself or metadata.
+                            // Reverting to the structure that caused the fewest errors previously:
+                            const imgContent = await imageContent({ buffer: data /*, mimeType: mimeType */ }); // Pass mimeType if supported
+                            return { content: [imgContent] }; // Wrap in array
                         } else if (data && typeof data === 'object') {
-                            // Attempt to return structured data if possible, otherwise stringify
-                            // This might need refinement based on specific tool outputs
-                            // For now, return as JSON string within TextContent
+                            // Handle other objects by creating TextContent and wrapping in a content array
                             try {
-                                return { type: 'text', text: JSON.stringify(data, null, 2) };
+                                const textContent: TextContent = { type: 'text', text: JSON.stringify(data, null, 2) };
+                                return { content: [textContent] }; // Wrap in array
                             } catch (stringifyError) {
-                                // Convert error to string for logging
-                                context.log.error(`[${item.path}] Error stringifying successful response data`, { error: String(stringifyError) });
-                                throw new UnexpectedStateError("Failed to serialize successful response data.");
+                                context.log.error(`[${item.path}] Error stringifying successful object response data`, { error: String(stringifyError) });
+                                throw new UnexpectedStateError("Failed to serialize successful object response data.");
                             }
                         } else {
-                            // Handle null, undefined, or other types
-                            return { type: 'text', text: 'Operation completed successfully.' }; // Default success message
+                            // Handle null, undefined, or other primitive types (excluding string/buffer)
+                            // Return a default success message as TextContent wrapped in a content array
+                            const textContent: TextContent = { type: 'text', text: 'Operation completed successfully.' };
+                            return { content: [textContent] }; // Wrap in array
                         }
                     } else {
                         // Throw a UserError for FastMCP to handle client-side errors
@@ -143,6 +158,138 @@ try {
         uri: aiAssistantGuideResource[0].path, // Access first element
         name: aiAssistantGuideResource[0].description || 'Unnamed Resource', // Access first element
         load: async () => {
+// --- Register Resource Templates ---
+logger.info("Registering resource templates...");
+
+// Placeholder functions for resource handling (to be moved/implemented in officeInterop.ts)
+// These are simplified placeholders for demonstration within the handler
+// Return TextContent or Buffer directly. Throw error if not found/supported.
+async function getWordElementContent(filePath: string, elementType: string, identifier: string): Promise<TextContent | Buffer> {
+    logger.info(`[ResourceTemplate] Placeholder: Getting Word element`, { filePath, elementType, identifier });
+    await validateFilePath(filePath); // Validate path
+    if (elementType === 'paragraph') {
+        // Placeholder: Fetch paragraph text
+        const text = `Placeholder text for paragraph ${identifier} in ${filePath}`;
+        // Return TextContent structure
+        return { type: 'text', text };
+    } else if (elementType === 'image') {
+        // Placeholder: Fetch image data (e.g., a small dummy PNG buffer)
+        const dummyPngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+        const buffer = Buffer.from(dummyPngBase64, 'base64');
+        // Return the raw buffer
+        return buffer;
+    }
+    // Add more element types as needed
+
+    // Throw error if element type is not supported
+    throw new UserError(`Element type '${elementType}' not supported for Word documents.`);
+}
+
+// Define the resource template load function
+// It only receives the parsed arguments from the uriTemplate, not the context
+async function loadOfficeResource(
+    params: { app: string; filepath: string; elementType: string; identifier: string }
+): Promise<{ text: string } | { blob: string }> { // Return type based on README (no null)
+    const { app, filepath, elementType, identifier } = params;
+    const startTime = Date.now();
+    // Use the global logger directly as context is not available here
+    logger.info(`[ResourceTemplate] Loading resource for office://`, { app, filepath, elementType, identifier });
+
+    try {
+        // Basic validation
+        if (!app || !filepath || !elementType || !identifier) {
+            throw new UserError("Invalid office resource URI: Missing components.");
+        }
+
+        // Decode filepath if necessary (URIs might encode paths)
+        const decodedFilepath = decodeURIComponent(filepath);
+
+        // **Security Validation is CRUCIAL here** - Reuse or enhance validateFilePath
+        await validateFilePath(decodedFilepath); // Ensure path is safe and within workspace
+
+        // Variable to hold the raw content (TextContent structure or Buffer)
+        let rawContent: TextContent | Buffer | null = null;
+
+        // Route based on application
+        switch (app.toLowerCase()) {
+            case 'word':
+                // Call specific Word interop function based on elementType
+                rawContent = await getWordElementContent(decodedFilepath, elementType.toLowerCase(), identifier);
+                break;
+            case 'excel':
+                // TODO: Implement Excel handling - Placeholder
+                logger.warn(`[ResourceTemplate] Excel resource handling not implemented yet.`, { filepath: decodedFilepath, elementType, identifier }); // Use logger
+                throw new UserError(`Excel resource handling not implemented yet.`);
+                // rawContent = await getExcelElementContent(decodedFilepath, elementType.toLowerCase(), identifier);
+                break;
+            case 'powerpoint':
+                // TODO: Implement PowerPoint handling - Placeholder
+                logger.warn(`[ResourceTemplate] PowerPoint resource handling not implemented yet.`, { filepath: decodedFilepath, elementType, identifier }); // Use logger
+                throw new UserError(`PowerPoint resource handling not implemented yet.`);
+                // rawContent = await getPowerPointElementContent(decodedFilepath, elementType.toLowerCase(), identifier);
+                break;
+            default:
+                throw new UserError(`Unsupported Office application in URI: ${app}`);
+        }
+
+        if (!rawContent) {
+            throw new UserError(`Element type '${elementType}' with identifier '${identifier}' not found or not supported in ${app} document '${decodedFilepath}'.`);
+        }
+
+        const duration = Date.now() - startTime;
+        // Use global logger as context is not available in load function
+        logger.info(`[ResourceTemplate] Successfully retrieved resource.`, { durationMs: duration, app, filepath: decodedFilepath, elementType, identifier });
+
+        // Process rawContent into the { text: ... } or { blob: ... } structure
+        if (Buffer.isBuffer(rawContent)) {
+            // If it's a buffer, convert to base64 and return as blob
+            const base64Data = rawContent.toString('base64');
+            logger.info(`[ResourceTemplate] Successfully loaded resource as blob.`, { durationMs: Date.now() - startTime, app, filepath: decodedFilepath, elementType, identifier, size: base64Data.length }); // Use logger
+            return { blob: base64Data };
+        } else {
+            // Otherwise, it should be TextContent structure, return its text property
+            logger.info(`[ResourceTemplate] Successfully loaded resource as text.`, { durationMs: Date.now() - startTime, app, filepath: decodedFilepath, elementType, identifier }); // Use logger
+            return { text: rawContent.text }; // Assuming rawContent is { type: 'text', text: ... }
+        }
+
+    } catch (error: any) {
+        const duration = Date.now() - startTime;
+        // Use the global logger directly
+        logger.error(`[ResourceTemplate] Error loading office resource URI`, { durationMs: duration, app, filepath, elementType, identifier, error: String(error) });
+
+        // Re-throw FastMCP specific errors or wrap others in UserError
+        if (error instanceof UserError || error instanceof UnexpectedStateError) {
+            throw error;
+        }
+        throw new UserError(`Failed to handle office resource: ${error.message}`, { details: String(error) });
+    }
+}
+
+
+// Register the template
+try {
+    const officeUriPattern = 'office://:app/:filepath/:elementType/:identifier';
+     logger.debug(`Attempting to register resource template: ${officeUriPattern}`);
+   mcpServer.addResourceTemplate({
+       uriTemplate: officeUriPattern, // Use uriTemplate property
+       load: loadOfficeResource,      // Use load property with the correct function
+       // Define arguments based on the template placeholders
+       arguments: [
+           { name: 'app', description: 'Office application (word, excel, powerpoint)', required: true },
+           { name: 'filepath', description: 'URI encoded path to the file', required: true },
+           { name: 'elementType', description: 'Type of element (paragraph, image, cell, shape, etc.)', required: true },
+           { name: 'identifier', description: 'Identifier for the element (index, name, address, etc.)', required: true },
+       ],
+       name: "Office Document Element", // Add name and mimeType as per README example
+       mimeType: "application/octet-stream", // Default mimeType, specific handlers might override
+       // Optional: Add description
+       description: "Access specific elements within Office documents (Word, Excel, PowerPoint)."
+   });
+   logger.info(`Registered resource template: ${officeUriPattern}`);
+   logger.info("Resource template registration complete.");
+} catch (error) {
+    logger.error(`Failed to register office resource template`, { error });
+}
             // Resources don't have parameters, call handler without args
             // Pass undefined for context as resource loader doesn't provide it
             const apiResponse: ApiResponse<any> = await aiAssistantGuideResource[0].handler({}, undefined);

@@ -98,3 +98,44 @@ export function releaseObject(comObject: any): void {
 //   }
 // }
 // test();
+// --- Placeholder Functions for Image Handling ---
+
+/**
+ * Placeholder for extracting an image from a Word document.
+ * @param filePath Path to the Word document.
+ * @param identifier Image identifier (index or text).
+ * @param outputFormat Desired output format.
+ * @returns A Promise resolving to a Buffer containing the image data.
+ */
+export async function extractImageFromWord(
+  filePath: string,
+  identifier: number | string,
+  outputFormat: string
+): Promise<Buffer> {
+  logger.warn(`[OfficeInterop] extractImageFromWord called but not implemented. File: ${filePath}, Identifier: ${identifier}`);
+  // In a real implementation, use COM interop to find the image (e.g., InlineShapes or Shapes collection)
+  // and export it (e.g., using SaveAsPicture or similar methods if available, or clipboard).
+  throw new Error('extractImageFromWord is not implemented yet.');
+  // return Buffer.from(''); // Placeholder return
+}
+
+/**
+ * Placeholder for inserting an image into a Word document.
+ * @param filePath Path to the Word document.
+ * @param imageBuffer Buffer containing the image data.
+ * @param position Insertion position (e.g., 'end', 'bookmark:name').
+ * @param options Optional parameters (width, height, altText).
+ * @returns A Promise resolving when the image is inserted.
+ */
+export async function insertImageIntoWord(
+  filePath: string,
+  imageBuffer: Buffer,
+  position: string,
+  options?: { width?: number; height?: number; altText?: string }
+): Promise<void> {
+  logger.warn(`[OfficeInterop] insertImageIntoWord called but not implemented. File: ${filePath}, Position: ${position}`);
+  // In a real implementation, use COM interop to navigate to the position (e.g., Range, Selection, Bookmark)
+  // and insert the image (e.g., InlineShapes.AddPicture, Shapes.AddPicture).
+  // This might involve saving the buffer to a temporary file first.
+  throw new Error('insertImageIntoWord is not implemented yet.');
+}

@@ -14,6 +14,7 @@ import { wordTextTool } from './word/text.tool'; // Importar la herramienta de t
 import { wordSearchReplaceTool } from './word/searchReplace.tool'; // Importar la nueva herramienta
 import { wordTablesTool } from './word/tables.tool'; // Importar la herramienta de tablas (corrected extension)
 import { wordChartsTool } from './word/charts.tool'; // Importar la herramienta de gráficos
+import { wordImageTools } from './word/image.tool'; // Import image tools
 // Import static resources
 import aiAssistantGuideResource from '../resources/static/ai_assistant_guide.resource'; // Added import
 // Import other tools (Excel, PowerPoint, Office, etc.) here
@@ -34,6 +35,7 @@ const allTools: McpResource[] = [
     ...wordSearchReplaceTool, // Añadir la nueva herramienta
     ...wordTablesTool, // Añadir la herramienta de tablas
     ...wordChartsTool, // Añadir la herramienta de gráficos
+    ...wordImageTools, // Add image tools
     // ...excelRangeTool,
     // ...powerpointSlidesTool,
     // ...officePdfTool,
