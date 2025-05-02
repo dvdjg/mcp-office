@@ -5,10 +5,11 @@
 import fs from 'fs-extra';
 import path from 'path';
 import { z } from 'zod';
-import { McpResource, ApiResponse, ToolContext, ToolRequestParams } from '@/types/common.types';
+import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '@/types/common.types'; // Import FastMCPContext from common types
 import { createErrorResponse, handleToolError } from '@/utils/errorHandler';
 import { validateFilePath } from '@/utils/security';
 import logger from '@/utils/logger';
+// Removed incorrect import: import { FastMCPContext } from 'fastmcp';
 
 // --- Schemas for Input Validation ---
 const listSchema = z.object({
@@ -31,7 +32,7 @@ const deleteSchema = z.object({
 /**
  * Lists files and subdirectories within a given path.
  */
-async function listDirectory(params: ToolRequestParams, context?: ToolContext): Promise<ApiResponse<string[]>> {
+async function listDirectory(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<string[]>> { // Changed generic type to undefined
     try {
         const validatedParams = listSchema.parse(params);
         // Validate the base path first (directory itself must be allowed)
@@ -73,7 +74,7 @@ async function listDirectory(params: ToolRequestParams, context?: ToolContext): 
 /**
  * Creates a new directory.
  */
-async function createDirectory(params: ToolRequestParams, context?: ToolContext): Promise<ApiResponse<{ path: string }>> {
+async function createDirectory(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{ path: string }>> { // Changed generic type to undefined
     try {
         const validatedParams = createSchema.parse(params);
         // Validate the *parent* directory of the path to be created
@@ -97,7 +98,7 @@ async function createDirectory(params: ToolRequestParams, context?: ToolContext)
 /**
  * Deletes a directory.
  */
-async function deleteDirectory(params: ToolRequestParams, context?: ToolContext): Promise<ApiResponse<{}>> {
+async function deleteDirectory(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> { // Changed generic type to undefined
      try {
         const validatedParams = deleteSchema.parse(params);
         const safePath = validateFilePath(validatedParams.path); // Validate the path to delete

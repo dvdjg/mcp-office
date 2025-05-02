@@ -6,6 +6,7 @@
  */
 import { FastMCP, UserError, UnexpectedStateError, Context as FastMCPContext, ContentResult, TextContent, ToolParameters, audioContent, imageContent, SerializableValue } from 'fastmcp';
 import { StandardSchemaV1 } from '@standard-schema/spec'; // Import StandardSchemaV1
+import { IncomingMessage } from 'http'; // Ensure IncomingMessage is imported
 import { allRegisteredTools, aiAssistantGuideResource } from '@/tools'; // Updated import
 import logger from '@/utils/logger';
 import { handleToolError, createErrorResponse } from '@/utils/errorHandler';
@@ -13,20 +14,64 @@ import { validateFilePath } from '@/utils/security'; // Import validateFilePath
 import { McpResource, ToolRequestParams, ApiResponse } from '@/types/common.types'; // Removed SerializableValue import from here
 import { version as packageVersion, name as packageName } from '../../package.json'; // Import name and version
 
-// Define a type alias for the FastMCP context specific to this server (no auth for now)
-type ServerContext = FastMCPContext<undefined>;
+// --- Authentication ---
+
+// Define the structure of the session data returned on successful authentication
+// Add index signature to satisfy FastMCPSessionAuth constraint
+interface AuthSessionData {
+  clientId: string; // Example session data: store the client ID
+  authenticatedAt: number;
+  [key: string]: unknown; // Index signature
+}
+
+// Define a type alias for the FastMCP context specific to this server
+type ServerContext = FastMCPContext<AuthSessionData>;
+
+// Authentication Handler Function (English)
+// Make the function async to return a Promise<AuthSessionData>
+const authenticateHandler = async ( // Added async
+    request: IncomingMessage, // Accept request directly
+    metadata?: Record<string, unknown> // Metadata as optional second argument
+): Promise<AuthSessionData> => { // Return Promise<AuthSessionData>
+    const expectedToken = process.env.MCP_AUTH_TOKEN || 'default-secret-token'; // Use env var or default
+    // Read token from metadata first, then from Node.js headers
+    const providedToken = metadata?.apiKey as string || request.headers['x-api-key'] as string;
+
+    logger.info(`Authentication attempt. Provided token (type): ${typeof providedToken}`); // Log attempt type
+
+    if (!providedToken) {
+        logger.warn('Authentication failed: No token provided.');
+        // Throwing a Response is the standard way to reject in FastMCP authenticate
+        throw new Response('Unauthorized: API key required in metadata.apiKey or x-api-key header.', { status: 401 });
+    }
+
+    if (providedToken !== expectedToken) {
+        logger.warn('Authentication failed: Invalid token provided.');
+        throw new Response('Unauthorized: Invalid API key.', { status: 401 });
+    }
+
+    // Success: Return session data
+    const sessionData: AuthSessionData = {
+        clientId: metadata?.clientName as string || 'unknown-client', // Get client name from metadata if available
+        authenticatedAt: Date.now(),
+    };
+    logger.info(`Authentication successful for client: ${sessionData.clientId}`);
+    return sessionData;
+};
+
 
 // --- FastMCP Server Configuration ---
 const OFFICE_MCP_PORT = process.env.OFFICE_MCP_PORT;
 
 logger.debug('Creating FastMCP server instance...'); // Added log
-// Instantiate FastMCP with name and version from package.json
-const mcpServer = new FastMCP({
+// Instantiate FastMCP with name, version, instructions, and authentication
+const mcpServer = new FastMCP<AuthSessionData>({ // Specify session data type for the server instance
     name: packageName,
     version: packageVersion as `${number}.${number}.${number}`, // Assert type for version
-    instructions: "This server provides tools to interact with Microsoft Office files (Word, Excel, PowerPoint). Use the available tools to read, write, modify, and analyze documents.",
+    instructions: "This server provides tools to interact with Microsoft Office files (Word, Excel, PowerPoint). Use the available tools to read, write, modify, and analyze documents. Authentication is required.",
+    authenticate: authenticateHandler, // Add the authentication handler
 });
-logger.debug('FastMCP server instance created.'); // Added log
+logger.debug('FastMCP server instance created with authentication.'); // Added log
 
 // --- Register Tools ---
 logger.info(`Registering ${allRegisteredTools.length} tools...`);
@@ -55,10 +100,13 @@ allRegisteredTools.forEach((item: McpResource) => {
             parameters: item.schema as unknown as ToolParameters, // Cast schema
             annotations: annotations, // Add annotations
             // Adjust return type to Promise<ContentResult>
+            // Ensure the context type here matches the updated ServerContext with AuthSessionData
             execute: async (args: StandardSchemaV1.InferOutput<any>, context: ServerContext): Promise<ContentResult> => {
                 const startTime = Date.now();
                 // Use context.log provided by FastMCP
-                context.log.info(`[${item.path}] EXECUTION START`, { params: hideSensitiveParams(args) as SerializableValue }); // Ensure logged params are serializable
+                // Log client ID from session data, checking if session exists
+                const clientId = context.session?.clientId || 'unknown-authenticated-client';
+                context.log.info(`[${item.path}] EXECUTION START by client: ${clientId}`, { params: hideSensitiveParams(args) as SerializableValue }); // Ensure logged params are serializable
 
                 try {
                     // Validation is typically handled by FastMCP based on 'parameters' schema
@@ -147,6 +195,51 @@ allRegisteredTools.forEach((item: McpResource) => {
          logger.error(`Failed to register tool: ${item.path}`, { error });
     }
 });
+// --- Register Prompts ---
+logger.info("Registering prompts...");
+try {
+    mcpServer.addPrompt({
+        name: "summarize-word-section", // English name
+        description: "Summarizes a specific section (e.g., paragraph) of a Word document.", // English description
+        arguments: [
+            {
+                name: "filePath",
+                description: "Path to the Word document.",
+                required: true,
+            },
+            {
+                name: "range",
+                description: "The range to summarize (e.g., 'paragraph:5', 'document').",
+                required: true,
+            },
+            {
+                name: "style",
+                description: "Optional: Desired summary style (e.g., 'bullet points', 'concise paragraph').",
+                required: false,
+            }
+        ],
+        // The 'load' function generates the actual prompt text sent to the LLM
+        load: async (args) => {
+            // Construct the prompt using arguments.
+            // This example assumes the client will use a tool like 'word/text/get'
+            // to fetch the content based on filePath and range before calling the LLM.
+            // The prompt guides the LLM on how to process that fetched text.
+            let promptText = `Please summarize the following text extracted from the range "${args.range}" of the document "${args.filePath}":\n\n{extracted_text}\n\n`;
+            if (args.style) {
+                promptText += `Present the summary in the style of: ${args.style}.`;
+            } else {
+                promptText += `Present the summary clearly and concisely.`;
+            }
+            // Note: '{extracted_text}' is a placeholder the client/LLM needs to fill
+            // based on the context or prior tool calls.
+            return promptText;
+        },
+    });
+    logger.info("Registered prompt: summarize-word-section");
+} catch (error) {
+    logger.error("Failed to register prompts", { error });
+}
+logger.info("Prompt registration complete.");
 
 logger.info("All tools registered.");
 

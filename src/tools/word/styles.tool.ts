@@ -4,7 +4,7 @@
  * @file Implements the 'word/styles' tool using COM Interop (winax).
  */
 import { z } from 'zod';
-import { McpResource, ApiResponse, ToolContext, ToolRequestParams } from '@/types/common.types';
+import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '@/types/common.types'; // Import FastMCPContext, remove ToolContext
 import { handleToolError } from '@/utils/errorHandler';
 import logger from '@/utils/logger';
 import { getOfficeApplication, releaseObject } from '@/utils/officeInterop';
@@ -31,7 +31,7 @@ const listStyleSchema = z.object({
 /**
  * Applies a style to a specified range in a Word document using COM Interop.
  */
-async function applyStyle(params: ToolRequestParams, context?: ToolContext): Promise<ApiResponse<{}>> {
+async function applyStyle(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> { // Use FastMCPContext<undefined>
     let wordApp: any = null;
     let doc: any = null;
 
@@ -118,7 +118,7 @@ async function applyStyle(params: ToolRequestParams, context?: ToolContext): Pro
 /**
  * Lists available styles in the document using COM Interop.
  */
-async function listStyles(params: ToolRequestParams, context?: ToolContext): Promise<ApiResponse<string[]>> {
+async function listStyles(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<string[]>> { // Use FastMCPContext<undefined>
     let wordApp: any = null;
     let doc: any = null;
      try {

@@ -7,7 +7,7 @@ import {
 } from '../../utils/officeInterop';
 import { handleToolError } from '../../utils/errorHandler'; // Corrected path
 import { validateFilePath } from '../../utils/security'; // Corrected path
-import { ApiResponse, McpResource, ToolContext } from '../../types/common.types'; // Corrected type name
+import { ApiResponse, McpResource, FastMCPContext } from '../../types/common.types'; // Import FastMCPContext, remove ToolContext
 import logger from '../../utils/logger'; // Corrected import style
 
 // --- Zod Schema for Input Validation ---
@@ -24,7 +24,7 @@ type InsertTableParams = z.infer<typeof insertTableSchema>;
 // --- Tool Handler Implementation ---
 async function insertTable(
     params: unknown,
-    context?: ToolContext // Make context optional
+    context?: FastMCPContext<undefined> // Use FastMCPContext<undefined>
 ): Promise<ApiResponse<{}>> {
     // Removed safeString from log message, using JSON.stringify for basic logging
     logger.info(`Executing word/tables/insert tool with params: ${JSON.stringify(params)}`);

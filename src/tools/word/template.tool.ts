@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { McpResource, ApiResponse, ToolContext } from '../../types/common.types'; // Corrected: McpContext -> ToolContext
+import { McpResource, ApiResponse, FastMCPContext } from '../../types/common.types'; // Import FastMCPContext, remove ToolContext
 import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
 import { validateFilePath } from '../../utils/security';
 import { createErrorResponse, handleToolError } from '../../utils/errorHandler'; // Added createErrorResponse
@@ -28,7 +28,7 @@ const ContentControlTypeMap: { [key: number]: string } = {
 // 2. Implementa el Manejador `analyzeTemplate`
 async function analyzeTemplate(
     params: unknown,
-    context?: ToolContext // Corrected: McpContext -> ToolContext, made optional as per common.types
+    context?: FastMCPContext<undefined> // Use FastMCPContext<undefined>
 ): Promise<ApiResponse<Array<object>>> {
     let wordApp: any = null;
     let doc: any = null;

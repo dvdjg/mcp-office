@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { McpResource, ToolContext, ApiResponse, ToolRequestParams } from '../../types/common.types';
+import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types'; // Import FastMCPContext, remove ToolContext
 import { getOfficeApplication, releaseObject } from '../../utils/officeInterop'; // Removed getRangeFromSpecifier import
 import { validateFilePath } from '../../utils/security';
 import logger from '../../utils/logger';
@@ -93,7 +93,7 @@ function getRangeFromSpecifier(doc: any, rangeSpecifier: string, wordApp: any): 
 
 // --- Handlers ---
 
-async function getText(requestParams: ToolRequestParams, context?: ToolContext): Promise<ApiResponse<string>> {
+async function getText(requestParams: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<string>> { // Use FastMCPContext<undefined>
   let wordApp: any = null;
   let doc: any = null;
   let selectedRange: any = null;
@@ -137,7 +137,7 @@ async function getText(requestParams: ToolRequestParams, context?: ToolContext):
   }
 }
 
-async function insertText(requestParams: ToolRequestParams, context?: ToolContext): Promise<ApiResponse<{}>> {
+async function insertText(requestParams: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> { // Use FastMCPContext<undefined>
     let wordApp: any = null;
     let doc: any = null;
     let insertionRange: any = null;
@@ -236,7 +236,7 @@ async function insertText(requestParams: ToolRequestParams, context?: ToolContex
     }
 }
 
-async function modifyText(requestParams: ToolRequestParams, context?: ToolContext): Promise<ApiResponse<{}>> {
+async function modifyText(requestParams: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> { // Use FastMCPContext<undefined>
     let wordApp: any = null;
     let doc: any = null;
     let selectedRange: any = null;
@@ -280,7 +280,7 @@ async function modifyText(requestParams: ToolRequestParams, context?: ToolContex
     }
 }
 
-async function deleteText(requestParams: ToolRequestParams, context?: ToolContext): Promise<ApiResponse<{}>> {
+async function deleteText(requestParams: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> { // Use FastMCPContext<undefined>
     let wordApp: any = null;
     let doc: any = null;
     let selectedRange: any = null;

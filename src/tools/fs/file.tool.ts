@@ -4,7 +4,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import { z } from 'zod';
-import { McpResource, ApiResponse, ToolContext, ToolRequestParams } from '@/types/common.types';
+import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '@/types/common.types'; // Import FastMCPContext, remove ToolContext
 import { createErrorResponse, handleToolError } from '@/utils/errorHandler';
 import { validateFilePath } from '@/utils/security';
 import logger from '@/utils/logger';
@@ -32,7 +32,7 @@ const renameSchema = z.object({
 
 
 // --- Handlers ---
-async function readFile(params: ToolRequestParams, context?: ToolContext): Promise<ApiResponse<string | Buffer>> {
+async function readFile(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<string | Buffer>> { // Use FastMCPContext<undefined>
     try {
         const validatedParams = readSchema.parse(params);
         const safePath = validateFilePath(validatedParams.path);
@@ -55,7 +55,7 @@ async function readFile(params: ToolRequestParams, context?: ToolContext): Promi
     }
 }
 
-async function writeFile(params: ToolRequestParams, context?: ToolContext): Promise<ApiResponse<{ path: string }>> {
+async function writeFile(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{ path: string }>> { // Use FastMCPContext<undefined>
     try {
         const validatedParams = writeSchema.parse(params);
         // Validate the *directory* where the file will be written
@@ -81,7 +81,7 @@ async function writeFile(params: ToolRequestParams, context?: ToolContext): Prom
     }
 }
 
-async function deleteFile(params: ToolRequestParams, context?: ToolContext): Promise<ApiResponse<{}>> {
+async function deleteFile(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> { // Use FastMCPContext<undefined>
     try {
         const validatedParams = fileOpSchema.parse(params);
         const safePath = validateFilePath(validatedParams.path);
@@ -98,7 +98,7 @@ async function deleteFile(params: ToolRequestParams, context?: ToolContext): Pro
     }
 }
 
-async function renameFile(params: ToolRequestParams, context?: ToolContext): Promise<ApiResponse<{ newPath: string }>> {
+async function renameFile(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{ newPath: string }>> { // Use FastMCPContext<undefined>
      try {
         const validatedParams = renameSchema.parse(params);
         const safeOldPath = validateFilePath(validatedParams.oldPath);

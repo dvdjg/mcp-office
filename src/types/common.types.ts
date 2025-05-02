@@ -1,5 +1,5 @@
 import * as Zod from 'zod';
-import { Context as FastMCPContext } from 'fastmcp'; // Import FastMCP Context
+export { Context as FastMCPContext } from 'fastmcp'; // Import and re-export FastMCP Context
 /**
  * @file Defines common types and interfaces used across the MCP server.
  */

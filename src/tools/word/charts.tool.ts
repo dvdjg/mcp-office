@@ -1,5 +1,5 @@
 import { z, ZodError } from 'zod';
-import { McpResource, ApiResponse, ToolContext, ToolRequestParams, SuccessResponse, ErrorResponse } from '../../types/common.types'; // Importar tipos necesarios
+import { McpResource, ApiResponse, ToolRequestParams, SuccessResponse, ErrorResponse, FastMCPContext } from '../../types/common.types'; // Importar FastMCPContext, quitar ToolContext
 import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
 import { validateFilePath } from '../../utils/security';
 import { handleToolError } from '../../utils/errorHandler'; // Importar handleToolError
@@ -36,7 +36,7 @@ const insertChartSchema = z.object({
  * @param context - Contexto opcional de la herramienta MCP (ToolContext).
  * @returns ApiResponse indicando éxito o fracaso.
  */
-async function insertChart(params: ToolRequestParams, context?: ToolContext): Promise<ApiResponse<{}>> {
+async function insertChart(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> { // Usar FastMCPContext<undefined>
     let wordApp: any = null;
     let doc: any = null;
     let chart: any = null;
@@ -174,7 +174,7 @@ export const wordChartsTool: McpResource[] = [
     },
     {
         path: 'word/charts/modify',
-        handler: async (params: ToolRequestParams, context?: ToolContext): Promise<ApiResponse<any>> => {
+        handler: async (params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<any>> => { // Usar FastMCPContext<undefined>
             // Usar logger global
             logger.warn('Tool word/charts/modify not implemented.');
             return {
@@ -186,7 +186,7 @@ export const wordChartsTool: McpResource[] = [
     },
     {
         path: 'word/charts/delete',
-        handler: async (params: ToolRequestParams, context?: ToolContext): Promise<ApiResponse<any>> => {
+        handler: async (params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<any>> => { // Usar FastMCPContext<undefined>
             // Usar logger global
             logger.warn('Tool word/charts/delete not implemented.');
             return {
