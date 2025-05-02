@@ -50,7 +50,6 @@ import { OfficeWorkflowTool } from './office/workflow.tool'; // Importar la nuev
 import { pdfExportTool } from './office/pdfExport.tool'; // Importar la nueva herramienta office/pdf/export
 import pdfParseTool from './office/pdfParse.tool'; // Importar la nueva herramienta office/pdf/parse
 import { officeCombineTool } from './office/combine.tool'; // Importar la nueva herramienta office/combine
-
 // Import static resources
 import aiAssistantGuideResource from '../resources/static/ai_assistant_guide.resource';
 
@@ -141,7 +140,6 @@ const placeholderTools: McpResource[] = [
     // { path: 'excel/worksheets', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool excel/worksheets not implemented.'), description: 'Manage Excel worksheets (Not Implemented - Requires Office JS/Scripts)', schema: z.object({}) }, // Eliminado el placeholder
     // { path: 'excel/range', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool excel/range not implemented.'), description: 'Manipulate cell ranges (Not Implemented - Requires Office JS/Scripts)', schema: z.object({}) }, // Eliminado el placeholder
    // PowerPoint (Placeholders) - REMOVED as implemented
-    { path: 'office/word-to-powerpoint', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool office/word-to-powerpoint not implemented.'), description: 'Convert Word to PowerPoint (Not Implemented)', schema: z.object({}) },
  ]; // Eliminado el placeholder para office/ai-suggest
 
 
