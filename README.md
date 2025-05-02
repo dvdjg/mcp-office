@@ -265,6 +265,40 @@ Master Word documents with these power tools.
   curl -X POST "http://localhost:3000/word/merge?docs=/docs/doc1.docx,/docs/doc2.docx&output=/docs/merged.docx"
   ```
 
+#### `word/embedded-objects`
+- **Description**: Gestiona objetos OLE incrustados y vinculados en documentos Word. Permite insertar, modificar, eliminar y extraer objetos. La extracción (`extractAll`) intenta guardar objetos OLE y, si es posible, sus representaciones de imagen, pero puede tener limitaciones con ciertos tipos (como Packages). Requiere COM Interop.
+- **Operations**:
+  - `insert`: Inserta un objeto OLE desde un archivo.
+  - `modify`: Reemplaza un objeto OLE existente por uno nuevo.
+  - `delete`: Elimina un objeto OLE por índice.
+  - `extractAll`: Extrae todos los objetos OLE a un directorio.
+- **Example**:
+  ```bash
+  # Extraer todos los objetos
+  curl -X POST "http://localhost:3000/word/embedded-objects/extractAll?filePath=/docs/Composición.docx&outputDirectory=/docs/objetos_extraidos"
+  # Insertar un objeto
+  curl -X POST "http://localhost:3000/word/embedded-objects/insert?filePath=/docs/Reporte.docx&objectPath=/docs/data.xlsx"
+  # Eliminar el segundo objeto
+  curl -X POST "http://localhost:3000/word/embedded-objects/delete?filePath=/docs/DocumentoLargo.docx&objectIndex=2"
+  ```
+
+#### `word/embedded-objects`
+- **Description**: Gestiona objetos OLE incrustados y vinculados en documentos Word. Permite insertar, modificar, eliminar y extraer objetos. La extracción (`extractAll`) intenta guardar objetos OLE y, si es posible, sus representaciones de imagen, pero puede tener limitaciones con ciertos tipos (como Packages). Requiere COM Interop.
+- **Operations**:
+  - `insert`: Inserta un objeto OLE desde un archivo.
+  - `modify`: Reemplaza un objeto OLE existente por uno nuevo.
+  - `delete`: Elimina un objeto OLE por índice.
+  - `extractAll`: Extrae todos los objetos OLE a un directorio.
+- **Example**:
+  ```bash
+  # Extraer todos los objetos
+  curl -X POST "http://localhost:3000/word/embedded-objects/extractAll?filePath=/docs/Composición.docx&outputDirectory=/docs/objetos_extraidos"
+  # Insertar un objeto
+  curl -X POST "http://localhost:3000/word/embedded-objects/insert?filePath=/docs/Reporte.docx&objectPath=/docs/data.xlsx"
+  # Eliminar el segundo objeto
+  curl -X POST "http://localhost:3000/word/embedded-objects/delete?filePath=/docs/DocumentoLargo.docx&objectIndex=2"
+  ```
+
 #### `word/image`
 - **Description**: Extract and insert images in Word documents. *Note: Requires COM interop, implementation status may vary.*
 - **Operations**:

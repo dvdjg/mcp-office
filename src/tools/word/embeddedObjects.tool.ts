@@ -400,206 +400,206 @@ const embeddedObjectsExecute = async (input: EmbeddedObjectsInput, context: { lo
                             if (shape.Type === 7 && shape.OLEFormat?.ProgID?.toLowerCase().includes('package')) {
                                log.warn(`Extracción de objeto Package (Shape ${i}) no implementada directamente.`);
                             } else if (shape.Picture) {
-                               try {
-                                  filename = `${baseFilename}.png`; // O determinar extensión
-                                  outputPath = path.join(absoluteOutputDir, filename);
-                                  counter = 1;
-                                  while (await fs.access(outputPath).then(() => true).catch(() => false)) {
-                                      filename = `${baseFilename}_${counter++}.png`;
-                                      outputPath = path.join(absoluteOutputDir, filename);
-                                  }
-                                  shape.Picture.SaveAs(outputPath); // wdFormatPNG = 13 (o usar constante)
-                                  extractedFiles.push(outputPath);
-                                  log.info(`Extraída imagen de Shape ${i} a ${outputPath}`);
-                               } catch (pictureSaveError: any) {
-                                  log.error(`Error al extraer imagen de Shape ${i}: ${pictureSaveError.message}`);
-                               }
-                            } else {
-                               log.error(`No se pudo extraer Shape ${i} (${progId}) usando SaveAs ni método alternativo.`);
-                            }
-                         }
+                                try {
+                                   filename = `${baseFilename}.png`; // O determinar extensión
+                                   outputPath = path.join(absoluteOutputDir, filename);
+                                   counter = 1;
+                                   while (await fs.access(outputPath).then(() => true).catch(() => false)) {
+                                       filename = `${baseFilename}_${counter++}.png`;
+                                       outputPath = path.join(absoluteOutputDir, filename);
+                                   }
+                                   shape.Picture.SaveAs(outputPath); // wdFormatPNG = 13 (o usar constante)
+                                   extractedFiles.push(outputPath);
+                                   log.info(`Extraída imagen de Shape ${i} a ${outputPath}`);
+                                } catch (pictureSaveError: any) {
+                                   log.error(`Error al extraer imagen de Shape ${i}: ${pictureSaveError.message}`);
+                                }
+                             } else {
+                                log.error(`No se pudo extraer Shape ${i} (${progId}) usando SaveAs ni método alternativo.`);
+                             }
+                          }
 
-                     } else {
-                         log.warn(`Shape ${i} no parece tener un objeto OLE con método SaveAs o no es un tipo OLE manejable directamente.`);
-                     }
-                 } catch (extractError: any) {
-                     log.error(`Error general extrayendo Shape ${i}: ${extractError.message}`);
-                 } finally {
-                     // Liberar el objeto shape si es necesario
-                     releaseObject(shape);
-                 }
-             }
-        }
+                      } else {
+                          log.warn(`Shape ${i} no parece tener un objeto OLE con método SaveAs o no es un tipo OLE manejable directamente.`);
+                      }
+                  } catch (extractError: any) {
+                      log.error(`Error general extrayendo Shape ${i}: ${extractError.message}`);
+                  } finally {
+                      // Liberar el objeto shape si es necesario
+                      releaseObject(shape);
+                  }
+              }
+         }
 
 
-        if (oleObjectCount === 0) {
-          return { success: true, message: 'No se encontraron objetos OLE incrustados o vinculados en el documento.' };
-        } else {
-          return { success: true, message: `Se encontraron ${oleObjectCount} objetos OLE (inline o flotantes). Archivos extraídos: ${extractedFiles.length}.`, details: { extractedPaths: extractedFiles } };
-        }
-      }
+         if (oleObjectCount === 0) {
+           return { success: true, message: 'No se encontraron objetos OLE incrustados o vinculados en el documento.' };
+         } else {
+           return { success: true, message: `Se encontraron ${oleObjectCount} objetos OLE (inline o flotantes). Archivos extraídos: ${extractedFiles.length}.`, details: { extractedPaths: extractedFiles } };
+         }
+       }
 
-      // case 'getProperties':
-      //   // Lógica para obtener propiedades
-      //   log.warn('Operación "getProperties" aún no implementada.');
-      //   return { success: false, message: 'Operación "getProperties" no implementada.' };
+       // case 'getProperties':
+       //   // Lógica para obtener propiedades
+       //   log.warn('Operación "getProperties" aún no implementada.');
+       //   return { success: false, message: 'Operación "getProperties" no implementada.' };
 
-      default:
-         // El error "Property 'operation' does not exist on type 'never'" indica que TS
-         // ha verificado que todos los casos de la unión discriminada están cubiertos.
-         // Por lo tanto, este caso 'default' es teóricamente inalcanzable.
-         // Lanzar un error genérico sin acceder a 'input'.
-         const unreachableCase: never = input; // Mantenemos esto para la verificación de tipos
-         log.error(`Caso inalcanzable en switch detectado: ${JSON.stringify(unreachableCase)}`);
-         throw new Error(`Operación desconocida o no manejada.`);
-    }
-  } catch (error: any) {
-    const message = error instanceof Error ? error.message : String(error);
-    // Usar context.log si está disponible
-    const logFn = context?.log?.error || logger.error; // Fallback a logger global si context no está
-    // Acceder a input.operation y input.filePath aquí es seguro porque están fuera del switch/default
-    // Comprobar si input existe antes de acceder a sus propiedades en caso de error muy temprano
-    const operation = (input as any)?.operation || 'desconocida';
-    const filePathLog = (input as any)?.filePath || 'desconocido';
-    logFn(`Error en la operación '${operation}' en archivo '${filePathLog}': ${message}`, { error });
-    // Devolver un mensaje de error más informativo
-    return { success: false, message: `Error durante la operación '${operation}': ${message}` };
-  } finally {
-    // --- Bloque Finally Mejorado ---
-    const logFnDebug = context?.log?.debug || logger.debug;
-    const logFnWarn = context?.log?.warn || logger.warn;
-    const logFnInfo = context?.log?.info || logger.info;
+       default:
+          // El error "Property 'operation' does not exist on type 'never'" indica que TS
+          // ha verificado que todos los casos de la unión discriminada están cubiertos.
+          // Por lo tanto, este caso 'default' es teóricamente inalcanzable.
+          // Lanzar un error genérico sin acceder a 'input'.
+          const unreachableCase: never = input; // Mantenemos esto para la verificación de tipos
+          log.error(`Caso inalcanzable en switch detectado: ${JSON.stringify(unreachableCase)}`);
+          throw new Error(`Operación desconocida o no manejada.`);
+     }
+   } catch (error: any) {
+     const message = error instanceof Error ? error.message : String(error);
+     // Usar context.log si está disponible
+     const logFn = context?.log?.error || logger.error; // Fallback a logger global si context no está
+     // Acceder a input.operation y input.filePath aquí es seguro porque están fuera del switch/default
+     // Comprobar si input existe antes de acceder a sus propiedades en caso de error muy temprano
+     const operation = (input as any)?.operation || 'desconocida';
+     const filePathLog = (input as any)?.filePath || 'desconocido';
+     logFn(`Error en la operación '${operation}' en archivo '${filePathLog}': ${message}`, { error });
+     // Devolver un mensaje de error más informativo
+     return { success: false, message: `Error durante la operación '${operation}': ${message}` };
+   } finally {
+     // --- Bloque Finally Mejorado ---
+     const logFnDebug = context?.log?.debug || logger.debug;
+     const logFnWarn = context?.log?.warn || logger.warn;
+     const logFnInfo = context?.log?.info || logger.info;
 
-    if (doc) {
-      try {
-        // Cerrar sin guardar cambios, especialmente si fue solo lectura o hubo error
-        // Si hubo éxito en insert/modify/delete, ya se debería haber guardado.
-        // wdDoNotSaveChanges = 0
-        doc.Close(0);
-        logFnDebug(`[EmbeddedObjects] Documento cerrado: ${absoluteFilePath}`);
-      } catch (closeError: any) {
-        logFnWarn(`[EmbeddedObjects] Error al cerrar el documento ${absoluteFilePath}: ${closeError.message}`);
-      }
-      releaseObject(doc); // Liberar objeto del documento
-      doc = null; // Ayuda a GC y evita doble liberación
-    }
-    if (wordApp) {
-      try {
-        // Intentar cerrar Word solo si no quedan otros documentos abiertos
-        // Esto es arriesgado si el usuario tiene otros documentos abiertos.
-        // Una opción más segura es simplemente liberar el objeto y dejar que Word se cierre solo eventualmente.
-        // if (wordApp.Documents.Count === 0) {
-        //    wordApp.Quit();
-        //    logFnDebug('[EmbeddedObjects] Word application Quit() called.');
-        // } else {
-        //    logFnDebug('[EmbeddedObjects] Word application has other documents open, not quitting.');
-        // }
-      } catch (quitError: any) {
-         logFnWarn(`[EmbeddedObjects] Error al intentar cerrar Word: ${quitError.message}`);
-      }
-      releaseObject(wordApp); // Liberar objeto de la aplicación
-      wordApp = null; // Ayuda a GC
-    }
-    // Acceder a input.operation y input.filePath aquí es seguro
-    // Comprobar si input existe antes de acceder a sus propiedades en caso de error muy temprano
-    const operationFinal = (input as any)?.operation || 'desconocida';
-    const filePathFinal = (input as any)?.filePath || 'desconocido';
-    logFnInfo(`Finalizada operación '${operationFinal}' en archivo: ${filePathFinal}`);
-  }
-};
+     if (doc) {
+       try {
+         // Cerrar sin guardar cambios, especialmente si fue solo lectura o hubo error
+         // Si hubo éxito en insert/modify/delete, ya se debería haber guardado.
+         // wdDoNotSaveChanges = 0
+         doc.Close(0);
+         logFnDebug(`[EmbeddedObjects] Documento cerrado: ${absoluteFilePath}`);
+       } catch (closeError: any) {
+         logFnWarn(`[EmbeddedObjects] Error al cerrar el documento ${absoluteFilePath}: ${closeError.message}`);
+       }
+       releaseObject(doc); // Liberar objeto del documento
+       doc = null; // Ayuda a GC y evita doble liberación
+     }
+     if (wordApp) {
+       try {
+         // Intentar cerrar Word solo si no quedan otros documentos abiertos
+         // Esto es arriesgado si el usuario tiene otros documentos abiertos.
+         // Una opción más segura es simplemente liberar el objeto y dejar que Word se cierre solo eventualmente.
+         // if (wordApp.Documents.Count === 0) {
+         //    wordApp.Quit();
+         //    logFnDebug('[EmbeddedObjects] Word application Quit() called.');
+         // } else {
+         //    logFnDebug('[EmbeddedObjects] Word application has other documents open, not quitting.');
+         // }
+       } catch (quitError: any) {
+          logFnWarn(`[EmbeddedObjects] Error al intentar cerrar Word: ${quitError.message}`);
+       }
+       releaseObject(wordApp); // Liberar objeto de la aplicación
+       wordApp = null; // Ayuda a GC
+     }
+     // Acceder a input.operation y input.filePath aquí es seguro
+     // Comprobar si input existe antes de acceder a sus propiedades en caso de error muy temprano
+     const operationFinal = (input as any)?.operation || 'desconocida';
+     const filePathFinal = (input as any)?.filePath || 'desconocido';
+     logFnInfo(`Finalizada operación '${operationFinal}' en archivo: ${filePathFinal}`);
+   }
+ };
 
-// --- Definición de la Herramienta ---
-/**
- * @tool word/embedded-objects
- * @description Gestiona objetos OLE incrustados en documentos Word (.docx) usando COM Interop.
- * Permite insertar ('insert'), modificar ('modify'), eliminar ('delete') y extraer todos ('extractAll') los objetos incrustados.
- * La operación 'extractAll' intenta guardar todos los objetos OLE detectados (tanto inline como flotantes) en un directorio especificado.
- * Requiere investigación adicional de la API COM para la implementación completa, especialmente para 'extractAll' y 'modify'.
- * Utiliza winax para la interacción COM. Asegúrate de que Word esté instalado y accesible.
- *
- * @input_schema
- * {
- *   "type": "object",
- *   "properties": {
- *     "operation": { "enum": ["insert", "modify", "delete", "extractAll"] },
- *     "filePath": { "type": "string", "description": "Path al archivo .docx." },
- *     // Propiedades específicas por operación:
- *     "objectPath": { "type": "string", "description": "(insert) Path al archivo del objeto a insertar." },
- *     "objectIndex": { "type": "integer", "description": "(modify, delete) Índice (1-based) del objeto (InlineShapes primero, luego Shapes)." },
- *     "newObjectPath": { "type": "string", "description": "(modify) Path al nuevo archivo del objeto." },
- *     "outputDirectory": { "type": "string", "description": "(extractAll) Directorio donde guardar los objetos extraídos." }
- *     // ... otras propiedades opcionales ...
- *   },
- *   "required": ["operation", "filePath"], // Requeridos base
- *   // Añadir lógica para requeridos condicionales si es posible o validar en el handler
- *   "allOf": [
- *      {
- *          "if": { "properties": { "operation": { "const": "insert" } } },
- *          "then": { "required": ["objectPath"] }
- *      },
- *      {
- *          "if": { "properties": { "operation": { "const": "modify" } } },
- *          "then": { "required": ["objectIndex", "newObjectPath"] }
- *      },
- *      {
- *          "if": { "properties": { "operation": { "const": "delete" } } },
- *          "then": { "required": ["objectIndex"] }
- *      },
- *      {
- *          "if": { "properties": { "operation": { "const": "extractAll" } } },
- *          "then": { "required": ["outputDirectory"] }
- *      }
- *   ]
- * }
- *
- * @output_schema
- * {
- *   "type": "object",
- *   "properties": {
- *     "success": { "type": "boolean" },
- *     "message": { "type": "string" },
- *     "details": { "type": "object", "optional": true, "description": "Información adicional (ej: paths extraídos)." }
- *   },
- *   "required": ["success", "message"]
- * }
- *
- * @example_usage
- * // Extraer todos los objetos
- * {
- *   "tool_name": "word/embedded-objects",
- *   "arguments": {
- *     "operation": "extractAll",
- *     "filePath": "documentos/informe_con_objetos.docx",
- *     "outputDirectory": "output/objetos_extraidos"
- *   }
- * }
- * // Eliminar el segundo objeto (considerando InlineShapes y Shapes)
- * {
- *   "tool_name": "word/embedded-objects",
- *   "arguments": {
- *     "operation": "delete",
- *     "filePath": "documentos/informe_con_objetos.docx",
- *     "objectIndex": 2
- *   }
- * }
- */
-// Eliminar anotación de tipo explícita, dejar que FastMCP la infiera al usar server.addTool
-export const embeddedObjectsTool = {
-  name: 'word/embedded-objects',
-  description: 'Gestiona objetos OLE incrustados en documentos Word (insert, modify, delete, extractAll).',
-  // FastMCP espera 'parameters' y 'execute', no 'schema' y 'handler' directamente en la definición del objeto.
-  // El esquema Zod se pasa a 'parameters'.
-  parameters: EmbeddedObjectsInputSchema,
-  // El esquema de salida no se define aquí, se infiere del retorno de 'execute'.
-  execute: embeddedObjectsExecute, // Renombrar 'handler' a 'execute'
-  // Añadir anotaciones opcionales si se desea
-  annotations: {
-    title: "Word Embedded Objects Manager",
-    readOnlyHint: false, // Puede modificar (insert, modify, delete)
-    // destructiveHint: true, // Podría ser destructivo (delete)
-    // openWorldHint: false, // No interactúa con el mundo exterior directamente (solo sistema de archivos local)
-  }
-};
+ // --- Definición de la Herramienta ---
+ /**
+  * @tool word/embedded-objects
+  * @description Gestiona objetos OLE incrustados en documentos Word (.docx) usando COM Interop.
+  * Permite insertar ('insert'), modificar ('modify'), eliminar ('delete') y extraer todos ('extractAll') los objetos incrustados.
+  * La operación 'extractAll' intenta guardar todos los objetos OLE detectados (tanto inline como flotantes) en un directorio especificado.
+  * Requiere investigación adicional de la API COM para la implementación completa, especialmente para 'extractAll' y 'modify'.
+  * Utiliza winax para la interacción COM. Asegúrate de que Word esté instalado y accesible.
+  *
+  * @input_schema
+  * {
+  *   "type": "object",
+  *   "properties": {
+  *     "operation": { "enum": ["insert", "modify", "delete", "extractAll"] },
+  *     "filePath": { "type": "string", "description": "Path al archivo .docx." },
+  *     // Propiedades específicas por operación:
+  *     "objectPath": { "type": "string", "description": "(insert) Path al archivo del objeto a insertar." },
+  *     "objectIndex": { "type": "integer", "description": "(modify, delete) Índice (1-based) del objeto (InlineShapes primero, luego Shapes)." },
+  *     "newObjectPath": { "type": "string", "description": "(modify) Path al nuevo archivo del objeto." },
+  *     "outputDirectory": { "type": "string", "description": "(extractAll) Directorio donde guardar los objetos extraídos." }
+  *     // ... otras propiedades opcionales ...
+  *   },
+  *   "required": ["operation", "filePath"], // Requeridos base
+  *   // Añadir lógica para requeridos condicionales si es posible o validar en el handler
+  *   "allOf": [
+  *      {
+  *          "if": { "properties": { "operation": { "const": "insert" } } },
+  *          "then": { "required": ["objectPath"] }
+  *      },
+  *      {
+  *          "if": { "properties": { "operation": { "const": "modify" } } },
+  *          "then": { "required": ["objectIndex", "newObjectPath"] }
+  *      },
+  *      {
+  *          "if": { "properties": { "operation": { "const": "delete" } } },
+  *          "then": { "required": ["objectIndex"] }
+  *      },
+  *      {
+  *          "if": { "properties": { "operation": { "const": "extractAll" } } },
+  *          "then": { "required": ["outputDirectory"] }
+  *      }
+  *   ]
+  * }
+  *
+  * @output_schema
+  * {
+  *   "type": "object",
+  *   "properties": {
+  *     "success": { "type": "boolean" },
+  *     "message": { "type": "string" },
+  *     "details": { "type": "object", "optional": true, "description": "Información adicional (ej: paths extraídos)." }
+  *   },
+  *   "required": ["success", "message"]
+  * }
+  *
+  * @example_usage
+  * // Extraer todos los objetos
+  * {
+  *   "tool_name": "word/embedded-objects",
+  *   "arguments": {
+  *     "operation": "extractAll",
+  *     "filePath": "documentos/informe_con_objetos.docx",
+  *     "outputDirectory": "output/objetos_extraidos"
+  *   }
+  * }
+  * // Eliminar el segundo objeto (considerando InlineShapes y Shapes)
+  * {
+  *   "tool_name": "word/embedded-objects",
+  *   "arguments": {
+  *     "operation": "delete",
+  *     "filePath": "documentos/informe_con_objetos.docx",
+  *     "objectIndex": 2
+  *   }
+  * }
+  */
+ // Eliminar anotación de tipo explícita, dejar que FastMCP la infiera al usar server.addTool
+ export const embeddedObjectsTool = {
+   name: 'word/embedded-objects',
+   description: 'Gestiona objetos OLE incrustados en documentos Word (insert, modify, delete, extractAll).',
+   // FastMCP espera 'parameters' y 'execute', no 'schema' y 'handler' directamente en la definición del objeto.
+   // El esquema Zod se pasa a 'parameters'.
+   parameters: EmbeddedObjectsInputSchema,
+   // El esquema de salida no se define aquí, se infiere del retorno de 'execute'.
+   execute: embeddedObjectsExecute, // Renombrar 'handler' a 'execute'
+   // Añadir anotaciones opcionales si se desea
+   annotations: {
+     title: "Word Embedded Objects Manager",
+     readOnlyHint: false, // Puede modificar (insert, modify, delete)
+     // destructiveHint: true, // Podría ser destructivo (delete)
+     // openWorldHint: false, // No interactúa con el mundo exterior directamente (solo sistema de archivos local)
+   }
+ };
 
-// Exportar para index.ts
-export default embeddedObjectsTool;
+ // Exportar para index.ts
+ export default embeddedObjectsTool;
