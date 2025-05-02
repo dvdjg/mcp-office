@@ -4,7 +4,7 @@ import * as path from 'path';     // For path manipulation
 import * as os from 'os';         // For temporary directory
 import logger from './logger';     // Ensure logger path is correct
 
-type OfficeAppName = 'Word.Application' | 'Excel.Application' | 'PowerPoint.Application';
+export type OfficeAppName = 'Word.Application' | 'Excel.Application' | 'PowerPoint.Application';
 
 /**
  * Gets an instance of an Office application (existing or new).
