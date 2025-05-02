@@ -44,6 +44,7 @@ import { excelDataAnalysisTool } from './excel/dataAnalysis.tool'; // Importar l
 import slidesTool from './powerpoint/slides.tool'; // Importar la nueva herramienta powerpoint/slides
 import powerpointShapesTool from './powerpoint/shapes.tool'; // Importar la nueva herramienta powerpoint/shapes
 import { powerpointPropertiesTool } from './powerpoint/properties.tool'; // Importar la nueva herramienta powerpoint/properties
+import animationsTool from './powerpoint/animations.tool'; // Importar la nueva herramienta powerpoint/animations
 
 // Import static resources
 import aiAssistantGuideResource from '../resources/static/ai_assistant_guide.resource';
@@ -110,6 +111,7 @@ const nestedToolsList = [
    slidesTool, // Añadida la nueva herramienta powerpoint/slides
    powerpointShapesTool, // Añadida la nueva herramienta powerpoint/shapes
    powerpointPropertiesTool, // Añadida la nueva herramienta powerpoint/properties
+   animationsTool, // Añadida la nueva herramienta powerpoint/animations
      // ...officePdfTool,
      // Add other imported tools here
  ];
