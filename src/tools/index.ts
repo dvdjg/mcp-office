@@ -48,6 +48,7 @@ import animationsTool from './powerpoint/animations.tool'; // Importar la nueva 
 import officeTransferTool from './office/transfer.tool'; // Importar la nueva herramienta office/transfer
 import { OfficeWorkflowTool } from './office/workflow.tool'; // Importar la nueva herramienta office/workflow
 import { pdfExportTool } from './office/pdfExport.tool'; // Importar la nueva herramienta office/pdf/export
+import pdfParseTool from './office/pdfParse.tool'; // Importar la nueva herramienta office/pdf/parse
 
 // Import static resources
 import aiAssistantGuideResource from '../resources/static/ai_assistant_guide.resource';
@@ -118,6 +119,7 @@ const nestedToolsList = [
    officeTransferTool, // Añadida la nueva herramienta office/transfer
    new OfficeWorkflowTool(), // Añadida la nueva herramienta office/workflow
    pdfExportTool, // Añadida la nueva herramienta office/pdf/export
+   pdfParseTool, // Añadida la nueva herramienta office/pdf/parse
      // Add other imported tools here
  ];
 
