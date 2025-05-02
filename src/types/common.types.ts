@@ -1,4 +1,5 @@
 import * as Zod from 'zod';
+import { Context as FastMCPContext } from 'fastmcp'; // Import FastMCP Context
 /**
  * @file Defines common types and interfaces used across the MCP server.
  */
@@ -37,24 +38,23 @@ export interface ToolRequestParams {
   [key: string]: any; // Tool-specific parameters
 }
 
-/**
- * Interface for the context passed to tool handlers, potentially
- * containing user info, permissions, etc.
- * Adjust based on FastMCP's actual context object structure.
- */
-export interface ToolContext {
-  userId?: string;
-  permissions?: string[];
-  // Add other relevant context properties
-}
+// Remove the old ToolContext interface as it's replaced by FastMCPContext
+// export interface ToolContext {
+//   userId?: string;
+//   permissions?: string[];
+//   // Add other relevant context properties
+// }
 
 /**
- * Defines the structure for a FastMCP resource (tool).
+ * Defines the structure for a FastMCP resource (tool or resource).
+ * The handler now accepts the FastMCP context.
  */
 export interface McpResource {
-  path: string; // e.g., 'word/styles/apply'
-  handler: (params: ToolRequestParams, context?: ToolContext) => Promise<ApiResponse<any>>;
-  schema?: Zod.ZodSchema<any>; // Optional Zod schema for input validation
-  completions?: (context?: ToolContext) => Promise<Record<string, any[]>>; // For AI completions
-  description?: string; // Tool description for documentation/AI
+  path: string; // e.g., 'word/styles/apply' or 'memory/ai_assistant_guide/read'
+  // Handler now expects FastMCPContext<undefined> (aliased as ServerContext in index.ts)
+  handler: (params: ToolRequestParams, context: FastMCPContext<undefined>) => Promise<ApiResponse<any>>;
+  schema?: Zod.ZodSchema<any>; // Optional Zod schema for input validation (for tools)
+  // Completions might need adjustment if they also need the FastMCP context
+  completions?: (context: FastMCPContext<undefined>) => Promise<Record<string, any[]>>; // For AI completions
+  description?: string; // Tool/Resource description for documentation/AI
 }

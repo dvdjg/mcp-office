@@ -7,10 +7,12 @@ import fs from 'fs-extra';
 import path from 'path';
 import MarkdownIt from 'markdown-it';
 import { z } from 'zod';
-import { McpResource, ApiResponse, ToolContext, ToolRequestParams } from '@/types/common.types';
+// Import FastMCPContext and remove ToolContext
+import { McpResource, ApiResponse, ToolRequestParams } from '@/types/common.types';
+import { Context as FastMCPContext } from 'fastmcp'; // Import FastMCP Context
 import { handleToolError } from '@/utils/errorHandler';
 import { validateFilePath } from '@/utils/security';
-import logger from '@/utils/logger';
+import logger from '@/utils/logger'; // Keep global logger as fallback
 import { getOfficeApplication, releaseObject } from '@/utils/officeInterop'; // Use COM Interop
 
 // --- Schemas ---
@@ -70,30 +72,36 @@ const md = new MarkdownIt({
  * NOTE: This implementation extracts plain text. Preserving formatting (headings, lists, bold, etc.)
  * requires complex iteration over the Word document structure via COM.
  */
-async function exportToMarkdown(params: ToolRequestParams, context?: ToolContext): Promise<ApiResponse<{ outputPath: string }>> {
+async function exportToMarkdown(params: ToolRequestParams, context: FastMCPContext<undefined>): Promise<ApiResponse<{ outputPath: string }>> {
+    const log = context.log ?? logger; // Use context logger or fallback
+    const totalSteps = 3; // Define total steps for progress
+
     let wordApp: any = null;
     let doc: any = null;
     const safeOutputPath = path.resolve(params.output as string); // Already validated by Zod
 
     try {
+        context.reportProgress({ progress: 0, total: totalSteps }); // Step 0: Start
         const validatedParams = exportSchema.parse(params);
         const safeInputPath = validatedParams.filePath; // Already validated
 
-        logger.info(`Attempting COM export Word doc '${safeInputPath}' to Markdown '${safeOutputPath}'`);
+        log.info(`Attempting COM export Word doc '${safeInputPath}' to Markdown '${safeOutputPath}'`);
 
         wordApp = await getOfficeApplication('Word.Application');
+        log.info(`Opening document: ${safeInputPath}`);
         doc = wordApp.Documents.Open(safeInputPath);
         if (!doc) {
             throw new Error(`Failed to open document via COM: ${safeInputPath}`);
         }
+        log.info(`Document opened successfully.`);
 
         // --- Basic Text Extraction using COM ---
-        logger.warn("Exporting using basic COM text extraction (doc.Content.Text). Formatting will be lost.");
+        log.warn("Exporting using basic COM text extraction (doc.Content.Text). Formatting will be lost.");
         let extractedText = doc.Content.Text || ''; // Get the plain text content
 
         // --- Comment Handling (Basic COM Placeholder) ---
         if (validatedParams.comments !== 'ignore' && doc.Comments && doc.Comments.Count > 0) {
-            logger.info(`Extracting ${doc.Comments.Count} comments (basic)...`);
+            log.info(`Extracting ${doc.Comments.Count} comments (basic)...`);
             extractedText += `\n\n## Comments (Extracted via COM)\n`;
             let commentsCollection = null;
             try {
@@ -107,36 +115,43 @@ async function exportToMarkdown(params: ToolRequestParams, context?: ToolContext
                         const scope = comment?.Scope?.Text ? ` (Scope: "${comment.Scope.Text.substring(0, 50)}...")` : '';
                         extractedText += `- **${author}**: ${commentText}${scope}\n`;
                     } catch (commentError) {
-                        logger.error(`Error reading comment at index ${i}: ${commentError}`);
+                        log.error(`Error reading comment at index ${i}: ${commentError}`);
                         extractedText += `- Error reading comment at index ${i}.\n`;
                     } finally {
                          if (comment) releaseObject(comment);
                     }
                 }
             } catch (commentsError) {
-                 logger.error(`Error accessing comments collection: ${commentsError}`);
+                 log.error(`Error accessing comments collection: ${commentsError}`);
                  extractedText += `- Error accessing comments collection.\n`;
             } finally {
                  if (commentsCollection) releaseObject(commentsCollection);
             }
         }
         // --- End Comment Handling ---
+        context.reportProgress({ progress: 1, total: totalSteps }); // Step 1: Text Extracted
 
+        log.info(`Writing extracted text to ${safeOutputPath}`);
         await fs.writeFile(safeOutputPath, extractedText, 'utf8');
-        logger.info(`Successfully wrote extracted text via COM to ${safeOutputPath}`);
+        log.info(`Successfully wrote extracted text via COM to ${safeOutputPath}`);
+        context.reportProgress({ progress: 2, total: totalSteps }); // Step 2: File Written
 
+        context.reportProgress({ progress: 3, total: totalSteps }); // Step 3: Complete
         return { success: true, data: { outputPath: safeOutputPath } };
 
     } catch (error) {
-        return handleToolError(error, 'WORD_MD_EXPORT_ERROR');
+        // Convert error to string for logging
+        log.error(`Error during Word to Markdown export: ${String(error)}`, { error: String(error) });
+        throw error; // Let the main handler manage the error response
+        // return handleToolError(error, 'WORD_MD_EXPORT_ERROR');
     } finally {
         // --- CRUCIAL: Release COM Objects ---
         if (doc) {
             try {
                 doc.Close(false); // Close without saving
-                logger.debug(`Closed document: ${params.filePath}`);
+                log.debug(`Closed document: ${params.filePath}`);
             } catch (closeError) {
-                logger.error(`Error closing document: ${closeError}`);
+                log.error(`Error closing document: ${closeError}`);
             }
             releaseObject(doc);
             doc = null;
@@ -145,7 +160,7 @@ async function exportToMarkdown(params: ToolRequestParams, context?: ToolContext
             // Consider wordApp.Quit() if needed, but releasing is usually sufficient if obtained via getOfficeApplication
             releaseObject(wordApp);
             wordApp = null;
-            logger.debug("Released Word Application COM object for export.");
+            log.debug("Released Word Application COM object for export.");
         }
     }
 }
@@ -156,26 +171,33 @@ async function exportToMarkdown(params: ToolRequestParams, context?: ToolContext
  * Applying Word formatting based on Markdown syntax (headings, lists, bold, etc.)
  * requires complex parsing and interaction with Word's COM API.
  */
-async function importFromMarkdown(params: ToolRequestParams, context?: ToolContext): Promise<ApiResponse<{ outputPath: string }>> {
+async function importFromMarkdown(params: ToolRequestParams, context: FastMCPContext<undefined>): Promise<ApiResponse<{ outputPath: string }>> {
+    const log = context.log ?? logger; // Use context logger or fallback
+    const totalSteps = 4; // Define total steps for progress
+
     let wordApp: any = null;
     let newDoc: any = null;
     const safeOutputPath = path.resolve(params.output as string); // Already validated by Zod
 
     try {
+        context.reportProgress({ progress: 0, total: totalSteps }); // Step 0: Start
         const validatedParams = importSchema.parse(params);
         const safeInputPath = validatedParams.filePath; // Already validated
         const safeTemplatePath = validatedParams.template; // Already validated (if present)
 
-        logger.info(`Attempting COM import Markdown '${safeInputPath}' to Word '${safeOutputPath}'`);
+        log.info(`Attempting COM import Markdown '${safeInputPath}' to Word '${safeOutputPath}'`);
         if (safeTemplatePath) {
-            logger.info(`Using template: ${safeTemplatePath}`);
+            log.info(`Using template: ${safeTemplatePath}`);
         }
 
+        log.info(`Reading Markdown file: ${safeInputPath}`);
         const markdownContent = await fs.readFile(safeInputPath, 'utf8');
+        context.reportProgress({ progress: 1, total: totalSteps }); // Step 1: Markdown Read
 
         wordApp = await getOfficeApplication('Word.Application');
 
         // Create new document
+        log.info(`Creating new Word document (using template: ${!!safeTemplatePath})`);
         if (safeTemplatePath) {
             newDoc = wordApp.Documents.Add(safeTemplatePath);
         } else {
@@ -184,10 +206,12 @@ async function importFromMarkdown(params: ToolRequestParams, context?: ToolConte
         if (!newDoc) {
             throw new Error("Failed to create new Word document via COM.");
         }
+        context.reportProgress({ progress: 2, total: totalSteps }); // Step 2: Document Created
 
         // --- Basic Text Insertion using COM ---
-        logger.warn("Importing Markdown as plain text using COM (newDoc.Content.Text). Formatting is lost.");
+        log.warn("Importing Markdown as plain text using COM (newDoc.Content.Text). Formatting is lost.");
         newDoc.Content.Text = markdownContent; // Insert the entire Markdown as plain text
+        context.reportProgress({ progress: 3, total: totalSteps }); // Step 3: Text Inserted
 
         // --- Complex Formatting (Placeholder Idea) ---
         // For real formatting, you would:
@@ -202,15 +226,20 @@ async function importFromMarkdown(params: ToolRequestParams, context?: ToolConte
 
 
         // Save the new document
+        log.info(`Saving new Word document to: ${safeOutputPath}`);
         // Use WdSaveFormat enumeration for DOCX (value 16)
         const wdFormatDocumentDefault = 16; // .docx format
         newDoc.SaveAs2(safeOutputPath, wdFormatDocumentDefault);
-        logger.info(`Successfully saved new Word document via COM to ${safeOutputPath}`);
+        log.info(`Successfully saved new Word document via COM to ${safeOutputPath}`);
+        context.reportProgress({ progress: 4, total: totalSteps }); // Step 4: Saved (Complete)
 
         return { success: true, data: { outputPath: safeOutputPath } };
 
     } catch (error) {
-        return handleToolError(error, 'WORD_MD_IMPORT_ERROR');
+        // Convert error to string for logging
+        log.error(`Error during Markdown to Word import: ${String(error)}`, { error: String(error) });
+        throw error; // Let the main handler manage the error response
+        // return handleToolError(error, 'WORD_MD_IMPORT_ERROR');
     } finally {
         // --- CRUCIAL: Release COM Objects ---
         if (newDoc) {
@@ -218,9 +247,9 @@ async function importFromMarkdown(params: ToolRequestParams, context?: ToolConte
                 // Close the *newly created* document. Saving already happened.
                 // Pass false to SaveChanges parameter if you are sure no more changes are needed.
                 newDoc.Close(false);
-                logger.debug(`Closed newly created document: ${safeOutputPath}`);
+                log.debug(`Closed newly created document: ${safeOutputPath}`);
             } catch (closeError) {
-                logger.error(`Error closing newly created document: ${closeError}`);
+                log.error(`Error closing newly created document: ${closeError}`);
             }
             releaseObject(newDoc);
             newDoc = null;
@@ -229,7 +258,7 @@ async function importFromMarkdown(params: ToolRequestParams, context?: ToolConte
             // Consider wordApp.Quit() if needed
             releaseObject(wordApp);
             wordApp = null;
-            logger.debug("Released Word Application COM object for import.");
+            log.debug("Released Word Application COM object for import.");
         }
     }
 }

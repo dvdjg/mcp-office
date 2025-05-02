@@ -26,7 +26,7 @@ logger.debug('Creating FastMCP server instance...'); // Added log
 const mcpServer = new FastMCP({
     name: packageName,
     version: packageVersion as `${number}.${number}.${number}`, // Assert type for version
-    // instructions: "Optional instructions for the AI assistant on how to use this server",
+    instructions: "This server provides tools to interact with Microsoft Office files (Word, Excel, PowerPoint). Use the available tools to read, write, modify, and analyze documents.",
 });
 logger.debug('FastMCP server instance created.'); // Added log
 
@@ -43,12 +43,19 @@ allRegisteredTools.forEach((item: McpResource) => {
     try {
         logger.debug(`Attempting to register tool: ${item.path}`);
         // Register as a tool
+        // Define annotations, adding specific ones for potentially slow tools
+        const annotations: Record<string, unknown> = { title: item.description || item.path }; // Use description as title if available, else path
+        const slowTools = ['word/merge', 'word/markdown/export', 'word/markdown/import', 'word/search-replace'];
+        if (slowTools.includes(item.path)) {
+            annotations.estimatedDuration = "This operation can take several seconds or more depending on document size and complexity.";
+        }
+
         mcpServer.addTool({
             name: item.path, // Use the unique path as the tool name
             description: item.description,
             // Use item.schema as parameters, already checked it exists
             parameters: item.schema as unknown as ToolParameters, // Cast schema
-            // annotations: { title: item.path }, // Optional: Add annotations like title
+            annotations: annotations, // Add annotations
             // Adjust return type based on removed imports if necessary, FastMCP handles ContentResult union
             execute: async (args: StandardSchemaV1.InferOutput<any>, context: ServerContext): Promise<ContentResult | string | TextContent> => {
                 const startTime = Date.now();
@@ -60,8 +67,8 @@ allRegisteredTools.forEach((item: McpResource) => {
                     // Authorization checks can use context.session if authentication is implemented
 
                     // Execute the original tool handler
-                    // Pass args and potentially context.session if needed by the original handler
-                    const apiResponse: ApiResponse<any> = await item.handler(args, undefined); // Pass args, context original era undefined
+                    // Pass args and the FastMCP context to the original handler
+                    const apiResponse: ApiResponse<any> = await item.handler(args, context); // Pass args and context
 
                     const duration = Date.now() - startTime;
 

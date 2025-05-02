@@ -2,15 +2,18 @@ import { z } from 'zod';
 import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
 import { validateFilePath } from '../../utils/security';
 import { handleToolError } from '../../utils/errorHandler';
+// Import FastMCPContext and remove ToolContext
 import type {
     ApiResponse, // Type alias for SuccessResponse | ErrorResponse
     SuccessResponse, // Specific type for success
     ErrorResponse, // Specific type for error
     McpResource,
-    ToolContext,
+    // ToolContext, // Removed
     ToolRequestParams,
 } from '../../types/common.types';
+import { Context as FastMCPContext } from 'fastmcp'; // Import FastMCP Context
 import path from 'path';
+import logger from '../../utils/logger'; // Import global logger
 
 // Define Schemas de Entrada
 const searchReplaceSchema = z.object({
@@ -25,11 +28,15 @@ const searchReplaceSchema = z.object({
 
 type SearchReplaceParams = z.infer<typeof searchReplaceSchema>;
 
-// Implementa el Manejador searchAndReplace
+// Implementa el Manejador searchAndReplace accepting FastMCPContext
 async function searchAndReplace(
     params: ToolRequestParams,
-    context?: ToolContext // Context is optional, logger removed
+    context: FastMCPContext<undefined>
 ): Promise<ApiResponse<{ replacementsMade: boolean }>> {
+    // Use context.log provided by FastMCP, fallback to global logger if necessary
+    const log = context?.log ?? logger;
+    const totalSteps = 4; // Define total steps for progress
+
     let wordApp: any = null;
     let doc: any = null;
     let findObject: any = null;
@@ -39,18 +46,24 @@ async function searchAndReplace(
     const filePathParam = (params as any)?.filePath || 'unknown'; // For logging in case of early error
 
     try {
+        context.reportProgress({ progress: 0, total: totalSteps }); // Step 0: Start
         // Valida los params
         const validatedParams = searchReplaceSchema.parse(params);
 
         // Valida la ruta del documento
+        // Note: validateFilePath might need adjustment if it relies on allowedPaths from context
         const safeFilePath = await validateFilePath(validatedParams.filePath);
+        log.info(`Validated file path: ${safeFilePath}`);
 
         // Obtén la instancia de Word
+        log.info('Getting Word application instance...');
         wordApp = await getOfficeApplication('Word.Application');
         wordApp.Visible = false; // Keep Word hidden
 
         // Abre el documento
+        log.info(`Opening document: ${safeFilePath}`);
         doc = await wordApp.Documents.Open(safeFilePath);
+        context.reportProgress({ progress: 1, total: totalSteps }); // Step 1: Document Opened
 
         // Accede al objeto Find y Replacement
         findObject = await doc.Content.Find;
@@ -61,6 +74,7 @@ async function searchAndReplace(
         await replacementObject.ClearFormatting();
 
         // Configura propiedades de búsqueda y reemplazo
+        log.info(`Configuring search for "${validatedParams.find}" and replace with "${validatedParams.replace}"`);
         findObject.Text = validatedParams.find;
         replacementObject.Text = validatedParams.replace;
         findObject.MatchCase = validatedParams.matchCase;
@@ -68,9 +82,11 @@ async function searchAndReplace(
         findObject.MatchWildcards = validatedParams.useWildcards;
         findObject.Forward = true;
         findObject.Wrap = 1; // wdFindContinue
+        context.reportProgress({ progress: 2, total: totalSteps }); // Step 2: Configured
 
         // Ejecuta la operación
         const replaceOption = validatedParams.replaceAll ? 2 : 1; // wdReplaceAll = 2, wdReplaceOne = 1
+        log.info(`Executing find/replace (replaceAll: ${validatedParams.replaceAll})...`);
 
         replacementsMade = await findObject.Execute(
             undefined, // FindText
@@ -85,10 +101,16 @@ async function searchAndReplace(
             undefined, // ReplaceWith (set on replacementObject)
             replaceOption // Replace
         );
+        log.info(`Find/replace executed. Replacements made: ${replacementsMade}`);
+        context.reportProgress({ progress: 3, total: totalSteps }); // Step 3: Executed
 
         // Guarda si hubo éxito
         if (replacementsMade) {
+            log.info(`Saving document: ${safeFilePath}`);
             await doc.Save();
+            log.info(`Document saved.`);
+        } else {
+            log.info(`No replacements made, document not saved.`);
         }
 
         // Construye la respuesta de éxito manualmente
@@ -96,17 +118,20 @@ async function searchAndReplace(
             success: true,
             message: `Search and replace operation completed on ${path.basename(
                 safeFilePath
-            )}. Success status: ${replacementsMade}`,
+            )}. Replacements made: ${replacementsMade}`, // Adjusted message
             data: { replacementsMade },
         };
+        context.reportProgress({ progress: 4, total: totalSteps }); // Step 4: Complete
         return successResponse;
 
     } catch (error: unknown) {
         // Maneja errores y devuelve ErrorResponse
-        // Puedes pasar un código específico si lo deseas, p.ej., 'WORD_SEARCH_REPLACE_ERROR'
-        return handleToolError(error, 'WORD_TOOL_ERROR');
+        log.error(`Error during search/replace on ${filePathParam}: ${String(error)}`, { error: String(error) });
+        throw error; // Let the main handler manage the error response
+        // return handleToolError(error, 'WORD_SEARCH_REPLACE_ERROR');
     } finally {
         // Libera objetos COM en orden inverso de creación/obtención
+        log.debug('Starting COM object cleanup for search/replace...');
         if (replacementObject) {
             await releaseObject(replacementObject);
         }
@@ -117,22 +142,28 @@ async function searchAndReplace(
             try {
                 await doc.Close(false); // No guardar cambios al cerrar
             } catch (closeError: unknown) {
-                 // Log warning if logger was available, otherwise ignore non-critical error
-                 console.warn(`Non-critical error closing document: ${closeError}`);
+                 log.warn(`Non-critical error closing document: ${String(closeError)}`);
             }
             await releaseObject(doc);
         }
         if (wordApp) {
             try {
-                if (await wordApp.Documents.Count === 0) {
+                // Check if Word is still running and has no other docs open before quitting
+                // Ensure wordApp is checked for existence before accessing properties/methods
+                if (wordApp && typeof wordApp.Documents !== 'undefined' && await wordApp.Documents.Count === 0) {
+                    log.debug("Attempting to quit Word application as no documents are open.");
                     await wordApp.Quit();
+                } else if (wordApp && typeof wordApp.Documents !== 'undefined') {
+                    log.debug(`Word application not quit (${await wordApp.Documents.Count} docs open). Releasing object.`);
+                } else if (wordApp) {
+                    log.debug("Word application object exists but Documents property is inaccessible. Releasing object.");
                 }
             } catch (quitError: unknown) {
-                 // Log warning if logger was available, otherwise ignore non-critical error
-                 console.warn(`Non-critical error quitting Word: ${quitError}`);
+                 log.warn(`Non-critical error quitting Word: ${String(quitError)}`);
             }
-            await releaseObject(wordApp);
+            await releaseObject(wordApp); // Release reference regardless of quit attempt
         }
+        log.debug('COM object cleanup finished for search/replace.');
     }
 }
 
@@ -140,7 +171,7 @@ async function searchAndReplace(
 export const wordSearchReplaceTool: McpResource[] = [
     {
         path: 'word/search-replace',
-        handler: searchAndReplace,
+        handler: searchAndReplace, // Correct handler signature
         schema: searchReplaceSchema,
         description:
             'Searches for text in a Word document and replaces it using COM Interop. Supports options like match case, whole word, wildcards, and replace all.',

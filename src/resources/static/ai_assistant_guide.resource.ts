@@ -3,13 +3,20 @@ import path from 'path';
 import { McpResource, ApiResponse, ToolRequestParams } from '../../types/common.types'; // Added ToolRequestParams
 import { handleToolError } from '../../utils/errorHandler';
 import logger from '../../utils/logger'; // Changed to default import
+import { Context as FastMCPContext } from 'fastmcp'; // Import FastMCP Context
 
 const guidePath = path.resolve(__dirname, '../../docs/ai_assistant_guide.md');
 
-// Handler now accepts params and context, although not used for this static read
-const readAiAssistantGuide = async (params: ToolRequestParams = {}): Promise<ApiResponse<string>> => {
+// Handler now accepts params and an optional context (FastMCPContext<undefined>)
+// Context is optional here because the resource loader in server/index.ts doesn't provide it.
+const readAiAssistantGuide = async (
+    params: ToolRequestParams = {},
+    context?: FastMCPContext<undefined> // Add optional context parameter
+): Promise<ApiResponse<string>> => {
   try {
-    logger.info('Reading AI assistant guide...', { params }); // Log params if needed
+    // Use context.log if available, otherwise use the global logger
+    const log = context?.log ?? logger;
+    log.info('Reading AI assistant guide...', { params }); // Log params if needed
     const content = await fs.readFile(guidePath, 'utf-8');
     logger.info('AI assistant guide read successfully.');
     return { success: true, data: content };
