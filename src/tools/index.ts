@@ -46,6 +46,7 @@ import powerpointShapesTool from './powerpoint/shapes.tool'; // Importar la nuev
 import { powerpointPropertiesTool } from './powerpoint/properties.tool'; // Importar la nueva herramienta powerpoint/properties
 import animationsTool from './powerpoint/animations.tool'; // Importar la nueva herramienta powerpoint/animations
 import officeTransferTool from './office/transfer.tool'; // Importar la nueva herramienta office/transfer
+import { OfficeWorkflowTool } from './office/workflow.tool'; // Importar la nueva herramienta office/workflow
 
 // Import static resources
 import aiAssistantGuideResource from '../resources/static/ai_assistant_guide.resource';
@@ -114,6 +115,7 @@ const nestedToolsList = [
    powerpointPropertiesTool, // Añadida la nueva herramienta powerpoint/properties
    animationsTool, // Añadida la nueva herramienta powerpoint/animations
    officeTransferTool, // Añadida la nueva herramienta office/transfer
+   new OfficeWorkflowTool(), // Añadida la nueva herramienta office/workflow
      // ...officePdfTool,
      // Add other imported tools here
  ];
@@ -137,8 +139,8 @@ const placeholderTools: McpResource[] = [
     { path: 'office/pdf/export', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool office/pdf/export not implemented.'), description: 'Export documents to PDF (Not Implemented - Requires Office JS/VBA)', schema: z.object({}) },
     { path: 'office/combine', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool office/combine not implemented.'), description: 'Combine multiple files into a Word document (Not Implemented)', schema: z.object({}) },
     { path: 'office/word-to-powerpoint', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool office/word-to-powerpoint not implemented.'), description: 'Convert Word to PowerPoint (Not Implemented)', schema: z.object({}) },
-    { path: 'office/ai-suggest', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool office/ai-suggest not implemented.'), description: 'Provide AI-driven recommendations (Not Implemented)', schema: z.object({}) },
-];
+]; // Eliminado el placeholder para office/ai-suggest
+
 
 // Combine implemented and placeholder tools
 const allRegisteredTools = [...allImplementedTools, ...placeholderTools];
