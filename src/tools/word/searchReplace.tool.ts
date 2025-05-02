@@ -28,13 +28,14 @@ const searchReplaceSchema = z.object({
 
 type SearchReplaceParams = z.infer<typeof searchReplaceSchema>;
 
-// Implementa el Manejador searchAndReplace accepting FastMCPContext
+// Implementa el Manejador searchAndReplace accepting an optional FastMCPContext
 async function searchAndReplace(
     params: ToolRequestParams,
-    context: FastMCPContext<undefined>
+    context?: FastMCPContext<undefined>
 ): Promise<ApiResponse<{ replacementsMade: boolean }>> {
-    // Use context.log provided by FastMCP, fallback to global logger if necessary
+    // Use context logger if available, otherwise fallback to global logger
     const log = context?.log ?? logger;
+    const reportProgress = context?.reportProgress; // Get reportProgress function if context exists
     const totalSteps = 4; // Define total steps for progress
 
     let wordApp: any = null;
@@ -46,7 +47,7 @@ async function searchAndReplace(
     const filePathParam = (params as any)?.filePath || 'unknown'; // For logging in case of early error
 
     try {
-        context.reportProgress({ progress: 0, total: totalSteps }); // Step 0: Start
+        reportProgress?.({ progress: 0, total: totalSteps }); // Step 0: Start
         // Valida los params
         const validatedParams = searchReplaceSchema.parse(params);
 
@@ -63,7 +64,7 @@ async function searchAndReplace(
         // Abre el documento
         log.info(`Opening document: ${safeFilePath}`);
         doc = await wordApp.Documents.Open(safeFilePath);
-        context.reportProgress({ progress: 1, total: totalSteps }); // Step 1: Document Opened
+        reportProgress?.({ progress: 1, total: totalSteps }); // Step 1: Document Opened
 
         // Accede al objeto Find y Replacement
         findObject = await doc.Content.Find;
@@ -82,7 +83,7 @@ async function searchAndReplace(
         findObject.MatchWildcards = validatedParams.useWildcards;
         findObject.Forward = true;
         findObject.Wrap = 1; // wdFindContinue
-        context.reportProgress({ progress: 2, total: totalSteps }); // Step 2: Configured
+        reportProgress?.({ progress: 2, total: totalSteps }); // Step 2: Configured
 
         // Ejecuta la operación
         const replaceOption = validatedParams.replaceAll ? 2 : 1; // wdReplaceAll = 2, wdReplaceOne = 1
@@ -102,7 +103,7 @@ async function searchAndReplace(
             replaceOption // Replace
         );
         log.info(`Find/replace executed. Replacements made: ${replacementsMade}`);
-        context.reportProgress({ progress: 3, total: totalSteps }); // Step 3: Executed
+        reportProgress?.({ progress: 3, total: totalSteps }); // Step 3: Executed
 
         // Guarda si hubo éxito
         if (replacementsMade) {
@@ -121,7 +122,7 @@ async function searchAndReplace(
             )}. Replacements made: ${replacementsMade}`, // Adjusted message
             data: { replacementsMade },
         };
-        context.reportProgress({ progress: 4, total: totalSteps }); // Step 4: Complete
+        reportProgress?.({ progress: 4, total: totalSteps }); // Step 4: Complete
         return successResponse;
 
     } catch (error: unknown) {

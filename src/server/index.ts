@@ -81,7 +81,6 @@ allRegisteredTools.forEach((item: McpResource) => {
                         if (typeof data === 'string') {
                             // Return string directly or as TextContent
                             return data;
-                            // return { type: 'text', text: data };
                         } else if (data && typeof data === 'object') {
                             // Attempt to return structured data if possible, otherwise stringify
                             // This might need refinement based on specific tool outputs
@@ -143,10 +142,10 @@ try {
     mcpServer.addResource({
         uri: aiAssistantGuideResource[0].path, // Access first element
         name: aiAssistantGuideResource[0].description || 'Unnamed Resource', // Access first element
-        // mimeType: 'text/plain', // Set appropriate mime type if known
         load: async () => {
             // Resources don't have parameters, call handler without args
-            const apiResponse: ApiResponse<any> = await aiAssistantGuideResource[0].handler({}, undefined); // Access first element
+            // Pass undefined for context as resource loader doesn't provide it
+            const apiResponse: ApiResponse<any> = await aiAssistantGuideResource[0].handler({}, undefined);
             if (apiResponse.success) {
                 return { text: String(apiResponse.data) }; // Assuming text content
             } else {
@@ -275,7 +274,7 @@ if (OFFICE_MCP_PORT) {
 // Nota: Esto generalmente solo silencia el síntoma, no arregla la causa
 // raíz si el cierre no es limpio (p.ej., con fastmcp dev).
 
-/* // TEMPORALMENTE COMENTADO POR SUGERENCIA DEL USUARIO
+/* 
 process.stdout.on('error', (err: NodeJS.ErrnoException) => {
   if (err.code === 'EPIPE') {
     // Ignorar EPIPE en stdout, probablemente causado por cierre abrupto.

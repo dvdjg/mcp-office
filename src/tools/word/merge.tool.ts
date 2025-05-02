@@ -21,15 +21,16 @@ const mergeSchema = z.object({
 
 type MergeParams = z.infer<typeof mergeSchema>;
 
-// 2. Implementa el Manejador `mergeDocuments` accepting FastMCPContext
-async function mergeDocuments(params: ToolRequestParams, context: FastMCPContext<undefined>): Promise<ApiResponse<{ outputPath: string }>> {
-    // Use context.log provided by FastMCP
-    const log = context.log;
+// 2. Implementa el Manejador `mergeDocuments` accepting an optional FastMCPContext
+async function mergeDocuments(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{ outputPath: string }>> {
+    // Use context logger if available, otherwise fallback to global logger
+    const log = context?.log ?? logger;
+    const reportProgress = context?.reportProgress; // Get reportProgress function if context exists
 
-    // Validate context has necessary functions (reportProgress is implicitly available on FastMCPContext)
-    if (!context || !context.log || typeof context.reportProgress !== 'function') {
-        // Use global logger for this critical failure if context.log is unavailable
-        (logger ?? console).error('Merge tool requires FastMCP context with log and reportProgress methods.');
+    // Validate context has necessary functions if context is provided
+    if (context && (!context.log || typeof context.reportProgress !== 'function')) {
+        // Log error using the determined logger
+        log.error('Merge tool received context but it is missing required properties (log, reportProgress).');
         // Avoid returning ApiResponse directly, throw error for FastMCP handler
         throw new Error('Tool context is missing required properties (log, reportProgress).');
         // return createErrorResponse('CONFIGURATION_ERROR', 'Tool context is missing required properties (log, reportProgress).');
@@ -92,15 +93,15 @@ async function mergeDocuments(params: ToolRequestParams, context: FastMCPContext
         // Iterar y combinar documentos
         const totalDocs = safeSourcePaths.length;
         log.info(`Starting merge process for ${totalDocs} documents...`);
-        // Using correct { progress, total } signature from documentation
-        context.reportProgress({ progress: 0, total: totalDocs });
+        // Using correct { progress, total } signature from documentation, only if reportProgress is available
+        reportProgress?.({ progress: 0, total: totalDocs });
 
         for (let i = 0; i < totalDocs; i++) {
             const sourcePath = safeSourcePaths[i];
             const currentDocNum = i + 1;
             log.info(`Processing document ${currentDocNum}/${totalDocs}: ${sourcePath}`);
-            // Using correct { progress, total } signature
-            context.reportProgress({ progress: i, total: totalDocs });
+            // Using correct { progress, total } signature, only if reportProgress is available
+            reportProgress?.({ progress: i, total: totalDocs });
 
             let sourceDoc: any = null;
             try {
@@ -140,8 +141,8 @@ async function mergeDocuments(params: ToolRequestParams, context: FastMCPContext
                 releaseObject(sourceDoc); // Liberar el objeto COM del documento fuente cerrado
                 sourceDoc = null; // Asegurarse de que la variable está limpia
                  log.info(`Document ${currentDocNum}/${totalDocs} processed and closed.`);
-                 // Using correct { progress, total } signature
-                 context.reportProgress({ progress: currentDocNum, total: totalDocs });
+                 // Using correct { progress, total } signature, only if reportProgress is available
+                 reportProgress?.({ progress: currentDocNum, total: totalDocs });
 
             } catch (sourceDocError: any) {
                  log.error(`Error processing source document ${sourcePath}: ${sourceDocError.message || sourceDocError}`);
@@ -164,8 +165,8 @@ async function mergeDocuments(params: ToolRequestParams, context: FastMCPContext
 
         // Guardar el documento combinado
         log.info(`Saving merged document to: ${safeOutputPath}`);
-        // Using correct { progress, total } signature - representing the saving step
-        context.reportProgress({ progress: totalDocs, total: totalDocs });
+        // Using correct { progress, total } signature - representing the saving step, only if reportProgress is available
+        reportProgress?.({ progress: totalDocs, total: totalDocs });
         // Asegurarse de que el directorio existe antes de guardar
         // Nota: COM podría manejar esto, pero ser explícito es más seguro si es posible.
         // Sin embargo, crear directorios desde aquí podría requerir permisos adicionales
@@ -180,8 +181,8 @@ async function mergeDocuments(params: ToolRequestParams, context: FastMCPContext
         targetDoc = null;
 
 
-        // Using correct { progress, total } signature - representing completion
-        context.reportProgress({ progress: totalDocs, total: totalDocs });
+        // Using correct { progress, total } signature - representing completion, only if reportProgress is available
+        reportProgress?.({ progress: totalDocs, total: totalDocs });
 
         return {
             success: true,

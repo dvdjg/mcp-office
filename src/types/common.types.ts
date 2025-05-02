@@ -38,12 +38,6 @@ export interface ToolRequestParams {
   [key: string]: any; // Tool-specific parameters
 }
 
-// Remove the old ToolContext interface as it's replaced by FastMCPContext
-// export interface ToolContext {
-//   userId?: string;
-//   permissions?: string[];
-//   // Add other relevant context properties
-// }
 
 /**
  * Defines the structure for a FastMCP resource (tool or resource).
@@ -51,10 +45,10 @@ export interface ToolRequestParams {
  */
 export interface McpResource {
   path: string; // e.g., 'word/styles/apply' or 'memory/ai_assistant_guide/read'
-  // Handler now expects FastMCPContext<undefined> (aliased as ServerContext in index.ts)
-  handler: (params: ToolRequestParams, context: FastMCPContext<undefined>) => Promise<ApiResponse<any>>;
+  // Handler context is now optional to support both tools (context provided) and resources (context might be undefined)
+  handler: (params: ToolRequestParams, context?: FastMCPContext<undefined>) => Promise<ApiResponse<any>>;
   schema?: Zod.ZodSchema<any>; // Optional Zod schema for input validation (for tools)
   // Completions might need adjustment if they also need the FastMCP context
-  completions?: (context: FastMCPContext<undefined>) => Promise<Record<string, any[]>>; // For AI completions
+  completions?: (context?: FastMCPContext<undefined>) => Promise<Record<string, any[]>>; // For AI completions (make context optional here too for consistency)
   description?: string; // Tool/Resource description for documentation/AI
 }

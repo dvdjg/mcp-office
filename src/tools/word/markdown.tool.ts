@@ -72,8 +72,9 @@ const md = new MarkdownIt({
  * NOTE: This implementation extracts plain text. Preserving formatting (headings, lists, bold, etc.)
  * requires complex iteration over the Word document structure via COM.
  */
-async function exportToMarkdown(params: ToolRequestParams, context: FastMCPContext<undefined>): Promise<ApiResponse<{ outputPath: string }>> {
-    const log = context.log ?? logger; // Use context logger or fallback
+async function exportToMarkdown(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{ outputPath: string }>> {
+    const log = context?.log ?? logger; // Use context logger or fallback
+    const reportProgress = context?.reportProgress; // Get reportProgress function if context exists
     const totalSteps = 3; // Define total steps for progress
 
     let wordApp: any = null;
@@ -81,7 +82,7 @@ async function exportToMarkdown(params: ToolRequestParams, context: FastMCPConte
     const safeOutputPath = path.resolve(params.output as string); // Already validated by Zod
 
     try {
-        context.reportProgress({ progress: 0, total: totalSteps }); // Step 0: Start
+        reportProgress?.({ progress: 0, total: totalSteps }); // Step 0: Start
         const validatedParams = exportSchema.parse(params);
         const safeInputPath = validatedParams.filePath; // Already validated
 
@@ -129,14 +130,14 @@ async function exportToMarkdown(params: ToolRequestParams, context: FastMCPConte
             }
         }
         // --- End Comment Handling ---
-        context.reportProgress({ progress: 1, total: totalSteps }); // Step 1: Text Extracted
+        reportProgress?.({ progress: 1, total: totalSteps }); // Step 1: Text Extracted
 
         log.info(`Writing extracted text to ${safeOutputPath}`);
         await fs.writeFile(safeOutputPath, extractedText, 'utf8');
         log.info(`Successfully wrote extracted text via COM to ${safeOutputPath}`);
-        context.reportProgress({ progress: 2, total: totalSteps }); // Step 2: File Written
+        reportProgress?.({ progress: 2, total: totalSteps }); // Step 2: File Written
 
-        context.reportProgress({ progress: 3, total: totalSteps }); // Step 3: Complete
+        reportProgress?.({ progress: 3, total: totalSteps }); // Step 3: Complete
         return { success: true, data: { outputPath: safeOutputPath } };
 
     } catch (error) {
@@ -171,8 +172,9 @@ async function exportToMarkdown(params: ToolRequestParams, context: FastMCPConte
  * Applying Word formatting based on Markdown syntax (headings, lists, bold, etc.)
  * requires complex parsing and interaction with Word's COM API.
  */
-async function importFromMarkdown(params: ToolRequestParams, context: FastMCPContext<undefined>): Promise<ApiResponse<{ outputPath: string }>> {
-    const log = context.log ?? logger; // Use context logger or fallback
+async function importFromMarkdown(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{ outputPath: string }>> {
+    const log = context?.log ?? logger; // Use context logger or fallback
+    const reportProgress = context?.reportProgress; // Get reportProgress function if context exists
     const totalSteps = 4; // Define total steps for progress
 
     let wordApp: any = null;
@@ -180,7 +182,7 @@ async function importFromMarkdown(params: ToolRequestParams, context: FastMCPCon
     const safeOutputPath = path.resolve(params.output as string); // Already validated by Zod
 
     try {
-        context.reportProgress({ progress: 0, total: totalSteps }); // Step 0: Start
+        reportProgress?.({ progress: 0, total: totalSteps }); // Step 0: Start
         const validatedParams = importSchema.parse(params);
         const safeInputPath = validatedParams.filePath; // Already validated
         const safeTemplatePath = validatedParams.template; // Already validated (if present)
@@ -192,7 +194,7 @@ async function importFromMarkdown(params: ToolRequestParams, context: FastMCPCon
 
         log.info(`Reading Markdown file: ${safeInputPath}`);
         const markdownContent = await fs.readFile(safeInputPath, 'utf8');
-        context.reportProgress({ progress: 1, total: totalSteps }); // Step 1: Markdown Read
+        reportProgress?.({ progress: 1, total: totalSteps }); // Step 1: Markdown Read
 
         wordApp = await getOfficeApplication('Word.Application');
 
@@ -206,12 +208,12 @@ async function importFromMarkdown(params: ToolRequestParams, context: FastMCPCon
         if (!newDoc) {
             throw new Error("Failed to create new Word document via COM.");
         }
-        context.reportProgress({ progress: 2, total: totalSteps }); // Step 2: Document Created
+        reportProgress?.({ progress: 2, total: totalSteps }); // Step 2: Document Created
 
         // --- Basic Text Insertion using COM ---
         log.warn("Importing Markdown as plain text using COM (newDoc.Content.Text). Formatting is lost.");
         newDoc.Content.Text = markdownContent; // Insert the entire Markdown as plain text
-        context.reportProgress({ progress: 3, total: totalSteps }); // Step 3: Text Inserted
+        reportProgress?.({ progress: 3, total: totalSteps }); // Step 3: Text Inserted
 
         // --- Complex Formatting (Placeholder Idea) ---
         // For real formatting, you would:
@@ -231,7 +233,7 @@ async function importFromMarkdown(params: ToolRequestParams, context: FastMCPCon
         const wdFormatDocumentDefault = 16; // .docx format
         newDoc.SaveAs2(safeOutputPath, wdFormatDocumentDefault);
         log.info(`Successfully saved new Word document via COM to ${safeOutputPath}`);
-        context.reportProgress({ progress: 4, total: totalSteps }); // Step 4: Saved (Complete)
+        reportProgress?.({ progress: 4, total: totalSteps }); // Step 4: Saved (Complete)
 
         return { success: true, data: { outputPath: safeOutputPath } };
 
