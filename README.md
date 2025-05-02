@@ -282,6 +282,17 @@ Master Word documents with these power tools.
   curl -X POST "http://localhost:3000/word/generate-and-insert-text?document=/docs/report.docx&range=paragraph:5&prompt=summarize-section&position=after"
   ```
 
+#### `word/page`
+- **Description**: Configures page layout settings (size, margins, orientation, headers/footers) for a specific section (default: first) in a Word document. Uses COM Interop.
+- **Operations**:
+  - `get`: Retrieves the current page setup.
+  - `set`: Sets the entire page setup configuration for the specified properties.
+  - `modify`: Modifies specific page setup properties.
+- **Key Parameters**: `filePath`, `sectionIndex` (optional), `size`, `orientation`, `pageWidth`, `pageHeight`, `topMargin`, `bottomMargin`, `leftMargin`, `rightMargin`, `gutter`, `headerDistance`, `footerDistance`, `differentFirstPage` (boolean), `oddAndEvenPages` (boolean). Margins/dimensions require units (in, cm, mm, pt).
+- **Example**:
+  ```bash
+  curl -X POST "http://localhost:3000/word/page/modify?document=/docs/report.docx&orientation=wdOrientPortrait&differentFirstPage=true"
+  ```
 *See the [Word Use Cases](#word-use-cases-with-a-chuckle) for more Word tools in action!*
 
 ### Excel Tools
