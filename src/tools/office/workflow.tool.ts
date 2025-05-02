@@ -35,7 +35,7 @@ const RunOperationOutputSchema = z.object({
  */
 export class OfficeWorkflowTool implements McpResource {
   path = 'office/workflow'; // Usar 'path' en lugar de 'name'
-  description = 'Permite definir y ejecutar flujos de trabajo multi-paso que involucren múltiples herramientas de Office o pasos.';
+  description = 'Allows defining and executing multi-step workflows involving multiple Office tools or steps.';
   schema = RunOperationInputSchema; // El esquema de entrada para la herramienta completa
 
   // El handler principal para la herramienta workflow

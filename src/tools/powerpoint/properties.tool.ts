@@ -114,9 +114,9 @@ const handler = async (params: ToolRequestParams, context?: Context<any>): Promi
   }
 };
 
-export const powerpointPropertiesTool: McpResource = {
+export const powerpointPropertiesTool: McpResource[] = [{
   path: 'powerpoint/properties',
-  description: 'Gestiona las propiedades de una presentación de PowerPoint.',
+  description: 'Manages the properties of a PowerPoint presentation.',
   schema: PowerPointPropertiesInputSchema,
   handler,
-};
+}];

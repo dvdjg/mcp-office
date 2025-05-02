@@ -182,7 +182,8 @@ export const wordChartsTool: McpResource[] = [
                 error: { code: 'NOT_IMPLEMENTED', message: 'Tool word/charts/modify not implemented.' }
             };
         },
-        description: 'Modify chart properties/data (Not Implemented)'
+        description: 'Modify chart properties/data (Not Implemented)',
+        schema: z.object({}),
     },
     {
         path: 'word/charts/delete',
@@ -194,7 +195,8 @@ export const wordChartsTool: McpResource[] = [
                 error: { code: 'NOT_IMPLEMENTED', message: 'Tool word/charts/delete not implemented.' }
             };
         },
-        description: 'Delete a chart (Not Implemented)'
+        description: 'Delete a chart (Not Implemented)',
+        schema: z.object({}),
     },
 ];
 

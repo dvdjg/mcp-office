@@ -26,9 +26,9 @@ type ExcelWorksheetsInput = z.infer<typeof ExcelWorksheetsInputSchema>;
  * @input ExcelWorksheetsInputSchema
  * @output string - Un mensaje indicando el resultado de la operación.
  */
-export const excelWorksheetsTool: McpResource = {
+export const excelWorksheetsTool: McpResource[] = [{
   path: 'excel/worksheets', // Añadir la ruta de la herramienta
-  description: 'Gestiona hojas de cálculo en archivos de Excel.',
+  description: 'Manages worksheets in Excel files.',
   schema: ExcelWorksheetsInputSchema, // Cambiar inputSchema a schema
   handler: async (params: ToolRequestParams) => { // Tipificar params
     const { filePath, operation, sheetName, newSheetName, sheetIndex, beforeSheet, afterSheet } = params as ExcelWorksheetsInput; // Castear params
@@ -182,4 +182,4 @@ export const excelWorksheetsTool: McpResource = {
       if (excelApp) releaseObject(excelApp);
     }
   },
-};
+}];

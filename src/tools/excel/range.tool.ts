@@ -26,9 +26,10 @@ type ExcelRangeInput = z.infer<typeof ExcelRangeInputSchema>;
  * Para formatear, se proporcionan las propiedades de formato como un objeto.
  */
 const excelRangeTool: McpResource = {
-  path: 'excel/range', // Corregido de 'name' a 'path'
-  description: 'Manipula rangos de celdas en hojas de cálculo de Excel.',
-  handler: async (params: any) => { // Usamos 'any' temporalmente, validaremos con Zod
+  path: 'excel/range',
+  description: 'Manipulates cell ranges in Excel worksheets.', // Translated description
+  schema: ExcelRangeInputSchema, // Added schema
+  handler: async (params: any) => {
     let excelApp;
     try {
       // Validar los parámetros de entrada

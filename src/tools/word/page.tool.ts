@@ -331,7 +331,7 @@ export const wordPageTool = { // Definir como objeto directamente
   path: 'word/page', // Añadir la propiedad path requerida por McpResource
   name: 'word/page',
   description: 'Configures page layout settings (size, margins, orientation, headers/footers) in a Word document section.',
-  inputSchema: InputSchema, // Schema para validar los params recibidos por el handler
+  schema: InputSchema, // Renamed from inputSchema
   // outputSchema: z.any(), // Opcional: definir esquema de salida si es estable
   async handler(params: ToolRequestParams, context?: FastMCPContext<any>): Promise<ApiResponse<any>> { // Hacer context opcional: context?: FastMCPContext<any>
     // Validar y parsear los params genéricos usando el InputSchema específico

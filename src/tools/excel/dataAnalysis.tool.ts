@@ -239,9 +239,9 @@ const handler = async (params: ToolRequestParams, context?: FastMCPContext<any>)
   }
 };
 
-export const excelDataAnalysisTool: McpResource = {
+export const excelDataAnalysisTool: McpResource[] = [{
   path: 'excel/data-analysis',
-  description: 'Realiza operaciones de análisis de datos en rangos o tablas de Excel.',
-  schema: CombinedDataAnalysisInputSchema, // Corrected property name
+  description: 'Performs data analysis operations (sort, filter, pivot, calculate) on Excel ranges or tables.', // Translated description
+  schema: CombinedDataAnalysisInputSchema,
   handler,
-};
+}];
