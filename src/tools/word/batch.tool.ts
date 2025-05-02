@@ -80,19 +80,19 @@ export const batchTool: McpResource = {
         logger.info(`Ejecutando lote de ${input.operations.length} operaciones en modo 'run'.`);
 
         for (const operation of input.operations) {
-          logger.info(`Ejecutando operación: ${operation.tool}`);
+          logger.info(`Ejecutando operación: ${operation.tool} con parámetros: ${JSON.stringify(operation.params)}`);
+          let toolResult: { success: boolean; message?: string; output?: any; };
           try {
             // --- Lógica de despacho a herramientas ---
-            // Aquí es donde necesitaríamos la lógica real para invocar la herramienta correcta.
-            // Esto es un placeholder y necesitaría ser reemplazado.
-            // Una posible implementación sería tener un mapa de nombres de herramientas a sus funciones de ejecución,
-            // o importar los manejadores de las otras herramientas y llamarlos con el 'doc' y 'params'.
-            // Por ahora, simularemos un resultado exitoso.
-            const toolResult = { success: true, message: `${operation.tool} ejecutada con éxito (simulado)`, output: {} }; // Simulación
+            // Aquí es donde se invocaría la lógica real de la herramienta especificada.
+            // Dado que no podemos modificar otros archivos para refactorizar los manejadores
+            // para aceptar la instancia 'doc' directamente, simularemos la llamada
+            // a una función hipotética que manejaría el despacho y la ejecución.
+            // En una implementación real, necesitaríamos un mapa o registro de herramientas
+            // y sus funciones de ejecución que puedan operar con una instancia de documento abierta.
 
-            // En una implementación real, llamaríamos a la lógica de la herramienta:
-            // const toolHandler = getToolHandler(operation.tool); // Función hipotética para obtener el manejador
-            // const toolResult = await toolHandler(doc, operation.params); // Pasar la instancia del documento y los parámetros
+            // Simulación de la llamada a la lógica de la herramienta individual
+            toolResult = await executeSingleOperation(doc, operation);
 
             results.push({
               tool: operation.tool,
@@ -100,7 +100,7 @@ export const batchTool: McpResource = {
               message: toolResult.message,
               output: toolResult.output,
             });
-            logger.info(`Operación ${operation.tool} completada.`);
+            logger.info(`Operación ${operation.tool} completada con éxito: ${toolResult.success}.`);
 
           } catch (opError: any) {
             logger.error(`Error al ejecutar operación ${operation.tool}: ${opError.message}`);
@@ -142,8 +142,11 @@ export const batchTool: McpResource = {
       // Asegurarse de cerrar el documento y la aplicación Word si se abrieron
       if (doc) {
         try {
-          doc.Save(); // Guardar cambios si se hicieron
-          doc.Close();
+          // No guardar automáticamente, ya que algunas operaciones pueden no querer guardar
+          // La lógica de guardar debería ser parte de las operaciones individuales si es necesario,
+          // o una operación explícita en el lote.
+          // doc.Save();
+          doc.Close(); // Close sin guardar
           logger.info('Documento cerrado.');
         } catch (closeError: any) {
           logger.warn(`Error al cerrar el documento: ${closeError.message}`);
@@ -155,3 +158,32 @@ export const batchTool: McpResource = {
     }
   },
 };
+
+// --- Función hipotética para ejecutar una sola operación ---
+// Esta función simula la llamada a la lógica de una herramienta individual.
+// En una implementación real, esto despacharía a la función de manejador
+// correcta para la herramienta especificada, pasándole la instancia 'doc'
+// y los parámetros de la operación.
+async function executeSingleOperation(doc: any, operation: z.infer<typeof BatchOperationSchema>): Promise<{ success: boolean; message?: string; output?: any; }> {
+  logger.info(`[Simulación] Intentando ejecutar lógica para herramienta: ${operation.tool}`);
+  logger.debug(`[Simulación] Parámetros recibidos: ${JSON.stringify(operation.params)}`);
+
+  // Aquí iría la lógica real para mapear operation.tool a la función de ejecución
+  // de la herramienta correspondiente y llamarla con 'doc' y 'operation.params'.
+  // Por ahora, simplemente simulamos un resultado.
+
+  // Simulación: 80% de probabilidad de éxito
+  const success = Math.random() < 0.8;
+  const message = success ? `${operation.tool} ejecutada con éxito (simulado)` : `Error simulado al ejecutar ${operation.tool}`;
+  const output = success ? { simulatedOutput: `Resultado de ${operation.tool}` } : undefined;
+
+  // Simular un pequeño retraso
+  await new Promise(resolve => setTimeout(resolve, 50));
+
+  if (!success) {
+    // Simular un error lanzando una excepción
+    throw new Error(message);
+  }
+
+  return { success, message, output };
+}
