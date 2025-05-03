@@ -22,7 +22,7 @@ import { wordTextTool } from './word/text.tool'; // Exports McpResource[]
 import { wordSearchReplaceTool } from './word/searchReplace.tool'; // Exports McpResource (single object)
 import { wordTablesTool } from './word/tables.tool'; // Exports McpResource (single object)
 import { wordChartsTool } from './word/charts.tool'; // Exports McpResource (single object)
-import { wordImageTools } from './word/image.tool'; // Exports McpResource[]
+import { wordImageExtractTool, wordImageInsertTool } from './word/image.tool'; // Exports individual McpResource objects
 import { wordGenerateAndInsertTextTool } from './word/generateAndInsertText.tool'; // Exports McpResource (single object)
 import { wordPageTool } from './word/page.tool'; // Exports McpResource (single object)
 import { wordHeadersFootersTool } from './word/headersFooters.tool'; // Exports McpResource (single object)
@@ -88,7 +88,8 @@ const allImplementedTools: McpResource[] = [
     ...wordMarkdownTool,// Array
     ...wordTemplateTool,// Array
     ...wordTextTool,    // Array
-    ...wordImageTools,  // Array
+    wordImageExtractTool, // Single object
+    wordImageInsertTool,  // Single object
     // Single objects
     wordMergeTool,
     wordSearchReplaceTool,

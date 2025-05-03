@@ -1,35 +1,63 @@
+/**
+ * @file Implements the 'word/search-replace' tool using COM Interop for searching and replacing text in Word documents.
+ * @author David Jurado
+ * @date 2025-05-04
+ * @copyright Copyright (c) 2025 David Jurado
+ * @license MIT
+ */
 import { z } from 'zod';
-import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
-import { validateFilePath } from '../../utils/security';
-import { handleToolError } from '../../utils/errorHandler';
-import { saveResource } from '../dynamic/resources.tool'; // Importar saveResource
-// Import FastMCPContext and remove ToolContext
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop'; // Normalized relative path
+import { validateFilePath } from '../../utils/security'; // Normalized relative path
+import { handleToolError, createErrorResponse } from '../../utils/errorHandler'; // Normalized relative path
+import { saveResource } from '../dynamic/resources.tool'; // Normalized relative path
 import type {
     ApiResponse, // Type alias for SuccessResponse | ErrorResponse
     SuccessResponse, // Specific type for success
     ErrorResponse, // Specific type for error
     McpResource,
-    // ToolContext, // Removed
     ToolRequestParams,
-} from '../../types/common.types';
+} from '../../types/common.types'; // Normalized relative path
 import { Context as FastMCPContext } from 'fastmcp'; // Import FastMCP Context
 import path from 'path';
-import logger from '../../utils/logger'; // Import global logger
+import logger from '../../utils/logger'; // Normalized relative path
 
-// Define Schemas de Entrada
+// Define Input Schemas
+/**
+ * Zod schema for the input parameters of the 'word/search-replace' tool.
+ */
 const searchReplaceSchema = z.object({
-    filePath: z.string().min(1, 'File path cannot be empty.'),
+    /** The path to the Word document. */
+    filePath: z.string().min(1, 'File path cannot be empty.').refine(validateFilePath, {
+        message: "Invalid or potentially unsafe file path provided.",
+    }),
+    /** The text or pattern to search for. */
     find: z.string().min(1, 'Search text cannot be empty.'),
+    /** The text to replace matches with. Defaults to an empty string (deletion). */
     replace: z.string().default(''),
+    /** Whether the search should be case-sensitive. Defaults to false. */
     matchCase: z.boolean().optional().default(false),
+    /** Whether to match only whole words. Defaults to false. */
     matchWholeWord: z.boolean().optional().default(false),
+    /** Whether to use wildcards in the search text. Defaults to false. */
     useWildcards: z.boolean().optional().default(false),
+    /** Whether to replace all occurrences (true) or only the first one (false). Defaults to true. */
     replaceAll: z.boolean().optional().default(true),
 });
 
+/**
+ * Infers the type for the validated search and replace parameters.
+ */
 type SearchReplaceParams = z.infer<typeof searchReplaceSchema>;
 
-// Implementa el Manejador searchAndReplace accepting an optional FastMCPContext
+// Implement the Handler searchAndReplace accepting an optional FastMCPContext
+/**
+ * Handles the 'word/search-replace' tool request.
+ * Searches for text in a Word document and replaces it using COM Interop.
+ * @param params - The parameters for the tool, validated against `searchReplaceSchema`.
+ * @param context - The FastMCP context (optional), providing logging and progress reporting.
+ * @returns A promise resolving to an ApiResponse indicating if replacements were made.
+ * @throws {Error} If validation fails, a COM error occurs, or file access fails.
+ */
 async function searchAndReplace(
     params: ToolRequestParams,
     context?: FastMCPContext<undefined>
@@ -49,33 +77,35 @@ async function searchAndReplace(
 
     try {
         reportProgress?.({ progress: 0, total: totalSteps }); // Step 0: Start
-        // Valida los params
+        // Validate the params
         const validatedParams = searchReplaceSchema.parse(params);
 
-        // Valida la ruta del documento
-        // Note: validateFilePath might need adjustment if it relies on allowedPaths from context
-        const safeFilePath = await validateFilePath(validatedParams.filePath);
+        // Validate the document path (already done by schema refinement, but explicit call is fine)
+        const safeFilePath = validatedParams.filePath; // Already validated by Zod
         log.info(`Validated file path: ${safeFilePath}`);
 
-        // Obtén la instancia de Word
+        // Get the Word instance
         log.info('Getting Word application instance...');
-        wordApp = await getOfficeApplication('Word.Application');
+        const officeAppInstance = await getOfficeApplication('Word.Application');
+        wordApp = officeAppInstance.app;
         wordApp.Visible = false; // Keep Word hidden
+        wordApp.DisplayAlerts = 0; // wdAlertsNone = 0
 
-        // Abre el documento
+        // Open the document
         log.info(`Opening document: ${safeFilePath}`);
         doc = await wordApp.Documents.Open(safeFilePath);
+        log.debug(`Document opened successfully.`);
         reportProgress?.({ progress: 1, total: totalSteps }); // Step 1: Document Opened
 
-        // Accede al objeto Find y Replacement
+        // Access the Find and Replacement objects
         findObject = await doc.Content.Find;
         replacementObject = await findObject.Replacement;
 
-        // Limpia formato previo
+        // Clear previous formatting
         await findObject.ClearFormatting();
         await replacementObject.ClearFormatting();
 
-        // Configura propiedades de búsqueda y reemplazo
+        // Configure search and replace properties
         log.info(`Configuring search for "${validatedParams.find}" and replace with "${validatedParams.replace}"`);
         findObject.Text = validatedParams.find;
         replacementObject.Text = validatedParams.replace;
@@ -84,14 +114,15 @@ async function searchAndReplace(
         findObject.MatchWildcards = validatedParams.useWildcards;
         findObject.Forward = true;
         findObject.Wrap = 1; // wdFindContinue
+        log.debug(`Search and replace properties configured.`);
         reportProgress?.({ progress: 2, total: totalSteps }); // Step 2: Configured
 
-        // Ejecuta la operación
+        // Execute the operation
         const replaceOption = validatedParams.replaceAll ? 2 : 1; // wdReplaceAll = 2, wdReplaceOne = 1
         log.info(`Executing find/replace (replaceAll: ${validatedParams.replaceAll})...`);
 
         replacementsMade = await findObject.Execute(
-            undefined, // FindText
+            undefined, // FindText (already set on findObject.Text)
             validatedParams.matchCase,
             validatedParams.matchWholeWord,
             validatedParams.useWildcards,
@@ -100,43 +131,43 @@ async function searchAndReplace(
             true,      // Forward
             1,         // Wrap
             undefined, // Format
-            undefined, // ReplaceWith (set on replacementObject)
+            undefined, // ReplaceWith (already set on replacementObject.Text)
             replaceOption // Replace
         );
         log.info(`Find/replace executed. Replacements made: ${replacementsMade}`);
         reportProgress?.({ progress: 3, total: totalSteps }); // Step 3: Executed
 
-        // Guarda si hubo éxito
+        // Save if successful
         if (replacementsMade) {
             log.info(`Saving document: ${safeFilePath}`);
             await doc.Save();
             log.info(`Document saved.`);
 
-            // Leer el contenido del documento modificado antes de cerrarlo
+            // Read the content of the modified document before closing it
             let modifiedContent = '';
             try {
-                 // Leer el texto del documento COM object
+                 // Read the text from the COM document object
                  modifiedContent = doc.Content.Text;
                  log.info(`Read content from modified document.`);
              } catch (readContentError: any) {
-                 log.error(`Failed to read content from modified document before closing: ${readContentError.message}`);
-                 // No lanzar error aquí, intentar guardar el recurso vacío o con error
+                 log.error(`Failed to read content from modified document before closing: ${readContentError.message}`, { error: readContentError });
+                 // Do not throw error here, attempt to save the resource empty or with error
              }
 
-            // Guardar el documento modificado como un recurso dinámico después de cerrarlo
+            // Save the modified document content as a dynamic resource after closing it
             try {
                 await saveResource('word/search-replace', path.basename(safeFilePath), modifiedContent);
                 log.info(`Saved ${safeFilePath} as a dynamic resource.`);
             } catch (resourceSaveError: any) {
-                log.error(`Failed to save ${safeFilePath} as a dynamic resource: ${resourceSaveError.message}`);
-                // Continuar la ejecución aunque falle el guardado del recurso
+                log.error(`Failed to save ${safeFilePath} as a dynamic resource: ${resourceSaveError.message}`, { error: resourceSaveError });
+                // Continue execution even if resource saving fails
             }
 
         } else {
             log.info(`No replacements made, document not saved.`);
         }
 
-        // Construye la respuesta de éxito manualmente
+        // Build the success response manually
         const successResponse: SuccessResponse<{ replacementsMade: boolean }> = {
             success: true,
             message: `Search and replace operation completed on ${path.basename(
@@ -147,57 +178,61 @@ async function searchAndReplace(
         reportProgress?.({ progress: 4, total: totalSteps }); // Step 4: Complete
         return successResponse;
 
-    } catch (error: unknown) {
-        // Maneja errores y devuelve ErrorResponse
-        log.error(`Error during search/replace on ${filePathParam}: ${String(error)}`, { error: String(error) });
-        throw error; // Let the main handler manage the error response
-        // return handleToolError(error, 'WORD_SEARCH_REPLACE_ERROR');
+    } catch (error: any) {
+        // Handle errors and return ErrorResponse
+        log.error(`Error during search/replace on ${filePathParam}: ${error.message}`, { error });
+        // Attempt to close document and release objects in case of error
+        if (doc) {
+          try {
+            doc.Close(0); // wdDoNotSaveChanges = 0
+            log.debug(`Document closed in error handler: ${filePathParam}`);
+          } catch (closeError: any) {
+            log.warn(`Error closing document in error handler: ${closeError.message}`, { error: closeError });
+          }
+          releaseObject(doc);
+        }
+        // Quitting the app in the error handler might be too aggressive
+        // if (wordApp) {
+        //   try {
+        //     await wordApp.Quit();
+        //   } catch (quitError: any) {
+        //     logger.error(`Error quitting Word application in error handler: ${quitError.message}`);
+        //   }
+        // }
+        return handleToolError(error, 'WORD_SEARCH_REPLACE_ERROR'); // Use handleToolError
     } finally {
-        // Libera objetos COM en orden inverso de creación/obtención
+        // Release COM objects in reverse order of creation/acquisition
         log.debug('Starting COM object cleanup for search/replace...');
         if (replacementObject) {
-            await releaseObject(replacementObject);
+            releaseObject(replacementObject);
         }
         if (findObject) {
-            await releaseObject(findObject);
+            releaseObject(findObject);
         }
-        if (doc) {
-            try {
-                await doc.Close(false); // No guardar cambios al cerrar
-            } catch (closeError: unknown) {
-                 log.warn(`Non-critical error closing document: ${String(closeError)}`);
-            }
-            await releaseObject(doc);
+        if (doc) { // Redundant if closed in catch, but safe
+            releaseObject(doc);
         }
         if (wordApp) {
-            try {
-                // Check if Word is still running and has no other docs open before quitting
-                // Ensure wordApp is checked for existence before accessing properties/methods
-                if (wordApp && typeof wordApp.Documents !== 'undefined' && await wordApp.Documents.Count === 0) {
-                    log.debug("Attempting to quit Word application as no documents are open.");
-                    await wordApp.Quit();
-                } else if (wordApp && typeof wordApp.Documents !== 'undefined') {
-                    log.debug(`Word application not quit (${await wordApp.Documents.Count} docs open). Releasing object.`);
-                } else if (wordApp) {
-                    log.debug("Word application object exists but Documents property is inaccessible. Releasing object.");
-                }
-            } catch (quitError: unknown) {
-                 log.warn(`Non-critical error quitting Word: ${String(quitError)}`);
-            }
-            await releaseObject(wordApp); // Release reference regardless of quit attempt
+            // Decide whether to quit the application. Quitting might close a user's open instance.
+            // A safer approach might be to only quit if we know we started the instance.
+            // For now, let's not quit the application automatically.
+            // wordApp.Quit();
+            releaseObject(wordApp); // Release the reference
         }
         log.debug('COM object cleanup finished for search/replace.');
     }
 }
 
-// Define y Exporta el Recurso
-export const wordSearchReplaceTool: McpResource[] = [
-    {
-        path: 'word/search-replace',
-        handler: searchAndReplace, // Correct handler signature
-        schema: searchReplaceSchema,
-        description:
-            'Searches for text in a Word document and replaces it using COM Interop. Supports options like match case, whole word, wildcards, and replace all.',
-        // examples property removed
-    },
-];
+// Define and Export the Resource
+/**
+ * McpResource definition for the 'word/search-replace' tool.
+ * Searches for text in a Word document and replaces it.
+ */
+export const wordSearchReplaceTool: McpResource = { // Export as a single object
+    path: 'word/search-replace',
+    handler: searchAndReplace, // Correct handler signature
+    schema: searchReplaceSchema,
+    description:
+        'Searches for text in a Word document and replaces it using COM Interop. Supports options like match case, whole word, wildcards, and replace all.',
+    // examples property removed
+};

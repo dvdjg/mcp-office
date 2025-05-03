@@ -1,26 +1,32 @@
-// /src/tools/word/markdown.tool.ts
-// =============================================================================
 /**
- * @file Implements Markdown import/export tools for Word.
+ * @file Implements Markdown import/export tools for Word using COM Interop.
+ * @author David Jurado
+ * @date 2025-05-04
+ * @copyright Copyright (c) 2025 David Jurado
+ * @license MIT
  */
 import fs from 'fs-extra';
 import path from 'path';
 import MarkdownIt from 'markdown-it';
 import { z } from 'zod';
-// Import FastMCPContext and remove ToolContext
-import { McpResource, ApiResponse, ToolRequestParams } from '@/types/common.types';
-import { saveResource } from '../dynamic/resources.tool'; // Importar saveResource
+import { McpResource, ApiResponse, ToolRequestParams } from '../../types/common.types'; // Normalized relative path
+import { saveResource } from '../dynamic/resources.tool'; // Normalized relative path
 import { Context as FastMCPContext } from 'fastmcp'; // Import FastMCP Context
-import { handleToolError } from '@/utils/errorHandler';
-import { validateFilePath } from '@/utils/security';
-import logger from '@/utils/logger'; // Keep global logger as fallback
-import { getOfficeApplication, releaseObject } from '@/utils/officeInterop'; // Use COM Interop
+import { handleToolError } from '../../utils/errorHandler'; // Normalized relative path
+import { validateFilePath } from '../../utils/security'; // Normalized relative path
+import logger from '../../utils/logger'; // Normalized relative path
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop'; // Normalized relative path
 
 // --- Schemas ---
+/**
+ * Zod schema for the input parameters of the 'word/markdown/export' tool.
+ */
 const exportSchema = z.object({
+    /** The path to the source Word document (.docx). */
     filePath: z.string().min(1).refine(validateFilePath, { // Renamed from documentReference
         message: "Invalid or potentially unsafe source file path provided.",
     }),
+    /** The path where the output Markdown file (.md) will be saved. */
     output: z.string().min(1).refine(value => { // Validate output path and directory
         try {
             const dir = path.dirname(value);
@@ -32,13 +38,19 @@ const exportSchema = z.object({
     }, {
         message: "Invalid or potentially unsafe output file path or directory.",
     }),
-    comments: z.enum(['ignore', 'append', 'inline']).default('ignore'),
+    /** How to handle comments during export ('ignore', 'append', 'inline'). */
+    comments: z.enum(['ignore', 'append', 'inline']).default('ignore').describe("How to handle comments during export ('ignore', 'append', 'inline')."),
 });
 
+/**
+ * Zod schema for the input parameters of the 'word/markdown/import' tool.
+ */
 const importSchema = z.object({
+    /** The path to the source Markdown file (.md). */
     filePath: z.string().min(1).refine(validateFilePath, { // Renamed from path
         message: "Invalid or potentially unsafe source Markdown file path provided.",
     }),
+    /** The path where the output Word document (.docx) will be saved. */
     output: z.string().min(1).refine(value => { // Validate output path and directory
         try {
             const dir = path.dirname(value);
@@ -50,6 +62,7 @@ const importSchema = z.object({
     }, {
         message: "Invalid or potentially unsafe output Word file path or directory.",
     }),
+    /** Optional path to a Word template (.dotx) to use for the new document. */
     template: z.string().optional().refine(value => !value || validateFilePath(value), { // Validate template if provided
         message: "Invalid or potentially unsafe template file path provided.",
     }),
@@ -72,6 +85,10 @@ const md = new MarkdownIt({
  * Exports a Word document to Markdown format using COM Interop (Basic Text Extraction).
  * NOTE: This implementation extracts plain text. Preserving formatting (headings, lists, bold, etc.)
  * requires complex iteration over the Word document structure via COM.
+ * @param params - The parameters for the tool, validated against `exportSchema`.
+ * @param context - The FastMCP context (optional).
+ * @returns A promise resolving to an ApiResponse containing the output file path.
+ * @throws {Error} If a COM error occurs, file access fails, or validation fails.
  */
 async function exportToMarkdown(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{ outputPath: string }>> {
     const log = context?.log ?? logger; // Use context logger or fallback
@@ -89,9 +106,11 @@ async function exportToMarkdown(params: ToolRequestParams, context?: FastMCPCont
 
         log.info(`Attempting COM export Word doc '${safeInputPath}' to Markdown '${safeOutputPath}'`);
 
-        wordApp = await getOfficeApplication('Word.Application');
-        log.info(`Opening document: ${safeInputPath}`);
-        doc = wordApp.Documents.Open(safeInputPath);
+        const officeResult = await getOfficeApplication('Word.Application');
+        wordApp = officeResult.app;
+        // Open the document in read-only mode (ReadOnly = true) and non-visible (Visible = false)
+        log.info(`Opening document: ${safeInputPath} (Read-Only)`);
+        doc = wordApp.Documents.Open(safeInputPath, false, true, false, "", "", true, "", "", "", 0, false, false); // ReadOnly=true, Visible=false
         if (!doc) {
             throw new Error(`Failed to open document via COM: ${safeInputPath}`);
         }
@@ -116,15 +135,15 @@ async function exportToMarkdown(params: ToolRequestParams, context?: FastMCPCont
                         const author = comment?.Author || 'Unknown Author';
                         const scope = comment?.Scope?.Text ? ` (Scope: "${comment.Scope.Text.substring(0, 50)}...")` : '';
                         extractedText += `- **${author}**: ${commentText}${scope}\n`;
-                    } catch (commentError) {
-                        log.error(`Error reading comment at index ${i}: ${commentError}`);
+                    } catch (commentError: any) {
+                        log.error(`Error reading comment at index ${i}: ${commentError.message}`);
                         extractedText += `- Error reading comment at index ${i}.\n`;
                     } finally {
                          if (comment) releaseObject(comment);
                     }
                 }
-            } catch (commentsError) {
-                 log.error(`Error accessing comments collection: ${commentsError}`);
+            } catch (commentsError: any) {
+                 log.error(`Error accessing comments collection: ${commentsError.message}`);
                  extractedText += `- Error accessing comments collection.\n`;
             } finally {
                  if (commentsCollection) releaseObject(commentsCollection);
@@ -138,32 +157,32 @@ async function exportToMarkdown(params: ToolRequestParams, context?: FastMCPCont
         log.info(`Successfully wrote extracted text via COM to ${safeOutputPath}`);
         reportProgress?.({ progress: 2, total: totalSteps }); // Step 2: File Written
 
-        // Guardar el archivo Markdown exportado como un recurso dinámico
+        // Save the exported Markdown file as a dynamic resource
         try {
             const markdownFileContent = await fs.readFile(safeOutputPath, 'utf8');
             await saveResource('word/markdown/export', path.basename(safeOutputPath), markdownFileContent);
             log.info(`Saved ${safeOutputPath} as a dynamic resource.`);
         } catch (resourceSaveError: any) {
             log.error(`Failed to save ${safeOutputPath} as a dynamic resource: ${resourceSaveError.message}`);
-            // Continuar la ejecución aunque falle el guardado del recurso
+            // Continue execution even if resource saving fails
         }
 
         reportProgress?.({ progress: 3, total: totalSteps }); // Step 3: Complete
         return { success: true, data: { outputPath: safeOutputPath } };
 
-    } catch (error) {
+    } catch (error: any) {
         // Convert error to string for logging
-        log.error(`Error during Word to Markdown export: ${String(error)}`, { error: String(error) });
-        throw error; // Let the main handler manage the error response
-        // return handleToolError(error, 'WORD_MD_EXPORT_ERROR');
+        log.error(`Error during Word to Markdown export: ${error.message}`, { error: String(error) });
+        // Use handleToolError to create a standardized error response
+        return handleToolError(error, 'WORD_MD_EXPORT_ERROR');
     } finally {
         // --- CRUCIAL: Release COM Objects ---
         if (doc) {
             try {
                 doc.Close(false); // Close without saving
                 log.debug(`Closed document: ${params.filePath}`);
-            } catch (closeError) {
-                log.error(`Error closing document: ${closeError}`);
+            } catch (closeError: any) {
+                log.error(`Error closing document: ${closeError.message}`);
             }
             releaseObject(doc);
             doc = null;
@@ -182,6 +201,10 @@ async function exportToMarkdown(params: ToolRequestParams, context?: FastMCPCont
  * NOTE: This implementation inserts the Markdown content as plain text.
  * Applying Word formatting based on Markdown syntax (headings, lists, bold, etc.)
  * requires complex parsing and interaction with Word's COM API.
+ * @param params - The parameters for the tool, validated against `importSchema`.
+ * @param context - The FastMCP context (optional).
+ * @returns A promise resolving to an ApiResponse containing the output file path.
+ * @throws {Error} If a COM error occurs, file access fails, validation fails, or document creation/saving fails.
  */
 async function importFromMarkdown(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{ outputPath: string }>> {
     const log = context?.log ?? logger; // Use context logger or fallback
@@ -207,7 +230,8 @@ async function importFromMarkdown(params: ToolRequestParams, context?: FastMCPCo
         const markdownContent = await fs.readFile(safeInputPath, 'utf8');
         reportProgress?.({ progress: 1, total: totalSteps }); // Step 1: Markdown Read
 
-        wordApp = await getOfficeApplication('Word.Application');
+        const officeResult = await getOfficeApplication('Word.Application');
+        wordApp = officeResult.app;
 
         // Create new document
         log.info(`Creating new Word document (using template: ${!!safeTemplatePath})`);
@@ -246,33 +270,33 @@ async function importFromMarkdown(params: ToolRequestParams, context?: FastMCPCo
         log.info(`Successfully saved new Word document via COM to ${safeOutputPath}`);
         reportProgress?.({ progress: 4, total: totalSteps }); // Step 4: Saved (Complete)
 
-        // Leer el contenido del documento Word importado antes de cerrarlo
+        // Read the content of the imported Word document before closing it
         let importedDocContent = '';
         try {
-             // Leer el texto del documento COM object
+             // Read the text from the COM document object
              importedDocContent = newDoc.Content.Text;
              log.info(`Read content from imported document.`);
          } catch (readContentError: any) {
              log.error(`Failed to read content from imported document before closing: ${readContentError.message}`);
-             // No lanzar error aquí, intentar guardar el recurso vacío o con error
+             // Do not throw error here, attempt to save the resource empty or with error
          }
 
-        // Guardar el documento Word importado como un recurso dinámico después de cerrarlo
+        // Save the imported Word document content as a dynamic resource after closing it
         try {
             await saveResource('word/markdown/import', path.basename(safeOutputPath), importedDocContent);
             log.info(`Saved ${safeOutputPath} as a dynamic resource.`);
         } catch (resourceSaveError: any) {
             log.error(`Failed to save ${safeOutputPath} as a dynamic resource: ${resourceSaveError.message}`);
-            // Continuar la ejecución aunque falle el guardado del recurso
+            // Continue execution even if resource saving fails
         }
 
         return { success: true, data: { outputPath: safeOutputPath } };
 
-    } catch (error) {
+    } catch (error: any) {
         // Convert error to string for logging
-        log.error(`Error during Markdown to Word import: ${String(error)}`, { error: String(error) });
-        throw error; // Let the main handler manage the error response
-        // return handleToolError(error, 'WORD_MD_IMPORT_ERROR');
+        log.error(`Error during Markdown to Word import: ${error.message}`, { error: String(error) });
+        // Use handleToolError to create a standardized error response
+        return handleToolError(error, 'WORD_MD_IMPORT_ERROR');
     } finally {
         // --- CRUCIAL: Release COM Objects ---
         if (newDoc) {
@@ -281,8 +305,8 @@ async function importFromMarkdown(params: ToolRequestParams, context?: FastMCPCo
                 // Pass false to SaveChanges parameter if you are sure no more changes are needed.
                 newDoc.Close(false);
                 log.debug(`Closed newly created document: ${safeOutputPath}`);
-            } catch (closeError) {
-                log.error(`Error closing newly created document: ${closeError}`);
+            } catch (closeError: any) {
+                log.error(`Error closing newly created document: ${closeError.message}`);
             }
             releaseObject(newDoc);
             newDoc = null;
@@ -298,17 +322,31 @@ async function importFromMarkdown(params: ToolRequestParams, context?: FastMCPCo
 
 
 // --- Resource Definition ---
+
+/**
+ * McpResource definition for the 'word/markdown/export' tool.
+ * Exports a Word document to Markdown format.
+ */
+export const wordMarkdownExportTool: McpResource = {
+    path: 'word/markdown/export',
+    handler: exportToMarkdown,
+    schema: exportSchema,
+    description: 'Exports a Word document (.docx) to Markdown (.md) using COM Interop (basic text extraction, formatting lost). Includes basic comment extraction.',
+};
+
+/**
+ * McpResource definition for the 'word/markdown/import' tool.
+ * Imports a Markdown file into a Word document.
+ */
+export const wordMarkdownImportTool: McpResource = {
+    path: 'word/markdown/import',
+    handler: importFromMarkdown,
+    schema: importSchema,
+    description: 'Imports a Markdown (.md) file into a new Word document (.docx) using COM Interop (inserts as plain text, formatting lost), optionally using a template.',
+};
+
+// Export as an array of McpResource objects
 export const wordMarkdownTool: McpResource[] = [
-    {
-        path: 'word/markdown/export',
-        handler: exportToMarkdown,
-        schema: exportSchema,
-        description: 'Exports a Word document (.docx) to Markdown (.md) using COM Interop (basic text extraction, formatting lost). Includes basic comment extraction.',
-    },
-    {
-        path: 'word/markdown/import',
-        handler: importFromMarkdown,
-        schema: importSchema,
-        description: 'Imports a Markdown (.md) file into a new Word document (.docx) using COM Interop (inserts as plain text, formatting lost), optionally using a template.',
-    },
+    wordMarkdownExportTool,
+    wordMarkdownImportTool,
 ];

@@ -1,28 +1,48 @@
+/**
+ * @file Implements the 'word/merge' tool using COM Interop for merging multiple Word documents.
+ * @author David Jurado
+ * @date 2025-05-04
+ * @copyright Copyright (c) 2025 David Jurado
+ * @license MIT
+ */
 import { z } from 'zod';
-import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
-import { validateFilePath } from '../../utils/security';
-// Import FastMCPContext and remove ToolContext/ToolRequestParams if not needed elsewhere
-import { ApiResponse, McpResource, ToolRequestParams } from '../../types/common.types';
-import { saveResource } from '../dynamic/resources.tool'; // Importar saveResource
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop'; // Normalized relative path
+import { validateFilePath } from '../../utils/security'; // Normalized relative path
+import { ApiResponse, McpResource, ToolRequestParams } from '../../types/common.types'; // Normalized relative path
+import { saveResource } from '../dynamic/resources.tool'; // Normalized relative path
 import { Context as FastMCPContext } from 'fastmcp'; // Import FastMCP Context
-import { handleToolError, createErrorResponse } from '../../utils/errorHandler'; // Importar createErrorResponse
+import { handleToolError, createErrorResponse } from '../../utils/errorHandler'; // Normalized relative path
 import path from 'path';
-import logger from '../../utils/logger'; // Keep global logger as fallback if needed
+import logger from '../../utils/logger'; // Normalized relative path
 
-// Remove local MergeToolContext interface, use FastMCPContext directly
-// interface MergeToolContext extends ToolContext { ... }
-
-// 1. Define el Schema de Entrada
+// 1. Define the Input Schema
+/**
+ * Zod schema for the input parameters of the 'word/merge' tool.
+ */
 const mergeSchema = z.object({
-    docs: z.array(z.string().min(1)).min(2, { message: 'At least two documents are required for merging.' }),
-    output: z.string().min(1).refine(val => val.toLowerCase().endsWith('.docx'), {
+    /** An array of file paths to the Word documents (.docx) to be merged. Requires at least two documents. */
+    docs: z.array(z.string().min(1, 'Document path cannot be empty.')).min(2, { message: 'At least two documents are required for merging.' }),
+    /** The path where the merged output Word document (.docx) will be saved. Must end with .docx. */
+    output: z.string().min(1, 'Output path cannot be empty.').refine(val => val.toLowerCase().endsWith('.docx'), {
         message: 'Output path must end with .docx',
+    }).refine(validateFilePath, { // Validate the output path itself
+        message: "Invalid or potentially unsafe output file path provided.",
     }),
 });
 
+/**
+ * Infers the type for the validated merge parameters.
+ */
 type MergeParams = z.infer<typeof mergeSchema>;
 
-// 2. Implementa el Manejador `mergeDocuments` accepting an optional FastMCPContext
+// 2. Implement the Handler `mergeDocuments` accepting an optional FastMCPContext
+/**
+ * Merges multiple Word documents into a single new document using COM Interop.
+ * @param params - The parameters for the tool, validated against `mergeSchema`.
+ * @param context - The FastMCP context (optional), providing logging and progress reporting.
+ * @returns A promise resolving to an ApiResponse containing the output file path.
+ * @throws {Error} If validation fails, a COM error occurs, file access fails, or document processing fails.
+ */
 export async function mergeDocuments(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{ outputPath: string }>> {
     // Use context logger if available, otherwise fallback to global logger
     const log = context?.log ?? logger;
@@ -39,43 +59,41 @@ export async function mergeDocuments(params: ToolRequestParams, context?: FastMC
 
     let wordApp: any = null;
     let targetDoc: any = null;
-    const sourceDocs: any[] = []; // Para llevar registro de los documentos fuente abiertos
-    let officeAppInstance: any = null; // Declarar officeAppInstance fuera del try
+    const sourceDocs: any[] = []; // To keep track of open source documents
+    let officeAppInstance: any = null; // Declare officeAppInstance outside the try
 
     try {
-        // Validar y parsear parámetros
+        // Validate and parse parameters
         const validatedParams = mergeSchema.parse(params);
         log.info(`Validating input parameters for merge operation.`);
 
-        // Validar rutas de archivo
-        const safeOutputPath = validateFilePath(validatedParams.output);
-        // validateFilePath now handles the allowed paths logic internally based on env vars.
-        // No need to pass allowedPaths or perform additional checks here.
+        // Validate file paths
+        const safeOutputPath = validatedParams.output; // Already validated by Zod
 
         const safeSourcePaths: string[] = [];
         for (const docPath of validatedParams.docs) {
-            const safePath = validateFilePath(docPath);
+            const safePath = validateFilePath(docPath); // Validate each source path
             if (!safePath) {
-                // validateFilePath should throw an error if validation fails,
-                // so this check might be redundant, but kept for safety.
+                 // validateFilePath should throw an error if validation fails,
+                 // so this check might be redundant, but kept for safety.
                 throw new Error(`Source path validation failed for: ${docPath}`);
             }
             safeSourcePaths.push(safePath);
         }
         log.info(`All file paths validated successfully.`);
 
-        // Obtener instancia de Word
+        // Get Word application instance
         log.info('Getting Word application instance...');
-        officeAppInstance = await getOfficeApplication('Word.Application'); // Asignar aquí
+        officeAppInstance = await getOfficeApplication('Word.Application'); // Assign here
         wordApp = officeAppInstance.app;
-        wordApp.Visible = false; // Ejecutar en segundo plano
+        wordApp.Visible = false; // Run in background
         wordApp.DisplayAlerts = 0; // wdAlertsNone = 0
 
-        // Crear documento destino
+        // Create target document
         log.info('Creating target document...');
         targetDoc = wordApp.Documents.Add();
 
-        // Iterar y combinar documentos
+        // Iterate and merge documents
         const totalDocs = safeSourcePaths.length;
         log.info(`Starting merge process for ${totalDocs} documents...`);
         // Using correct { progress, total } signature from documentation, only if reportProgress is available
@@ -91,47 +109,47 @@ export async function mergeDocuments(params: ToolRequestParams, context?: FastMC
             let sourceDoc: any = null;
             try {
                 sourceDoc = wordApp.Documents.Open(sourcePath, false, true); // Open(FileName, ConfirmConversions=false, ReadOnly=true)
-                sourceDocs.push(sourceDoc); // Añadir a la lista para liberación posterior
+                sourceDocs.push(sourceDoc); // Add to the list for later release
 
-                // Seleccionar y copiar contenido
-                // sourceDoc.Content.Select(); // Select puede ser problemático a veces, usar Range
+                // Select and copy content
+                // sourceDoc.Content.Select(); // Select can be problematic sometimes, use Range
                 const sourceRange = sourceDoc.Content;
                 sourceRange.Copy();
 
 
-                // Pegar en el documento destino
+                // Paste into the target document
                 targetDoc.Activate();
-                // Mover al final del documento antes de pegar
+                // Move to the end of the document before pasting
                 const endOfDocRange = targetDoc.Content;
                 endOfDocRange.Collapse(0); // 0 = wdCollapseEnd
-                // wordApp.Selection.SetRange(endOfDocRange.End, endOfDocRange.End); // Usar Range.Paste en lugar de Selection
+                // wordApp.Selection.SetRange(endOfDocRange.End, endOfDocRange.End); // Use Range.Paste instead of Selection
                 endOfDocRange.Paste();
 
 
-                // Insertar salto de página después de cada documento excepto el último
+                // Insert page break after each document except the last one
                 if (i < totalDocs - 1) {
-                    // wordApp.Selection.InsertBreak(7); // 7 = wdPageBreak - Usar Range
+                    // wordApp.Selection.InsertBreak(7); // 7 = wdPageBreak - Use Range
                     const breakRange = targetDoc.Content;
                     breakRange.Collapse(0); // Collapse to end
                     breakRange.InsertBreak(7); // Insert page break at the end
                 }
 
-                // Cerrar documento fuente (sin guardar cambios)
+                // Close source document (without saving changes)
                 sourceDoc.Close(false); // wdDoNotSaveChanges = 0
-                // Quitar de la lista de documentos abiertos ya que se cerró correctamente
+                // Remove from the list of open documents as it was closed successfully
                 const indexToRemove = sourceDocs.indexOf(sourceDoc);
                 if (indexToRemove > -1) {
                     sourceDocs.splice(indexToRemove, 1);
                 }
-                releaseObject(sourceDoc); // Liberar el objeto COM del documento fuente cerrado
-                sourceDoc = null; // Asegurarse de que la variable está limpia
+                releaseObject(sourceDoc); // Release the COM object of the closed source document
+                sourceDoc = null; // Ensure the variable is clean
                  log.info(`Document ${currentDocNum}/${totalDocs} processed and closed.`);
                  // Using correct { progress, total } signature, only if reportProgress is available
                  reportProgress?.({ progress: currentDocNum, total: totalDocs });
 
             } catch (sourceDocError: any) {
                  log.error(`Error processing source document ${sourcePath}: ${sourceDocError.message || sourceDocError}`);
-                 // Intentar cerrar el documento fuente si aún está abierto antes de relanzar
+                 // Attempt to close the source document if it's still open before re-throwing
                  if (sourceDoc) {
                      try {
                          sourceDoc.Close(false);
@@ -144,45 +162,45 @@ export async function mergeDocuments(params: ToolRequestParams, context?: FastMC
                          log.error(`Failed to close source document ${sourcePath} after error: ${closeError.message || closeError}`);
                      }
                  }
-                throw sourceDocError; // Relanzar el error para que sea capturado por el catch principal
+                throw sourceDocError; // Re-throw the error to be caught by the main catch block
             }
         }
 
-        // Guardar el documento combinado
+        // Save the merged document
         log.info(`Saving merged document to: ${safeOutputPath}`);
         // Using correct { progress, total } signature - representing the saving step, only if reportProgress is available
         reportProgress?.({ progress: totalDocs, total: totalDocs });
-        // Asegurarse de que el directorio existe antes de guardar
-        // Nota: COM podría manejar esto, pero ser explícito es más seguro si es posible.
-        // Sin embargo, crear directorios desde aquí podría requerir permisos adicionales
-        // o lógica fuera del alcance de officeInterop. Se asume que el directorio base permitido existe.
+        // Ensure the directory exists before saving
+        // Note: COM might handle this, but being explicit is safer if possible.
+        // However, creating directories from here might require additional permissions
+        // or logic outside the scope of officeInterop. Assume the allowed base directory exists.
         targetDoc.SaveAs2(safeOutputPath);
         log.info(`Merged document saved successfully.`);
 
-        // Leer el contenido del documento combinado antes de cerrarlo
+        // Read the content of the merged document before closing it
         let mergedContent = '';
         try {
-             // Leer el texto del documento COM object
+             // Read the text from the COM document object
              mergedContent = targetDoc.Content.Text;
              log.info(`Read content from merged document.`);
          } catch (readContentError: any) {
              log.error(`Failed to read content from merged document before closing: ${readContentError.message}`);
-             // No lanzar error aquí, intentar guardar el recurso vacío o con error
+             // Do not throw error here, attempt to save the resource empty or with error
          }
 
-        // Cerrar el documento destino
+        // Close the target document
         targetDoc.Close(false); // wdDoNotSaveChanges = 0
-        // Liberar explícitamente el objeto targetDoc ahora que está cerrado y guardado
+        // Explicitly release the targetDoc object now that it's closed and saved
         releaseObject(targetDoc);
         targetDoc = null;
 
-        // Guardar el documento combinado como un recurso dinámico después de cerrarlo
+        // Save the merged document content as a dynamic resource after closing it
         try {
             await saveResource('word/merge', path.basename(safeOutputPath), mergedContent);
             log.info(`Saved ${safeOutputPath} as a dynamic resource.`);
         } catch (resourceSaveError: any) {
             log.error(`Failed to save ${safeOutputPath} as a dynamic resource: ${resourceSaveError.message}`);
-            // Continuar la ejecución aunque falle el guardado del recurso
+            // Continue execution even if resource saving fails
         }
 
 
@@ -198,7 +216,7 @@ export async function mergeDocuments(params: ToolRequestParams, context?: FastMC
     } catch (error: any) {
         // Use context.log for error logging
         log.error(`Error in mergeDocuments: ${error.message || error}`, { error }); // Log the full error object
-        // Asegurarse de cerrar el documento destino si se creó y no se cerró/liberó antes
+        // Ensure the target document is closed if it was created and not closed/released before
         if (targetDoc) {
             try {
                 targetDoc.Close(false);
@@ -212,28 +230,28 @@ export async function mergeDocuments(params: ToolRequestParams, context?: FastMC
     } finally {
         // Use context.log for final logging
         log.info('Starting cleanup process...');
-        // Liberar documentos fuente que pudieran haber quedado abiertos por error
+        // Release source documents that might have remained open due to error
         if (sourceDocs.length > 0) {
             log.warn(`Releasing ${sourceDocs.length} potentially orphaned source document objects.`);
             for (const doc of sourceDocs) {
                  try {
-                     doc.Close(false); // Intentar cerrar por si acaso
-                 } catch (e) { /* Ignorar errores al cerrar aquí */ }
+                     doc.Close(false); // Attempt to close just in case
+                 } catch (e) { /* Ignore errors when closing here */ }
                 releaseObject(doc);
             }
         }
-        // Liberar documento destino si aún existe referencia (p.ej., si hubo error antes de liberarlo explícitamente)
+        // Release target document if reference still exists (e.g., if there was an error before explicit release)
         if (targetDoc) {
             releaseObject(targetDoc);
              log.info('Target document object released.');
         }
-        // Liberar aplicación Word
+        // Release Word application
          if (wordApp) {
-              // No llamar a Quit() directamente aquí, confiar en releaseObject y officeInterop
+              // Do not call Quit() directly here, rely on releaseObject and officeInterop
               releaseObject(wordApp);
               log.info('Word application object reference released.');
          }
-         // Liberar officeAppInstance
+         // Release officeAppInstance
          if (officeAppInstance) {
              officeAppInstance.release();
              log.info('Office application instance released.');
@@ -241,14 +259,16 @@ export async function mergeDocuments(params: ToolRequestParams, context?: FastMC
     }
 }
 
-// 3. Define y Exporta el Recurso
-export const wordMergeTool: McpResource[] = [
-    {
-        path: 'word/merge',
-        // Handler signature matches McpResource expectation (params, context)
-        handler: mergeDocuments,
-        schema: mergeSchema,
-        description: 'Merges multiple Word documents (.docx) into a single new document using COM Interop.',
-        // completions: ... // Puedes añadir completions si lo ves útil
-    },
-];
+// 3. Define and Export the Resource
+/**
+ * McpResource definition for the 'word/merge' tool.
+ * Merges multiple Word documents into a single new document.
+ */
+export const wordMergeTool: McpResource = { // Export as a single object
+    path: 'word/merge',
+    // Handler signature matches McpResource expectation (params, context)
+    handler: mergeDocuments,
+    schema: mergeSchema,
+    description: 'Merges multiple Word documents (.docx) into a single new document using COM Interop.',
+    // completions: ... // Add completions if useful
+};

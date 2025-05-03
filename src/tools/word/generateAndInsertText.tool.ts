@@ -1,15 +1,16 @@
-// /src/tools/word/generateAndInsertText.tool.ts
-// =============================================================================
 /**
  * @file Implements the 'word/generate-and-insert-text' tool using FastMCP sampling and COM Interop.
+ * @author David Jurado
+ * @date 2025-05-04
+ * @copyright Copyright (c) 2025 David Jurado
+ * @license MIT
  */
 import { z } from 'zod';
-// Import ToolRequestParams as well
-import { McpResource, ApiResponse, FastMCPContext, ToolRequestParams } from '@/types/common.types';
-import { handleToolError, createErrorResponse } from '@/utils/errorHandler';
-import logger from '@/utils/logger';
-import { getOfficeApplication, releaseObject } from '@/utils/officeInterop'; // Assuming insertText logic might be here or called
-import { validateFilePath } from '@/utils/security';
+import { McpResource, ApiResponse, FastMCPContext, ToolRequestParams } from '../../types/common.types'; // Normalized relative path
+import { handleToolError, createErrorResponse } from '../../utils/errorHandler'; // Normalized relative path
+import logger from '../../utils/logger'; // Normalized relative path
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop'; // Normalized relative path
+import { validateFilePath } from '../../utils/security'; // Normalized relative path
 import { UserError } from 'fastmcp'; // Import UserError for sampling errors
 
 // Define the session data type expected by this tool's context
@@ -17,16 +18,26 @@ import { UserError } from 'fastmcp'; // Import UserError for sampling errors
 // import { AuthSessionData } from '@/server/index'; // Adjust path if needed
 // type ToolContextType = FastMCPContext<AuthSessionData>;
 // If no specific session data is needed beyond authentication being done:
+/**
+ * Type definition for the tool's context, allowing any session data.
+ */
 type ToolContextType = FastMCPContext<any>; // Use 'any' or a more specific type if available
 
 // --- Schema ---
+/**
+ * Zod schema for the input parameters of the 'word/generate-and-insert-text' tool.
+ */
 const generateAndInsertSchema = z.object({
+  /** The path to the Word file (relative to the current workspace directory). */
   filePath: z.string().min(1, 'File path is required.').refine(validateFilePath, {
     message: "Invalid or potentially unsafe file path provided.",
   }),
+  /** The position within the document where the text should be inserted (e.g., "start", "end", "paragraph:N:start", "selection"). */
   position: z.string().min(1, 'Position specifier is required (e.g., "start", "end", "paragraph:N:start", "selection").'),
+  /** The prompt to use for generating text with the LLM. */
   prompt: z.string().min(1, 'A prompt for text generation is required.'),
   // Optional sampling parameters (add more as needed from FastMCP spec)
+  /** Maximum tokens for the generated text. */
   maxTokens: z.number().int().positive().optional().describe("Maximum tokens for the generated text."),
 });
 
@@ -34,6 +45,10 @@ const generateAndInsertSchema = z.object({
 
 /**
  * Generates text using LLM sampling via FastMCP context and inserts it into a Word document.
+ * @param params - The parameters for the tool, validated against `generateAndInsertSchema`.
+ * @param context - The FastMCP context, expected to contain a session for sampling.
+ * @returns A promise resolving to an ApiResponse indicating the outcome of the operation.
+ * @throws {Error} If validation fails, context/session is unavailable, sampling fails, the document cannot be opened, or insertion fails.
  */
 async function generateAndInsertText(
     params: ToolRequestParams, // Change signature to accept ToolRequestParams
@@ -41,6 +56,7 @@ async function generateAndInsertText(
 ): Promise<ApiResponse<{}>> {
     // Ensure context and session are available, as requestSampling requires it
     if (!context || !context.session) { // Check for context.session as well
+        logger.error('[word/generate-and-insert-text] Context or session is unavailable for sampling.');
         return createErrorResponse('Context and session are required for requesting sampling.', 'CONTEXT_UNAVAILABLE');
     }
 
@@ -70,7 +86,7 @@ async function generateAndInsertText(
             // Construct messages array if needed, or just use prompt directly if supported
             // messages: [{ role: 'user', content: { type: 'text', text: validatedParams.prompt } }],
             prompt: validatedParams.prompt, // Assuming direct prompt usage is supported
-            maxTokens: validatedParams.maxTokens, // Pass optional parameters (Corrected: removed duplicate)
+            maxTokens: validatedParams.maxTokens, // Pass optional parameters
             // includeContext: 'thisServer', // Optionally include server context if needed by LLM
         });
 
@@ -90,10 +106,14 @@ async function generateAndInsertText(
         // Use validatedParams.filePath
         officeAppInstance = await getOfficeApplication('Word.Application');
         wordApp = officeAppInstance.app;
-        doc = officeAppInstance.openDocument(validatedParams.filePath, false, false); // Open read/write
+        // Open the document in read/write mode (ReadOnly = false) and visible (Visible = true)
+        doc = officeAppInstance.openDocument(validatedParams.filePath, false, true); // Open read/write, Visible = true
         if (!doc) {
+            logger.error(`[word/generate-and-insert-text] Failed to open document: ${validatedParams.filePath}`);
             return createErrorResponse(`Failed to open document: ${validatedParams.filePath}`, 'FILE_OPEN_FAILED');
         }
+        logger.debug(`Document opened successfully: ${validatedParams.filePath}`);
+
 
         // 3. Determine Insertion Range (similar logic to word/text/insert)
         const positionLower = validatedParams.position.toLowerCase(); // Use validatedParams
@@ -102,15 +122,23 @@ async function generateAndInsertText(
         // Simplified range logic - adapt from word/text/insert if needed
         if (positionLower === 'start') {
             insertionRange = doc.Range(0, 0);
+            logger.debug('Insertion position set to start of document.');
         } else if (positionLower === 'end') {
             const endPos = doc.Content.End;
             insertionRange = doc.Range(endPos, endPos);
+            logger.debug('Insertion position set to end of document.');
         } else if (positionLower === 'selection') {
-             if (!wordApp.Selection) return createErrorResponse("Cannot insert at selection: No selection found.", 'NO_SELECTION');
+             if (!wordApp.Selection) {
+                 logger.warn('Cannot insert at selection: No selection found.');
+                 return createErrorResponse("Cannot insert at selection: No selection found.", 'NO_SELECTION');
+             }
              insertionRange = wordApp.Selection.Range;
              // Collapse if it's not an insertion point
              if (wordApp.Selection.Type !== 2 /* wdSelectionIP */) {
                   insertionRange.Collapse(1); // wdCollapseStart
+                  logger.debug('Insertion position set to start of current selection.');
+             } else {
+                 logger.debug('Insertion position set to current insertion point.');
              }
         } else if (positionLower.startsWith('paragraph:')) {
             // Simplified - inserts at the start of the paragraph
@@ -118,21 +146,26 @@ async function generateAndInsertText(
             const indexStr = parts[1];
             const paraIndex = parseInt(indexStr, 10);
             if (isNaN(paraIndex) || paraIndex <= 0 || paraIndex > doc.Paragraphs.Count) {
+                logger.warn(`Invalid or out-of-bounds paragraph index: ${indexStr}`);
                 return createErrorResponse(`Invalid or out-of-bounds paragraph index: ${indexStr}`, 'INVALID_PARAM');
             }
             paraRange = doc.Paragraphs(paraIndex).Range;
             insertionRange = doc.Range(paraRange.Start, paraRange.Start); // Insert at start
+            logger.debug(`Insertion position set to start of paragraph ${paraIndex}.`);
         } else {
+            logger.warn(`Unsupported position specifier: ${validatedParams.position}`);
             return createErrorResponse(`Unsupported position specifier: ${validatedParams.position}`, 'INVALID_POSITION'); // Use validatedParams
         }
 
         if (!insertionRange) {
+             logger.error(`[word/generate-and-insert-text] Could not determine insertion range for position: ${validatedParams.position}`);
              return createErrorResponse(`Could not determine insertion range for position: ${validatedParams.position}`, 'RANGE_ERROR'); // Use validatedParams
         }
 
         // 4. Insert Generated Text
         logger.debug(`Inserting generated text (length: ${generatedText.length})`);
         insertionRange.Text = generatedText;
+        logger.debug('Generated text inserted into document.');
 
         // 5. Save and Close
         doc.Save();
@@ -151,7 +184,7 @@ async function generateAndInsertText(
         releaseObject(insertionRange);
         releaseObject(paraRange);
         if (doc) {
-            try { doc.Close(false); } catch (e) { logger.warn('Error closing document after generate/insert', e); }
+            try { doc.Close(false); } catch (e: any) { logger.warn(`Error closing document ${validatedParams?.filePath || 'unknown'}: ${e.message}`); } // Log error message
             releaseObject(doc);
         }
         if (officeAppInstance) {
@@ -162,6 +195,10 @@ async function generateAndInsertText(
 }
 
 // --- Resource Definition ---
+/**
+ * McpResource definition for the 'word/generate-and-insert-text' tool.
+ * Generates text based on a prompt using the LLM and inserts it into a Word document at a specified position.
+ */
 export const wordGenerateAndInsertTextTool: McpResource = { // Export as single object, not array
     path: 'word/generate-and-insert-text',
     handler: generateAndInsertText, // Pass the handler function directly

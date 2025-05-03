@@ -111,7 +111,9 @@ describe('word/styles integration tests', () => {
 
         // Verificar el resultado de error
         expect(result.success).toBe(false);
-        expect(result.error?.message).toContain('Failed to open document');
+        if (!result.success) { // Check if it's an ErrorResponse
+            expect(result.error?.message).toContain('Failed to open document');
+        }
         expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining('Error listing styles via COM'));
     });
 

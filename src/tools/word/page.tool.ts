@@ -1,101 +1,130 @@
+/**
+ * @file Implements the 'word/page' tool using COM Interop for configuring page layout settings in Word documents.
+ * @author David Jurado
+ * @date 2025-05-04
+ * @copyright Copyright (c) 2025 David Jurado
+ * @license MIT
+ */
 import { z } from 'zod';
-import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types'; // Ajustado según text.tool.ts
-import { getOfficeApplication, releaseObject } from '../../utils/officeInterop'; // Usar getOfficeApplication
-import { handleToolError, createErrorResponse } from '../../utils/errorHandler'; // Quitar ToolError
-import { validateFilePath } from '../../utils/security'; // Añadir validación de ruta
-import logger from '../../utils/logger'; // Añadir logger
+import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types'; // Normalized relative path
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop'; // Normalized relative path
+import { handleToolError, createErrorResponse } from '../../utils/errorHandler'; // Normalized relative path
+import { validateFilePath } from '../../utils/security'; // Normalized relative path
+import logger from '../../utils/logger'; // Normalized relative path
 
 // --- Schemas ---
 
-// Constantes para valores comunes de PageSetup (ejemplos, ajustar según API COM)
-// Referencia: https://learn.microsoft.com/en-us/office/vba/api/word.wdpapersize
+// Constants for common PageSetup values (examples, adjust based on COM API)
+// Reference: https://learn.microsoft.com/en-us/office/vba/api/word.wdpapersize
+/**
+ * Constants for Word Paper Sizes.
+ */
 const WdPageSizes = {
   wdPaper10x14: 0, wdPaper11x17: 1, wdPaperLetter: 2, wdPaperLegal: 3, wdPaperExecutive: 4,
   wdPaperA3: 5, wdPaperA4: 6, wdPaperA5: 7, wdPaperB4: 8, wdPaperB5: 9,
   wdPaperFanfoldLegalGerman: 10, wdPaperFanfoldStdGerman: 11, wdPaperFanfoldUS: 12,
   wdPaperFolio: 14, wdPaperLedger: 15, wdPaperNote: 18, wdPaperStatement: 20,
   wdPaperTabloid: 21, wdPaperQuarto: 22, wdPaperEnvelope9: 29, wdPaperEnvelope10: 30,
-  // ... Añadir más si es necesario
-  wdPaperCustom: 256 // Valor común para tamaño personalizado, verificar en la documentación COM si es diferente
-} as const; // Usar 'as const' para inferir tipos literales
+  // ... Add more if needed
+  wdPaperCustom: 256 // Common value for custom size, verify in COM documentation if different
+} as const; // Use 'as const' to infer literal types
 
-// Referencia: https://learn.microsoft.com/en-us/office/vba/api/word.wdorientation
+// Reference: https://learn.microsoft.com/en-us/office/vba/api/word.wdorientation
+/**
+ * Constants for Word Page Orientations.
+ */
 const WdOrientations = {
   wdOrientPortrait: 0,
   wdOrientLandscape: 1,
 } as const;
 
-// Esquema para márgenes (usar string para permitir unidades como '1in', '2cm')
-// La conversión a puntos (unidad de Word) se hará en la lógica COM
-const MarginSchema = z.string().regex(/^\d+(\.\d+)?\s*(in|cm|mm|pt)$/i, "Invalid margin format (e.g., '1in', '2.5cm', '72pt', '10 mm')");
+// Schema for margins (use string to allow units like '1in', '2cm')
+// Conversion to points (Word's internal unit) will be done in the COM logic
+/**
+ * Schema for margin values, allowing units (in, cm, mm, pt).
+ */
+const MarginSchema = z.string().regex(/^\d+(\.\d+)?\s*(in|cm|mm|pt)?$/i, "Invalid margin format (e.g., '1in', '2.5cm', '72pt', '10 mm')");
 
-// Esquema base para PageSetup
-const PageSetupBaseSchema = z.object({
-  filePath: z.string().min(1, 'File path is required.').refine(validateFilePath, {
-    message: "Invalid or potentially unsafe file path provided.",
-  }),
-  sectionIndex: z.number().int().positive().optional().describe("1-based index of the section to modify. Defaults to the first section if omitted."), // Opcional, para aplicar a secciones específicas
-});
-
-// Esquema combinado para todas las operaciones (usando z.object)
+// Combined schema for all operations (using z.object)
+/**
+ * Zod schema for the input parameters of the 'word/page' tool.
+ * Combines properties from get, set, and modify operations with refinement for operation-specific requirements.
+ */
 const WordPageInputSchema = z.object({
+  /** The operation to perform ('get', 'set', or 'modify'). */
   operation: z.enum(['get', 'set', 'modify']).describe('The operation to perform (get, set, or modify).'),
-  // Incluir todos los campos posibles de las operaciones get, set, modify
+  /** The path to the Word document. */
   filePath: z.string().min(1, 'File path is required.').refine(validateFilePath, {
     message: "Invalid or potentially unsafe file path provided.",
   }),
-  sectionIndex: z.number().int().positive().optional().describe("1-based index of the section to modify. Defaults to the first section if omitted."),
+  /** 1-based index of the section to modify. Defaults to the first section if omitted. */
+  sectionIndex: z.number().int().positive('Section index must be a positive integer.').optional().describe("1-based index of the section to modify. Defaults to the first section if omitted."), // Optional, to apply to specific sections
+  /** Page size constant (e.g., wdPaperA4, wdPaperLetter). Use wdPaperCustom with pageHeight/pageWidth for custom sizes. */
   size: z.nativeEnum(WdPageSizes).optional().describe("Page size constant (e.g., wdPaperA4, wdPaperLetter). Use wdPaperCustom with pageHeight/pageWidth for custom sizes."),
+  /** Page orientation constant (wdOrientPortrait or wdOrientLandscape). */
   orientation: z.nativeEnum(WdOrientations).optional().describe("Page orientation constant (wdOrientPortrait or wdOrientLandscape)."),
+  /** Custom page width (required if size is wdPaperCustom for 'set'). Include units (in, cm, mm, pt). */
   pageWidth: MarginSchema.optional().describe("Custom page width (required if size is wdPaperCustom for 'set'). Include units (in, cm, mm, pt)."),
+  /** Custom page height (required if size is wdPaperCustom for 'set'). Include units (in, cm, mm, pt). */
   pageHeight: MarginSchema.optional().describe("Custom page height (required if size is wdPaperCustom for 'set'). Include units (in, cm, mm, pt)."),
+  /** Top margin (e.g., '1in', '2.5cm'). */
   topMargin: MarginSchema.optional().describe("Top margin (e.g., '1in', '2.5cm')."),
+  /** Bottom margin (e.g., '1in', '2.5cm'). */
   bottomMargin: MarginSchema.optional().describe("Bottom margin (e.g., '1in', '2.5cm')."),
+  /** Left margin (e.g., '1.25in', '3cm'). */
   leftMargin: MarginSchema.optional().describe("Left margin (e.g., '1.25in', '3cm')."),
+  /** Right margin (e.g., '1.25in', '3cm'). */
   rightMargin: MarginSchema.optional().describe("Right margin (e.g., '1.25in', '3cm')."),
+  /** Gutter margin (e.g., '0.5in'). */
   gutter: MarginSchema.optional().describe("Gutter margin (e.g., '0.5in')."),
+  /** Distance from edge to header (e.g., '0.5in'). */
   headerDistance: MarginSchema.optional().describe("Distance from edge to header (e.g., '0.5in')."),
+  /** Distance from edge to footer (e.g., '0.5in'). */
   footerDistance: MarginSchema.optional().describe("Distance from edge to footer (e.g., '0.5in')."),
+  /** Different header/footer on the first page. */
   differentFirstPage: z.boolean().optional().describe("Different header/footer on the first page."),
+  /** Different headers/footers for odd and even pages. */
   oddAndEvenPages: z.boolean().optional().describe("Different headers/footers for odd and even pages."),
 }).refine(data => {
-    // Validaciones específicas por operación dentro del refinamiento
+    // Specific validations per operation within the refinement
     if (data.operation === 'set') {
-        // Para 'set', validar que al menos una propiedad de configuración esté presente
+        // For 'set', validate that at least one configuration property is present
         const configKeys = ['size', 'orientation', 'pageWidth', 'pageHeight', 'topMargin', 'bottomMargin', 'leftMargin', 'rightMargin', 'gutter', 'headerDistance', 'footerDistance', 'differentFirstPage', 'oddAndEvenPages'];
         if (!configKeys.some(key => data[key as keyof typeof data] !== undefined)) {
-            return false; // Falló la validación: ninguna propiedad de configuración para 'set'
+            return false; // Validation failed: no configuration property for 'set'
         }
-        // Para 'set' con wdPaperCustom, validar que pageWidth y pageHeight estén presentes
+        // For 'set' with wdPaperCustom, validate that pageWidth and pageHeight are present
         if (data.size === WdPageSizes.wdPaperCustom && (!data.pageWidth || !data.pageHeight)) {
-             return false; // Falló la validación: wdPaperCustom requiere pageWidth y pageHeight para 'set'
+             return false; // Validation failed: wdPaperCustom requires pageWidth and pageHeight for 'set'
         }
     } else if (data.operation === 'modify') {
-         // Para 'modify', validar que al menos una propiedad de configuración esté presente para cambiar
+         // For 'modify', validate that at least one configuration property is present to change
          const configKeys = ['size', 'orientation', 'pageWidth', 'pageHeight', 'topMargin', 'bottomMargin', 'leftMargin', 'rightMargin', 'gutter', 'headerDistance', 'footerDistance', 'differentFirstPage', 'oddAndEvenPages'];
          if (!configKeys.some(key => data[key as keyof typeof data] !== undefined)) {
-             return false; // Falló la validación: ninguna propiedad de configuración para 'modify'
+             return false; // Validation failed: no configuration property for 'modify'
          }
     }
-    // Para 'get', no se requieren propiedades adicionales aparte de filePath y opcionalmente sectionIndex
-    // Si operation es 'get', las validaciones anteriores no aplican.
-    return true; // Pasa la validación si no es 'set' o 'modify' con problemas, o si 'set'/'modify' cumplen sus requisitos
+    // For 'get', no additional properties are required besides filePath and optional sectionIndex
+    // If operation is 'get', the previous validations do not apply.
+    return true; // Passes validation if not 'set' or 'modify' with issues, or if 'set'/'modify' meet their requirements
 }, {
     message: "Invalid input for the specified operation. For 'set', provide at least one configuration property and include pageWidth/pageHeight if size is wdPaperCustom. For 'modify', provide at least one configuration property to change.",
     path: [], // Apply error to the whole object
 });
 
 
-// Inferir el tipo combinado para usar en el handler
+/**
+ * Infers the combined type for use in the handler.
+ */
 type WordPageInput = z.infer<typeof WordPageInputSchema>;
 
 
-// --- Funciones Auxiliares ---
+// --- Helper Functions ---
 
-/** Convertidor de unidades a puntos (unidad interna de Word) */
+/** Converts units to points (Word's internal unit) */
 function convertToPoints(valueWithUnit: string | undefined, wordApp: any): number | undefined {
     if (valueWithUnit === undefined) return undefined;
-    const match = valueWithUnit.trim().match(/^(\d+(\.\d+)?)\s*(in|cm|mm|pt)?$/i); // Hacer unidad opcional, default pt
+    const match = valueWithUnit.trim().match(/^(\d+(\.\d+)?)\s*(in|cm|mm|pt)?$/i); // Make unit optional, default pt
     if (!match) throw new Error(`Invalid unit format: ${valueWithUnit}`);
     const value = parseFloat(match[1]);
     const unit = match[3]?.toLowerCase() || 'pt'; // Default to points if unit is missing
@@ -114,20 +143,20 @@ function convertToPoints(valueWithUnit: string | undefined, wordApp: any): numbe
     }
 }
 
-// --- Lógica COM ---
+// --- COM Logic ---
 
-/** Obtiene la configuración de PageSetup para una sección específica */
+/** Gets the PageSetup configuration for a specific section */
 async function getPageSetup(filePath: string, sectionIndex: number = 1): Promise<any> {
     let wordApp: any = null;
     let doc: any = null;
     let pageSetup: any = null;
     let section: any = null;
-    let shouldQuit = false; // Flag para saber si debemos cerrar Word
+    let officeAppInstance: any = null; // To manage the application instance lifecycle
 
     try {
         const result = await getOfficeApplication('Word.Application');
+        officeAppInstance = result; // Assign the instance
         wordApp = result.app;
-        shouldQuit = result.shouldQuit; // Determina si la app fue abierta por nosotros
 
         doc = await wordApp.Documents.Open(filePath);
         if (sectionIndex > doc.Sections.Count || sectionIndex <= 0) {
@@ -136,48 +165,48 @@ async function getPageSetup(filePath: string, sectionIndex: number = 1): Promise
         section = doc.Sections.Item(sectionIndex);
         pageSetup = section.PageSetup;
 
-        // Extraer propiedades relevantes
+        // Extract relevant properties
         const config = {
-            size: pageSetup.PaperSize, // Devuelve el valor numérico de WdPaperSize
-            orientation: pageSetup.Orientation, // Devuelve el valor numérico de WdOrientation
-            pageWidth: pageSetup.PageWidth, // En puntos
-            pageHeight: pageSetup.PageHeight, // En puntos
-            topMargin: pageSetup.TopMargin, // En puntos
-            bottomMargin: pageSetup.BottomMargin, // En puntos
-            leftMargin: pageSetup.LeftMargin, // En puntos
-            rightMargin: pageSetup.RightMargin, // En puntos
-            gutter: pageSetup.Gutter, // En puntos
-            headerDistance: pageSetup.HeaderDistance, // En puntos
-            footerDistance: pageSetup.FooterDistance, // En puntos
-            differentFirstPage: pageSetup.DifferentFirstPageHeaderFooter, // Booleano
-            oddAndEvenPages: pageSetup.OddAndEvenPagesHeaderFooter, // Booleano
-            // Añadir otras propiedades si es necesario
+            size: pageSetup.PaperSize, // Returns the numeric value of WdPaperSize
+            orientation: pageSetup.Orientation, // Returns the numeric value of WdOrientation
+            pageWidth: pageSetup.PageWidth, // In points
+            pageHeight: pageSetup.PageHeight, // In points
+            topMargin: pageSetup.TopMargin, // In points
+            bottomMargin: pageSetup.BottomMargin, // In points
+            leftMargin: pageSetup.LeftMargin, // In points
+            rightMargin: pageSetup.RightMargin, // In points
+            gutter: pageSetup.Gutter, // In points
+            headerDistance: pageSetup.HeaderDistance, // In points
+            footerDistance: pageSetup.FooterDistance, // In points
+            differentFirstPage: pageSetup.DifferentFirstPageHeaderFooter, // Boolean
+            oddAndEvenPages: pageSetup.OddAndEvenPagesHeaderFooter, // Boolean
+            // Add other properties if needed
         };
 
-        await doc.Close(false); // No guardar cambios al cerrar para 'get'
+        await doc.Close(false); // Do not save changes on close for 'get'
         logger.info(`Page setup retrieved successfully for ${filePath}, section ${sectionIndex}.`);
         return config;
     } catch (error: any) {
-        logger.error(`Error getting page setup for ${filePath}, section ${sectionIndex}: ${error.message}`, { error }); // Loguear el error completo
+        logger.error(`Error getting page setup for ${filePath}, section ${sectionIndex}: ${error.message}`, { error }); // Log the full error
         if (doc) await doc.Close(false).catch((e: any) => logger.warn(`Failed to close document during error handling: ${e.message}`));
-        // Lanzar el ErrorResponse formateado
-        throw handleToolError(error, 'OFFICE_API_ERROR'); // Usar código más específico y quitar tercer argumento
+        // Throw the formatted ErrorResponse
+        throw handleToolError(error, 'OFFICE_API_ERROR'); // Use a more specific code and remove third argument
     } finally {
         releaseObject(pageSetup);
         releaseObject(section);
         releaseObject(doc);
-        if (wordApp && shouldQuit) {
-            await wordApp.Quit();
-            logger.debug("Word application closed by tool.");
+        if (officeAppInstance) {
+            officeAppInstance.release(); // Release the application instance
+            logger.debug("Word application instance released.");
         }
-        releaseObject(wordApp);
+        releaseObject(wordApp); // Release the app object reference
     }
 }
 
-/** Aplica la configuración de PageSetup a una sección específica */
+/** Applies PageSetup configuration to a specific section */
 async function applyPageSetup(
     filePath: string,
-    // Usar el tipo combinado para set/modify
+    // Use the combined type for set/modify
     settings: WordPageInput,
     sectionIndex: number = 1,
 ): Promise<void> {
@@ -185,12 +214,12 @@ async function applyPageSetup(
     let doc: any = null;
     let pageSetup: any = null;
     let section: any = null;
-    let shouldQuit = false;
+    let officeAppInstance: any = null; // To manage the application instance lifecycle
 
     try {
         const result = await getOfficeApplication('Word.Application');
+        officeAppInstance = result; // Assign the instance
         wordApp = result.app;
-        shouldQuit = result.shouldQuit;
 
         doc = await wordApp.Documents.Open(filePath);
         if (sectionIndex > doc.Sections.Count || sectionIndex <= 0) {
@@ -199,11 +228,11 @@ async function applyPageSetup(
         section = doc.Sections.Item(sectionIndex);
         pageSetup = section.PageSetup;
 
-        // Aplicar configuraciones (solo si están definidas en 'settings')
+        // Apply configurations (only if defined in 'settings')
         if (settings.size !== undefined) pageSetup.PaperSize = settings.size;
         if (settings.orientation !== undefined) pageSetup.Orientation = settings.orientation;
 
-        // Convertir unidades y aplicar márgenes/dimensiones
+        // Convert units and apply margins/dimensions
         const pageWidthPt = convertToPoints(settings.pageWidth, wordApp);
         if (pageWidthPt !== undefined) pageSetup.PageWidth = pageWidthPt;
 
@@ -231,29 +260,29 @@ async function applyPageSetup(
         const footerDistancePt = convertToPoints(settings.footerDistance, wordApp);
         if (footerDistancePt !== undefined) pageSetup.FooterDistance = footerDistancePt;
 
-        // Aplicar otras propiedades booleanas si se añadieron al schema
+        // Apply other boolean properties if added to the schema
         if (settings.differentFirstPage !== undefined) pageSetup.DifferentFirstPageHeaderFooter = settings.differentFirstPage;
         if (settings.oddAndEvenPages !== undefined) pageSetup.OddAndEvenPagesHeaderFooter = settings.oddAndEvenPages;
 
 
         await doc.Save();
         await doc.Close();
-        logger.info(`Page setup applied/modified successfully for ${filePath}, section ${sectionIndex}.`);
+        logger.info(`Page setup applied/modified successfully for ${filePath}, section ${sectionIndex || 1}.`);
 
     } catch (error: any) {
-        logger.error(`Error applying page setup for ${filePath}, section ${sectionIndex}: ${error.message}`, { error, settings }); // Loguear el error completo y settings
+        logger.error(`Error applying page setup for ${filePath}, section ${sectionIndex || 1}: ${error.message}`, { error, settings }); // Log the full error and settings
         if (doc) await doc.Close(false).catch((e: any) => logger.warn(`Failed to close document during error handling: ${e.message}`));
-        // Lanzar el ErrorResponse formateado
-        throw handleToolError(error, 'OFFICE_API_ERROR'); // Usar código más específico y quitar tercer argumento
+        // Throw the formatted ErrorResponse
+        throw handleToolError(error, 'OFFICE_API_ERROR'); // Use a more specific code and remove third argument
     } finally {
         releaseObject(pageSetup);
         releaseObject(section);
         releaseObject(doc);
-        if (wordApp && shouldQuit) {
-            await wordApp.Quit();
-            logger.debug("Word application closed by tool.");
+        if (officeAppInstance) {
+            officeAppInstance.release(); // Release the application instance
+            logger.debug("Word application instance released.");
         }
-        releaseObject(wordApp);
+        releaseObject(wordApp); // Release the app object reference
     }
 }
 
@@ -306,66 +335,68 @@ async function applyPageSetup(
  * }
  * ```
  */
-export const wordPageTool: McpResource = { // Definir como objeto directamente
-  path: 'word/page', // Añadir la propiedad path requerida por McpResource
+export const wordPageTool: McpResource = { // Define as a single object
+  path: 'word/page', // Add the path property required by McpResource
   description: 'Configures page layout settings (size, margins, orientation, headers/footers) in a Word document section.',
-  schema: WordPageInputSchema, // Usar el nuevo esquema z.object
-  // outputSchema: z.any(), // Opcional: definir esquema de salida si es estable
-  async handler(params: ToolRequestParams, context?: FastMCPContext<any>): Promise<ApiResponse<any>> { // Hacer context opcional: context?: FastMCPContext<any>
-    // Validar y parsear los params genéricos usando el nuevo WordPageInputSchema
+  schema: WordPageInputSchema, // Use the new z.object schema
+  // outputSchema: z.any(), // Optional: define output schema if stable
+  async handler(params: ToolRequestParams, context?: FastMCPContext<any>): Promise<ApiResponse<any>> { // Make context optional: context?: FastMCPContext<any>
+    const log = context?.log ?? logger; // Use context logger or fallback
+
+    // Validate and parse the generic params using the new WordPageInputSchema
     let validatedRequest: WordPageInput;
     try {
       validatedRequest = WordPageInputSchema.parse(params);
     } catch (error: any) {
-       // Si la validación inicial falla, devolver un error de validación
+       // If initial validation fails, return a validation error
        if (error instanceof z.ZodError) {
-           logger.warn(`Input validation failed at handler entry for word/page: ${error.message}`, { errors: error.errors, params });
+           log.warn(`Input validation failed at handler entry for word/page: ${error.message}`, { errors: JSON.stringify(error.errors), params });
            return createErrorResponse('VALIDATION_ERROR', `Input validation failed: ${error.errors.map(e => `${e.path.join('.')} - ${e.message}`).join(', ')}`);
        }
-       // Otro error inesperado durante el parseo inicial
-       logger.error(`Unexpected error parsing params in word/page handler: ${error.message}`, { error, params });
+       // Another unexpected error during initial parsing
+       log.error(`Unexpected error parsing params in word/page handler: ${error.message}`, { error, params });
        return createErrorResponse('INTERNAL_ERROR', 'Failed to parse tool parameters.');
     }
 
-    // Ahora usar validatedRequest que está correctamente tipado
-    const { operation, ...args } = validatedRequest; // Extraer operation y el resto como args
-    const { filePath, sectionIndex } = args; // sectionIndex es opcional
+    // Now use validatedRequest which is correctly typed
+    const { operation, ...args } = validatedRequest; // Extract operation and the rest as args
+    const { filePath, sectionIndex } = args; // sectionIndex is optional
 
     try {
-      // La validación de filePath ya está en el schema base
-      // La validación de la estructura completa (operation + args) la hace Zod al definir inputSchema
+      // filePath validation is already in the base schema
+      // The validation of the complete structure (operation + args) is done by Zod when defining inputSchema
 
       switch (operation) {
         case 'get':
-          // args ya está validado por Zod como parte de WordPageInputSchema
-          const config = await getPageSetup(filePath, sectionIndex); // Pasar sectionIndex
+          // args is already validated by Zod as part of WordPageInputSchema
+          const config = await getPageSetup(filePath, sectionIndex); // Pass sectionIndex
           return { success: true, data: config };
         case 'set':
         case 'modify':
-          // args ya está validado por Zod como parte de WordPageInputSchema
-          await applyPageSetup(filePath, validatedRequest, sectionIndex); // Pasar validatedRequest completo y sectionIndex
-          return { success: true, data: null, message: `Page setup ${operation}ed successfully for section ${sectionIndex || 1}.` }; // Añadir data: null y mensaje dinámico
-        // No se necesita default case debido a Zod discriminatedUnion
+          // args is already validated by Zod as part of WordPageInputSchema
+          await applyPageSetup(filePath, validatedRequest, sectionIndex); // Pass the complete validatedRequest and sectionIndex
+          return { success: true, data: null, message: `Page setup ${operation}ed successfully for section ${sectionIndex || 1}.` }; // Add data: null and dynamic message
+        // No default case needed due to Zod discriminatedUnion
       }
     } catch (error: any) {
-       // Si el error ya es un ErrorResponse (lanzado por handleToolError dentro de las funciones COM), devolverlo directamente
-       // Comprobamos si tiene la estructura de ErrorResponse
+       // If the error is already an ErrorResponse (thrown by handleToolError within the COM functions), return it directly
+       // We check if it has the structure of ErrorResponse
        if (error && typeof error === 'object' && 'success' in error && error.success === false && 'error' in error) {
-           // TypeScript ahora debería reconocer 'error' como compatible con ErrorResponse aquí
-           return error as ApiResponse<any>; // Devolver como ApiResponse genérico que incluye ErrorResponse
+           // TypeScript should now recognize 'error' as compatible with ErrorResponse here
+           return error as ApiResponse<any>; // Return as generic ApiResponse that includes ErrorResponse
        }
-       // Si es un error de validación de Zod (aunque inputSchema debería atraparlos antes, por si acaso)
+       // If it's a Zod validation error (although inputSchema should catch them before, just in case)
        if (error instanceof z.ZodError) {
-           logger.warn(`Input validation failed at handler level for word/page: ${error.message}`, { errors: error.errors });
-           // Usar handleToolError para formatearlo consistentemente
+           log.warn(`Input validation failed at handler level for word/page: ${error.message}`, { errors: JSON.stringify(error.errors) });
+           // Use handleToolError to format it consistently
            return handleToolError(error, 'VALIDATION_ERROR');
        }
-       // Manejar otros errores inesperados que no pasaron por handleToolError
-       logger.error(`Unexpected error in word/page handler: ${error.message}`, { stack: error.stack, filePath, sectionIndex, operation });
-       // Usar handleToolError para estandarizar errores inesperados
-       return handleToolError(error, 'UNEXPECTED_HANDLER_ERROR'); // Usar código específico y solo 2 args
+       // Handle other unexpected errors that did not go through handleToolError
+       log.error(`Unexpected error in word/page handler: ${error.message}`, { stack: error.stack, filePath, sectionIndex, operation });
+       // Use handleToolError to standardize unexpected errors
+       return handleToolError(error, 'UNEXPECTED_HANDLER_ERROR'); // Use specific code and only 2 args
     }
   },
 };
 
-// No necesitamos export default porque las herramientas se importan directamente en index.ts
+// No need for export default because tools are imported directly in index.ts

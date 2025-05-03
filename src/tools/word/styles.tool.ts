@@ -1,36 +1,40 @@
 /**
- * @file Implements the 'word/styles' tool using COM Interop (winax) for managing styles in Word documents.
+ * @file Implements the 'word/styles' tool using COM Interop for managing styles in Word documents.
  * Provides functionality to apply and list styles.
  * @author David Jurado
- * @date 2025-05-03
+ * @date 2025-05-04
  * @copyright Copyright (c) 2025 David Jurado
  * @license MIT
  */
 import { z } from 'zod';
-import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '@/types/common.types'; // Import FastMCPContext from common types
-import { handleToolError } from '@/utils/errorHandler';
-import logger from '@/utils/logger';
-import { getOfficeApplication, releaseObject } from '@/utils/officeInterop';
-import { validateFilePath } from '@/utils/security';
+import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types'; // Normalized relative path
+import { handleToolError, createErrorResponse } from '../../utils/errorHandler'; // Normalized relative path
+import logger from '../../utils/logger'; // Normalized relative path
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop'; // Normalized relative path
+import { validateFilePath } from '../../utils/security'; // Normalized relative path
 
 // --- Schemas ---
 
-/** Schema for the 'word/styles/apply' tool parameters. */
+/**
+ * Zod schema for the input parameters of the 'word/styles/apply' tool.
+ */
 const styleSchema = z.object({
     /** The path of the Word document to modify (relative to the current workspace directory). */
-    filePath: z.string().min(1).refine(validateFilePath, {
+    filePath: z.string().min(1, 'File path is required.').refine(validateFilePath, {
         message: "Invalid or potentially unsafe file path provided.",
     }),
     /** The name of the style to apply. */
-    style: z.string().min(1),
+    style: z.string().min(1, 'Style name is required.'),
     /** The range in the document to apply the style to (e.g., 'paragraph:N', 'selection', 'document'). */
-    range: z.string().min(1), // e.g., 'paragraph:1', 'selection', 'document'
+    range: z.string().min(1, 'Range specifier is required.'), // e.g., 'paragraph:1', 'selection', 'document'
 });
 
-/** Schema for the 'word/styles/list' tool parameters. */
+/**
+ * Zod schema for the input parameters of the 'word/styles/list' tool.
+ */
 const listStyleSchema = z.object({
     /** The path of the Word document to analyze (relative to the current workspace directory). */
-    filePath: z.string().min(1).refine(validateFilePath, {
+    filePath: z.string().min(1, 'File path is required.').refine(validateFilePath, {
         message: "Invalid or potentially unsafe file path provided.",
     }),
 });
@@ -41,26 +45,34 @@ const listStyleSchema = z.object({
 /**
  * Applies a style to a specified range in a Word document using COM Interop.
  * @param params - The parameters for the apply style operation, validated against `styleSchema`.
- * @param context - The FastMCP context (optional).
+ * @param context - The FastMCP context (optional), providing logging.
  * @returns A promise resolving to an empty ApiResponse indicating success.
- * @throws {Error} If the document fails to open, the range is invalid, or style application fails.
+ * @throws {Error} If validation fails, the document fails to open, the range is invalid, or style application fails.
  */
 export async function applyStyle(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> { // Use FastMCPContext<undefined>
+    const log = context?.log ?? logger; // Use context logger or fallback
+
     let wordApp: any = null;
     let doc: any = null;
+    let officeAppInstance: any = null; // To manage the application instance lifecycle
 
     try {
         const validatedParams = styleSchema.parse(params);
         const safeFilePath = validatedParams.filePath; // Already validated by Zod refine
-        logger.info(`[word/styles/apply] Attempting to apply style: ${validatedParams.style} to range: ${validatedParams.range} in document: ${safeFilePath}`);
+        log.info(`[word/styles/apply] Attempting to apply style: ${validatedParams.style} to range: ${validatedParams.range} in document: ${safeFilePath}`);
 
-        wordApp = await getOfficeApplication('Word.Application');
+        officeAppInstance = await getOfficeApplication('Word.Application');
+        wordApp = officeAppInstance.app;
+        wordApp.Visible = false; // Run in background
+        wordApp.DisplayAlerts = 0; // wdAlertsNone = 0
         // Consider making Word visible for debugging: wordApp.Visible = true;
 
         doc = wordApp.Documents.Open(safeFilePath);
         if (!doc) {
+            log.error(`[word/styles/apply] Failed to open document: ${safeFilePath}`);
             throw new Error(`Failed to open document: ${safeFilePath}`);
         }
+        log.debug(`Document opened successfully.`);
 
         let selectedRange: any;
         const rangeStringLower = validatedParams.range.toLowerCase();
@@ -72,59 +84,61 @@ export async function applyStyle(params: ToolRequestParams, context?: FastMCPCon
             // Consider if 'document' or specific paragraphs are more reliable.
             selectedRange = wordApp.Selection.Range; // Get the Range object from the Selection
              if (!selectedRange) {
-                 logger.warn("[word/styles/apply] wordApp.Selection.Range was null or undefined. This might happen if there's no active selection or the app is headless.");
+                 log.warn("[word/styles/apply] wordApp.Selection.Range was null or undefined. This might happen if there's no active selection or the app is headless.");
                  throw new Error("Could not get range from selection. Ensure the document is active and has a selection, or use a different range specifier.");
              }
+             log.debug(`Applying style to current selection.`);
         } else if (rangeStringLower === 'document') {
             selectedRange = doc.Content;
+            log.debug(`Applying style to entire document content.`);
         } else if (rangeStringLower.startsWith('paragraph:')) {
             const indexStr = validatedParams.range.split(':')[1];
             const index = parseInt(indexStr, 10);
             if (!isNaN(index) && index > 0) { // COM indices are typically 1-based
                  if (index <= doc.Paragraphs.Count) {
                     selectedRange = doc.Paragraphs(index).Range;
+                    log.debug(`Applying style to paragraph ${index}.`);
                  } else {
+                    log.warn(`Paragraph index ${index} is out of bounds. Document has ${doc.Paragraphs.Count} paragraphs.`);
                     throw new Error(`Paragraph index ${index} is out of bounds. Document has ${doc.Paragraphs.Count} paragraphs.`);
                  }
             } else {
+                 log.warn(`Invalid paragraph index format: '${indexStr}'.`);
                  throw new Error(`Invalid paragraph index format: '${indexStr}'. Use 'paragraph:N' where N is a positive integer.`);
             }
         } else {
+            log.warn(`Unsupported range format: '${validatedParams.range}'.`);
             throw new Error(`Unsupported range format: '${validatedParams.range}'. Supported formats: 'selection', 'document', 'paragraph:N'.`);
         }
 
         // Apply the style
-        logger.debug(`[word/styles/apply] Applying style '${validatedParams.style}' to range type: ${rangeStringLower}`);
+        log.debug(`[word/styles/apply] Applying style '${validatedParams.style}' to range type: ${rangeStringLower}`);
         selectedRange.Style = validatedParams.style;
         // Optionally save the document: doc.Save();
         // For this tool, we typically don't save automatically.
 
-        logger.info(`[word/styles/apply] Successfully applied style '${validatedParams.style}' to range '${validatedParams.range}' in document '${safeFilePath}'`);
+        log.info(`[word/styles/apply] Successfully applied style '${validatedParams.style}' to range '${validatedParams.range}' in document '${safeFilePath}'`);
         return { success: true, data: {} };
 
-    } catch (error) {
-         logger.error(`[word/styles/apply] Error applying style via COM: ${error}`, { params });
+    } catch (error: any) {
+         log.error(`[word/styles/apply] Error applying style via COM: ${error.message}`, { error, params });
+         // Ensure document is closed if it was opened
+         if (doc) {
+             try { doc.Close(false); } catch (e: any) { log.warn(`Error closing document during error handling: ${e.message}`); }
+             releaseObject(doc);
+         }
          return handleToolError(error, 'WORD_STYLE_ERROR');
     } finally {
         // --- CRUCIAL: Release COM Objects ---
-        if (doc) {
-            try {
-                doc.Close(false); // Close without saving changes (wdDoNotSaveChanges = 0)
-                logger.debug(`[word/styles/apply] Closed document: ${params.filePath}`);
-            } catch (closeError) {
-                logger.error(`[word/styles/apply] Error closing document: ${closeError}`);
-            }
+        if (doc) { // Redundant if closed in catch, but safe
             releaseObject(doc);
-            doc = null;
         }
-        if (wordApp) {
-            // Only quit the application if we opened it and no other docs are open (tricky to determine reliably without more complex logic)
-            // For simplicity now, we might leave Word running if it was already open.
-            // A safer approach for background tasks might be to always quit.
-            // wordApp.Quit(); // Consider the implications
+        if (officeAppInstance) {
+            officeAppInstance.release(); // Release the application instance
+            log.debug("[word/styles/apply] Office application instance released.");
+        }
+        if (wordApp) { // Release the app object reference
             releaseObject(wordApp);
-            wordApp = null;
-            logger.debug("[word/styles/apply] Released Word Application COM object.");
         }
     }
 }
@@ -132,29 +146,39 @@ export async function applyStyle(params: ToolRequestParams, context?: FastMCPCon
 /**
  * Lists available styles in the document using COM Interop.
  * @param params - The parameters for the list styles operation, validated against `listStyleSchema`.
- * @param context - The FastMCP context (optional).
+ * @param context - The FastMCP context (optional), providing logging.
  * @returns A promise resolving to an ApiResponse containing an array of style names (strings).
- * @throws {Error} If the document fails to open or style listing fails.
+ * @throws {Error} If validation fails, the document fails to open or style listing fails.
  */
 export async function listStyles(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<string[]>> { // Use FastMCPContext<undefined>
+    const log = context?.log ?? logger; // Use context logger or fallback
+
     let wordApp: any = null;
     let doc: any = null;
+    let officeAppInstance: any = null; // To manage the application instance lifecycle
+
      try {
         const validatedParams = listStyleSchema.parse(params);
         const safeFilePath = validatedParams.filePath; // Already validated
-        logger.info(`[word/styles/list] Attempting to list styles for document: ${safeFilePath}`);
+        log.info(`[word/styles/list] Attempting to list styles for document: ${safeFilePath}`);
 
-        wordApp = await getOfficeApplication('Word.Application');
+        officeAppInstance = await getOfficeApplication('Word.Application');
+        wordApp = officeAppInstance.app;
+        wordApp.Visible = false; // Run in background
+        wordApp.DisplayAlerts = 0; // wdAlertsNone = 0
+
         doc = wordApp.Documents.Open(safeFilePath);
         if (!doc) {
+            log.error(`[word/styles/list] Failed to open document: ${safeFilePath}`);
             throw new Error(`Failed to open document: ${safeFilePath}`);
         }
+        log.debug(`Document opened successfully.`);
 
         const styles = doc.Styles;
         const styleCount = styles.Count;
         const styleNames: string[] = [];
 
-        logger.debug(`[word/styles/list] Found ${styleCount} styles in the collection. Iterating...`);
+        log.debug(`[word/styles/list] Found ${styleCount} styles in the collection. Iterating...`);
         // COM collections are often 1-based
         for (let i = 1; i <= styleCount; i++) {
             let style = null;
@@ -163,38 +187,39 @@ export async function listStyles(params: ToolRequestParams, context?: FastMCPCon
                  if (style && style.NameLocal) {
                      styleNames.push(style.NameLocal);
                  } else {
-                      logger.warn(`[word/styles/list] Style at index ${i} was null or had no NameLocal.`);
+                      log.warn(`[word/styles/list] Style at index ${i} was null or had no NameLocal.`);
                  }
-            } catch (itemError) {
-                 logger.error(`[word/styles/list] Error accessing style at index ${i}: ${itemError}`);
+            } catch (itemError: any) {
+                 log.error(`[word/styles/list] Error accessing style at index ${i}: ${itemError.message}`, { error: itemError });
                  // Continue to next item if possible
             } finally {
                  if (style) releaseObject(style); // Release the individual style object
             }
         }
+        releaseObject(styles); // Release styles collection
 
-        logger.info(`[word/styles/list] Successfully listed ${styleNames.length} styles from document '${safeFilePath}'.`);
+        log.info(`[word/styles/list] Successfully listed ${styleNames.length} styles from document '${safeFilePath}'.`);
         return { success: true, data: styleNames };
 
-    } catch (error) {
-         logger.error(`[word/styles/list] Error listing styles via COM: ${error}`, { params });
+    } catch (error: any) {
+         log.error(`[word/styles/list] Error listing styles via COM: ${error.message}`, { error, params });
+         // Ensure document is closed if it was opened
+         if (doc) {
+             try { doc.Close(false); } catch (e: any) { log.warn(`Error closing document during error handling: ${e.message}`); }
+             releaseObject(doc);
+         }
         return handleToolError(error, 'WORD_STYLE_ERROR');
     } finally {
         // --- CRUCIAL: Release COM Objects ---
-        if (doc) {
-            try {
-                doc.Close(false); // Close without saving
-                logger.debug(`[word/styles/list] Closed document: ${params.filePath}`);
-            } catch (closeError) {
-                logger.error(`[word/styles/list] Error closing document: ${closeError}`);
-            }
+        if (doc) { // Redundant if closed in catch, but safe
             releaseObject(doc);
-            doc = null;
         }
-        if (wordApp) {
+        if (officeAppInstance) {
+            officeAppInstance.release(); // Release the application instance
+            log.debug("[word/styles/list] Office application instance released.");
+        }
+        if (wordApp) { // Release the app object reference
             releaseObject(wordApp);
-            wordApp = null;
-            logger.debug("[word/styles/list] Released Word Application COM object.");
         }
     }
 }
