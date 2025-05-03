@@ -1,70 +1,90 @@
-// Quitar importaciones de tipos específicos de FastMCP si no se usan explícitamente
-// import { IFastMcpToolDefinition, IFastMcpToolHandler, IFastMcpToolSchema } from 'fastmcp';
+/**
+ * @file Implements the 'word/embedded-objects' tool using COM Interop (winax) for managing embedded OLE objects in Word documents.
+ * Provides functionality to insert, modify, delete, and extract embedded objects.
+ * @author David Jurado
+ * @date 2025-05-03
+ * @copyright Copyright (c) 2025 David Jurado
+ * @license MIT
+ */
 import { z } from 'zod';
-// import { WordApplication } from 'winax'; // No se importa directamente, se usa 'any' o se infiere
+import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types'; // Import necessary types
 import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
-import { validateFilePath } from '../../utils/security'; // Corregido: Nombre de función
+import { validateFilePath } from '../../utils/security'; // Corrected: Function name
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import logger from '../../utils/logger'; // Corregido: Importación por defecto
-import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types'; // Importar tipos necesarios
+import logger from '../../utils/logger'; // Corrected: Default import
 
-// --- Esquema de Entrada (Zod) ---
+// --- Input Schema (Zod) ---
+
+/** Base schema for embedded object operations requiring a file path. */
 const EmbeddedObjectBaseSchema = z.object({
-  filePath: z.string().min(1, 'El path del archivo es requerido.').refine(validateFilePath, {
+  /** The path to the Word file (relative to the current workspace directory). */
+  filePath: z.string().min(1, 'File path is required.').refine(validateFilePath, {
     message: "Invalid or potentially unsafe file path provided.",
   }),
 });
 
-// Esquema combinado para todas las operaciones (usando z.object)
-const WordEmbeddedObjectsInputSchema = z.object({
+/** Combined schema for all embedded object operations. */
+const WordEmbeddedObjectsInputSchema = EmbeddedObjectBaseSchema.extend({
+    /** The operation to perform ('insert', 'modify', 'delete', or 'extractAll'). */
     operation: z.enum(['insert', 'modify', 'delete', 'extractAll']).describe('The operation to perform (insert, modify, delete, or extractAll).'),
-    // Incluir todos los campos posibles de las operaciones
-    filePath: z.string().min(1, 'El path del archivo es requerido.').refine(validateFilePath, {
-        message: "Invalid or potentially unsafe file path provided.",
-    }),
-    objectPath: z.string().optional().describe("(insert) Path al archivo del objeto a insertar. Requerido para 'insert'."), // Hacer opcional aquí, validar en handler
-    objectIndex: z.number().int().positive('El índice del objeto debe ser un entero positivo. Requerido para modify, delete.').optional().describe("(modify, delete) Índice (1-based) del objeto (InlineShapes primero, luego Shapes)."), // Hacer opcional aquí, validar en handler
-    newObjectPath: z.string().optional().describe("(modify) Path al nuevo archivo del objeto. Requerido para 'modify'."), // Hacer opcional aquí, validar en handler
-    outputDirectory: z.string().optional().describe("(extractAll) Directorio donde guardar los objetos extraídos. Requerido para 'extractAll'."), // Hacer opcional aquí, validar en handler
-    // Opcional: position, linkToFile, displayAsIcon, iconFileName, iconIndex, iconLabel, etc.
-    // range: z.string().optional().describe("Rango donde insertar (ej: 'paragraph:N', 'selection', 'end'). Default: 'end'"),
+    /** The path to the file of the object to insert. Required for 'insert'. */
+    objectPath: z.string().optional().describe("(insert) Path to the object file to insert. Required for 'insert'."), // Make optional here, validate in handler
+    /** The 1-based index of the object (InlineShapes first, then Shapes). Required for 'modify' and 'delete'. */
+    objectIndex: z.number().int().positive('Object index must be a positive integer. Required for modify, delete.').optional().describe("(modify, delete) 1-based index of the object (InlineShapes first, then Shapes)."), // Make optional here, validate in handler
+    /** The path to the new object file. Required for 'modify'. */
+    newObjectPath: z.string().optional().describe("(modify) Path to the new object file. Required for 'modify'."), // Make optional here, validate in handler
+    /** The directory where extracted objects will be saved. Required for 'extractAll'. */
+    outputDirectory: z.string().optional().describe("(extractAll) Directory where extracted objects will be saved. Required for 'extractAll'."), // Make optional here, validate in handler
+    // Optional: position, linkToFile, displayAsIcon, iconFileName, iconIndex, iconLabel, etc.
+    // range: z.string().optional().describe("Range where to insert (e.g.: 'paragraph:N', 'selection', 'end'). Default: 'end'"),
 }).refine(data => {
-    // Validaciones específicas por operación dentro del refinamiento
+    // Specific validations per operation within the refinement
     if (data.operation === 'insert') {
-        return data.objectPath !== undefined; // Requiere objectPath
+        return data.objectPath !== undefined; // Requires objectPath
     } else if (data.operation === 'modify') {
-        return data.objectIndex !== undefined && data.newObjectPath !== undefined; // Requiere objectIndex y newObjectPath
+        return data.objectIndex !== undefined && data.newObjectPath !== undefined; // Requires objectIndex and newObjectPath
     } else if (data.operation === 'delete') {
-        return data.objectIndex !== undefined; // Requiere objectIndex
+        return data.objectIndex !== undefined; // Requires objectIndex
     } else if (data.operation === 'extractAll') {
-        return data.outputDirectory !== undefined; // Requiere outputDirectory
+        return data.outputDirectory !== undefined; // Requires outputDirectory
     }
-    return true; // Pasa la validación si la operación no requiere campos específicos o si los tiene
+    return true; // Passes validation if the operation doesn't require specific fields or if it has them
 }, {
     message: "Invalid input for the specified operation. Check required fields (objectPath, objectIndex, newObjectPath, outputDirectory).",
     path: [], // Apply error to the whole object
 });
 
 
-// Inferir el tipo combinado para usar en el handler
+/** Infer the combined type for use in the handler. */
 type WordEmbeddedObjectsInput = z.infer<typeof WordEmbeddedObjectsInputSchema>;
 
 
-// --- Esquema de Salida (Zod) ---
-// No es estrictamente necesario definirlo aquí si no se valida explícitamente el retorno,
-// pero puede ser útil para documentación o tipos internos.
+// --- Output Schema (Zod) ---
+// Not strictly necessary to define here if not explicitly validating the return,
+// but can be useful for documentation or internal types.
+/** Schema for the output of embedded object operations. */
 const EmbeddedObjectsOutputSchema = z.object({
+  /** Indicates if the operation was successful. */
   success: z.boolean(),
+  /** A message describing the outcome of the operation. */
   message: z.string(),
-  details: z.any().optional(), // Para devolver información extra, como paths de archivos extraídos
+  /** Optional additional details, such as paths of extracted files. Can be any type. */
+  details: z.any().optional(), // To return extra information, like paths of extracted files
 });
 
-// --- Handler (ahora llamado 'execute') ---
-// El handler recibe params y el contexto (que incluye log, reportProgress, session)
+// --- Handler (now called 'execute') ---
+/**
+ * Handler function for the 'word/embedded-objects' tool.
+ * Executes the specified operation on embedded OLE objects in a Word document.
+ * @param params - The parameters for the tool, validated against `WordEmbeddedObjectsInputSchema`.
+ * @param context - The FastMCP context (optional).
+ * @returns A promise resolving to an ApiResponse indicating the outcome of the operation.
+ * @throws {Error} If validation fails, the document cannot be opened, the object is not found/not OLE, or an operation fails.
+ */
 const embeddedObjectsExecute = async (params: ToolRequestParams, context?: FastMCPContext<any>): Promise<ApiResponse<any>> => {
-  const log = context?.log || logger; // Usar el logger del contexto si está disponible, sino el global
-  log.info(`Iniciando operación en archivo: ${params.filePath}`); // Usar params directamente para filePath inicial
+  const log = context?.log || logger; // Use the context logger if available, otherwise the global one
+  log.info(`[EmbeddedObjects] Starting operation on file: ${params.filePath}`); // Use params directly for initial filePath
 
   let validatedRequest: WordEmbeddedObjectsInput;
   try {
@@ -75,7 +95,7 @@ const embeddedObjectsExecute = async (params: ToolRequestParams, context?: FastM
      if (error instanceof z.ZodError) {
          // Serializar error.errors para que sea serializable
          const errorDetails = JSON.stringify(error.errors, null, 2);
-         log.warn(`Input validation failed at handler entry for word/embedded-objects: ${error.message}`, { errors: errorDetails, params });
+         log.warn(`[EmbeddedObjects] Input validation failed at handler entry for word/embedded-objects: ${error.message}`, { errors: errorDetails, params });
          return {
              success: false,
              error: {
@@ -86,7 +106,7 @@ const embeddedObjectsExecute = async (params: ToolRequestParams, context?: FastM
          };
      }
      // Otro error inesperado durante el parseo inicial
-     log.error(`Unexpected error parsing params in word/embedded-objects handler: ${error.message}`, { error: String(error), params });
+     log.error(`[EmbeddedObjects] Unexpected error parsing params in word/embedded-objects handler: ${error.message}`, { error: String(error), params });
      return {
          success: false,
          error: {
@@ -97,47 +117,46 @@ const embeddedObjectsExecute = async (params: ToolRequestParams, context?: FastM
      };
   }
 
-  const { operation, ...args } = validatedRequest; // Extraer operation y el resto como args
-  const { filePath, objectPath, objectIndex, newObjectPath, outputDirectory } = args; // Extraer campos específicos
+  const { operation, filePath, objectPath, objectIndex, newObjectPath, outputDirectory } = validatedRequest; // Extract operation and specific fields directly
 
-  // Usar validateFilePath que devuelve la ruta absoluta validada o lanza error
+  // Use validateFilePath which returns the validated absolute path or throws an error
   const absoluteFilePath = validateFilePath(filePath);
   log.debug(`[EmbeddedObjects] Validated absolute path: ${absoluteFilePath}`);
 
-  let wordApp: any = null; // Usar 'any' para el objeto COM de la aplicación
-  let doc: any = null; // Usar 'any' para el objeto COM del documento
+  let wordApp: any = null; // Use 'any' for the application COM object
+  let doc: any = null; // Use 'any' for the document COM object
 
   try {
     wordApp = await getOfficeApplication('Word.Application');
-    // Abrir el documento. Considerar ReadOnly para 'extractAll' y 'getProperties'
+    // Open the document. Consider ReadOnly for 'extractAll' and 'getProperties'
     const openReadOnly = operation === 'extractAll'; // || operation === 'getProperties';
     log.debug(`[EmbeddedObjects] Opening document: ${absoluteFilePath} (ReadOnly: ${openReadOnly})`);
-      // Parámetros Open: FileName, ConfirmConversions, ReadOnly, AddToRecentFiles, PasswordDocument, ... Visible
-      // Abrir no visible para operaciones de fondo
-      doc = wordApp.Documents.Open(absoluteFilePath, false, openReadOnly, false, undefined, undefined, undefined, undefined, undefined, undefined, false); // Visible = false al final
+      // Open parameters: FileName, ConfirmConversions, ReadOnly, AddToRecentFiles, PasswordDocument, ... Visible
+      // Open non-visible for background operations
+      doc = wordApp.Documents.Open(absoluteFilePath, false, openReadOnly, false, undefined, undefined, undefined, undefined, undefined, undefined, false); // Visible = false at the end
 
     switch (operation) {
       case 'insert': {
-        log.info('Iniciando operación "insert".');
-        // Validar que objectPath no sea undefined (ya hecho en refine, pero buena práctica)
+        log.info('[EmbeddedObjects] Starting "insert" operation.');
+        // Validar que objectPath is not undefined (already done in refine, but good practice)
         if (objectPath === undefined) throw new Error("objectPath is required for 'insert' operation.");
         const absoluteObjectPath = validateFilePath(objectPath);
-        await fs.access(absoluteObjectPath); // Verificar existencia del archivo a insertar
+        await fs.access(absoluteObjectPath); // Verify existence of the file to insert
 
-        // Insertar al final del documento por defecto
+        // Insert at the end of the document by default
         const range = doc.Content;
         range.Collapse(0); // wdCollapseEnd = 0
 
         // doc.InlineShapes.AddOLEObject(ClassType, FileName, LinkToFile, DisplayAsIcon, IconFileName, IconIndex, IconLabel, Range)
-        // ClassType: Opcional. Especifica la clase del objeto OLE. Si se omite, se determina por FileName.
-        // FileName: Opcional. El archivo a insertar.
-        // LinkToFile: Opcional. True para vincular, False para incrustar.
-        // DisplayAsIcon: Opcional. True para mostrar como icono.
-        // Range: Opcional. El rango donde insertar.
+        // ClassType: Optional. Specifies the class of the OLE object. If omitted, it is determined by FileName.
+        // FileName: Optional. The file to insert.
+        // LinkToFile: Optional. True to link, False to embed.
+        // DisplayAsIcon: Optional. True to display as an icon.
+        // Range: Optional. The range where to insert.
         const inlineShape = doc.InlineShapes.AddOLEObject(
           undefined, // ClassType
           absoluteObjectPath, // FileName
-          false, // LinkToFile (incrustar)
+          false, // LinkToFile (embed)
           false, // DisplayAsIcon
           undefined, // IconFileName
           undefined, // IconIndex
@@ -145,55 +164,55 @@ const embeddedObjectsExecute = async (params: ToolRequestParams, context?: FastM
           range // Range
         );
 
-        doc.Save(); // Guardar cambios
-        log.info(`Objeto insertado desde ${objectPath}.`);
-        // El ID puede no ser el índice 1-based global, pero es un identificador útil.
-        // Podríamos intentar encontrar el índice después de la inserción si fuera necesario.
-        return { success: true, message: `Objeto insertado desde ${objectPath}.`, data: { insertedObjectId: inlineShape.Range.InlineShape.ID } }; // Mover a data
+        doc.Save(); // Save changes
+        log.info(`[EmbeddedObjects] Object inserted from ${objectPath}.`);
+        // The ID may not be the global 1-based index, but it's a useful identifier.
+        // We could try to find the index after insertion if needed.
+        return { success: true, message: `Object inserted from ${objectPath}.`, data: { insertedObjectId: inlineShape.Range.InlineShape.ID } }; // Move to data
       }
 
       case 'modify': {
-        log.info('Iniciando operación "modify".');
-        // Validar que objectIndex y newObjectPath no sean undefined
+        log.info('[EmbeddedObjects] Starting "modify" operation.');
+        // Validar que objectIndex and newObjectPath are not undefined
         if (objectIndex === undefined) throw new Error("objectIndex is required for 'modify' operation.");
         if (newObjectPath === undefined) throw new Error("newObjectPath is required for 'modify' operation.");
 
         const absoluteNewObjectPath = validateFilePath(newObjectPath);
-        await fs.access(absoluteNewObjectPath); // Verificar existencia del nuevo archivo
+        await fs.access(absoluteNewObjectPath); // Verify existence of the new file
 
-        // La modificación directa de objetos OLE incrustados vía COM es compleja.
-        // Un enfoque común es eliminar el objeto existente e insertar el nuevo.
-        // Intentaremos mantener la posición si es un InlineShape.
+        // Direct modification of embedded OLE objects via COM is complex.
+        // A common approach is to delete the existing object and insert the new one.
+        // We will try to maintain the position if it's an InlineShape.
 
         let shapeToModify: any = null;
         let isInline = false;
 
-        // Buscar en InlineShapes primero
+        // Search in InlineShapes first
         if (objectIndex > 0 && objectIndex <= doc.InlineShapes.Count) {
           shapeToModify = doc.InlineShapes.Item(objectIndex);
           isInline = true;
           log.debug(`[EmbeddedObjects] Found InlineShape at index ${objectIndex}.`);
         } else {
-          // Si no está en InlineShapes, buscar en Shapes (objetos flotantes)
-          // El índice para Shapes es relativo a la colección Shapes, no global.
-          // Necesitamos ajustar el índice.
+          // If not in InlineShapes, search in Shapes (floating objects)
+          // The index for Shapes is relative to the Shapes collection, not global.
+          // We need to adjust the index.
           const shapesIndex = objectIndex - doc.InlineShapes.Count;
           if (shapesIndex > 0 && shapesIndex <= doc.Shapes.Count) {
             shapeToModify = doc.Shapes.Item(shapesIndex);
             isInline = false;
             log.debug(`[EmbeddedObjects] Found Shape at index ${objectIndex} (relative index ${shapesIndex}).`);
           } else {
-            throw new Error(`Índice de objeto ${objectIndex} fuera de rango. Total InlineShapes: ${doc.InlineShapes.Count}, Total Shapes: ${doc.Shapes.Count}.`);
+            throw new Error(`Object index ${objectIndex} out of range. Total InlineShapes: ${doc.InlineShapes.Count}, Total Shapes: ${doc.Shapes.Count}.`);
           }
         }
 
-        // Verificar si el objeto es OLE antes de intentar modificar/eliminar
+        // Verify if the object is OLE before attempting to modify/delete
         // wdInlineShapeOLEObject = 7, wdInlineShapeLinkedOLEObject = 8
         // msoEmbeddedOLEObject = 7, msoLinkedOLEObject = 10
         const isOLE = shapeToModify.Type === 7 || shapeToModify.Type === 8 || shapeToModify.Type === 10 || shapeToModify.OLEFormat;
 
         if (!isOLE) {
-           throw new Error(`El objeto en el índice ${objectIndex} no es un objeto OLE incrustado o vinculado.`);
+           throw new Error(`The object at index ${objectIndex} is not an embedded or linked OLE object.`);
         }
 
         let originalRange: any = null;
@@ -202,40 +221,40 @@ const embeddedObjectsExecute = async (params: ToolRequestParams, context?: FastM
         let originalAnchor: any = null;
 
         if (isInline) {
-           originalRange = shapeToModify.Range; // Capturar el rango antes de eliminar
+           originalRange = shapeToModify.Range; // Capture the range before deleting
         } else {
-           // Para Shapes flotantes, capturar la posición y el ancla.
+           // For floating Shapes, capture the position and anchor.
            originalLeft = shapeToModify.Left;
            originalTop = shapeToModify.Top;
            originalAnchor = shapeToModify.Anchor;
-           log.warn(`Modificación de Shape flotante (índice ${objectIndex}) intentará mantener la posición, pero puede variar.`);
+           log.warn(`[EmbeddedObjects] Modification of floating Shape (index ${objectIndex}) will attempt to maintain position, but it may vary.`);
         }
 
-        shapeToModify.Delete(); // Eliminar el objeto existente
+        shapeToModify.Delete(); // Delete the existing object
         log.debug(`[EmbeddedObjects] Deleted object at index ${objectIndex}.`);
 
         let newShape: any = null;
         if (isInline && originalRange) {
-           // Intentar insertar el nuevo objeto en el rango original
+           // Attempt to insert the new object in the original range
            originalRange.Collapse(0); // wdCollapseEnd = 0
            newShape = doc.InlineShapes.AddOLEObject(
               undefined, // ClassType
               absoluteNewObjectPath, // FileName
-              false, // LinkToFile (incrustar)
+              false, // LinkToFile (embed)
               false, // DisplayAsIcon
               undefined, // IconFileName
               undefined, // IconIndex
               undefined, // IconLabel
               originalRange // Range
-           );
-           log.info(`Objeto en índice ${objectIndex} modificado (reemplazado) con ${newObjectPath} en la posición original.`);
+            );
+           log.info(`[EmbeddedObjects] Object at index ${objectIndex} modified (reemplazado) con ${newObjectPath} en la posición original.`);
         } else if (!isInline && originalAnchor) {
-            // Intentar reinsertar Shape flotante con la misma posición y ancla
-            // AddOLEObject en Shapes colección es diferente: AddOLEObject(ClassType, FileName, LinkToFile, DisplayAsIcon, IconFileName, IconIndex, IconLabel, Left, Top, Width, Height, Anchor)
+            // Attempt to reinsert floating Shape with the same position and anchor
+            // AddOLEObject in Shapes collection is different: AddOLEObject(ClassType, FileName, LinkToFile, DisplayAsIcon, IconFileName, IconIndex, IconLabel, Left, Top, Width, Height, Anchor)
             newShape = doc.Shapes.AddOLEObject(
                 undefined, // ClassType
                 absoluteNewObjectPath, // FileName
-                false, // LinkToFile (incrustar)
+                false, // LinkToFile (embed)
                 false, // DisplayAsIcon
                 undefined, // IconFileName
                 undefined, // IconIndex
@@ -246,16 +265,16 @@ const embeddedObjectsExecute = async (params: ToolRequestParams, context?: FastM
                 undefined, // Height (auto)
                 originalAnchor // Anchor
             );
-            log.info(`Objeto en índice ${objectIndex} modificado (reemplazado) con ${newObjectPath}, reinsertado como Shape flotante.`);
+            log.info(`[EmbeddedObjects] Object at index ${objectIndex} modified (reemplazado) con ${newObjectPath}, reinsertado como Shape flotante.`);
 
         } else {
-           // Insertar al final si no se pudo mantener la posición (InlineShape sin rango o Shape sin ancla)
+           // Insert at the end if position could not be maintained (InlineShape without range or Shape without anchor)
            const endRange = doc.Content;
            endRange.Collapse(0); // wdCollapseEnd = 0
            newShape = doc.InlineShapes.AddOLEObject(
               undefined, // ClassType
               absoluteNewObjectPath, // FileName
-              false, // LinkToFile (incrustar)
+              false, // LinkToFile (embed)
               false, // DisplayAsIcon
               undefined, // IconFileName
               undefined, // IconIndex
@@ -265,82 +284,82 @@ const embeddedObjectsExecute = async (params: ToolRequestParams, context?: FastM
            log.info(`Objeto en índice ${objectIndex} modificado (reemplazado) con ${newObjectPath} al final del documento.`);
         }
 
-        doc.Save(); // Guardar cambios
-        return { success: true, message: `Objeto en índice ${objectIndex} modificado (reemplazado) con ${newObjectPath}.`, data: null }; // Añadir data: null
+        doc.Save(); // Save changes
+        return { success: true, message: `Object at index ${objectIndex} modified (reemplazado) con ${newObjectPath}.`, data: null }; // Add data: null
       }
 
       case 'delete': {
-        log.info('Iniciando operación "delete".');
-        const { objectIndex } = validatedRequest; // Usar validatedRequest
-        // Validar que objectIndex no sea undefined
+        log.info('[EmbeddedObjects] Starting "delete" operation.');
+        const { objectIndex } = validatedRequest; // Use validatedRequest
+        // Validar que objectIndex is not undefined
         if (objectIndex === undefined) throw new Error("objectIndex is required for 'delete' operation.");
 
 
         let shapeToDelete: any = null;
         let isInline = false;
 
-        // Buscar en InlineShapes primero
+        // Search in InlineShapes first
         if (objectIndex > 0 && objectIndex <= doc.InlineShapes.Count) {
           shapeToDelete = doc.InlineShapes.Item(objectIndex);
           isInline = true;
           log.debug(`[EmbeddedObjects] Found InlineShape at index ${objectIndex} for deletion.`);
         } else {
-          // Si no está en InlineShapes, buscar en Shapes (objetos flotantes)
+          // If not in InlineShapes, search in Shapes (floating objects)
           const shapesIndex = objectIndex - doc.InlineShapes.Count;
           if (shapesIndex > 0 && shapesIndex <= doc.Shapes.Count) {
             shapeToDelete = doc.Shapes.Item(shapesIndex);
             isInline = false;
             log.debug(`[EmbeddedObjects] Found Shape at index ${objectIndex} (relative index ${shapesIndex}) for deletion.`);
           } else {
-            throw new Error(`Índice de objeto ${objectIndex} fuera de rango. Total InlineShapes: ${doc.InlineShapes.Count}, Total Shapes: ${doc.Shapes.Count}.`);
+            throw new Error(`Object index ${objectIndex} out of range. Total InlineShapes: ${doc.InlineShapes.Count}, Total Shapes: ${doc.Shapes.Count}.`);
           }
         }
 
-        // Verificar si el objeto es OLE antes de eliminar
+        // Verify if the object is OLE before deleting
         const isOLE = shapeToDelete.Type === 7 || shapeToDelete.Type === 8 || shapeToDelete.Type === 10 || shapeToDelete.OLEFormat;
 
         if (!isOLE) {
-           throw new Error(`El objeto en el índice ${objectIndex} no es un objeto OLE incrustado o vinculado y no puede ser eliminado por esta herramienta.`);
+           throw new Error(`The object at index ${objectIndex} is not an embedded or linked OLE object and cannot be deleted by this tool.`);
         }
 
-        shapeToDelete.Delete(); // Eliminar el objeto
-        doc.Save(); // Guardar cambios
-        log.info(`Objeto en índice ${objectIndex} eliminado.`);
-        return { success: true, message: `Objeto en índice ${objectIndex} eliminado.`, data: null }; // Añadir data: null
+        shapeToDelete.Delete(); // Delete the object
+        doc.Save(); // Save changes
+        log.info(`[EmbeddedObjects] Object at index ${objectIndex} deleted.`);
+        return { success: true, message: `Object at index ${objectIndex} deleted.`, data: null }; // Add data: null
       }
 
       case 'extractAll': {
-        log.info('Iniciando operación "extractAll".');
-        const { outputDirectory } = validatedRequest; // Usar validatedRequest
-        // Validar que outputDirectory no sea undefined
+        log.info('[EmbeddedObjects] Starting "extractAll" operation.');
+        const { outputDirectory } = validatedRequest; // Use validatedRequest
+        // Validar que outputDirectory is not undefined
         if (outputDirectory === undefined) throw new Error("outputDirectory is required for 'extractAll' operation.");
 
         const absoluteOutputDir = validateFilePath(outputDirectory);
         log.debug(`[EmbeddedObjects] Validated output directory: ${absoluteOutputDir}`);
 
-        // Asegurarse de que el directorio de salida exista, crearlo si no
+        // Ensure the output directory exists, create it if not
         try {
             await fs.access(absoluteOutputDir);
             const stats = await fs.stat(absoluteOutputDir);
             if (!stats.isDirectory()) {
-                 throw new Error(`La ruta de salida no es un directorio: ${absoluteOutputDir}`);
+                 throw new Error(`The output path is not a directory: ${absoluteOutputDir}`);
             }
             log.debug(`[EmbeddedObjects] Output directory exists: ${absoluteOutputDir}`);
         } catch (error: any) {
              if (error.code === 'ENOENT') {
-                 log.info(`El directorio de salida no existe, intentando crearlo: ${absoluteOutputDir}`);
+                 log.info(`[EmbeddedObjects] Output directory does not exist, attempting to create: ${absoluteOutputDir}`);
                  await fs.mkdir(absoluteOutputDir, { recursive: true });
-                 log.info(`Directorio de salida creado: ${absoluteOutputDir}`);
+                 log.info(`[EmbeddedObjects] Output directory created: ${absoluteOutputDir}`);
              } else {
-                 log.error(`Error al acceder al directorio de salida ${absoluteOutputDir}: ${error.message}`);
-                 throw new Error(`Error al acceder al directorio de salida: ${error.message}`);
+                 log.error(`[EmbeddedObjects] Error accessing output directory ${absoluteOutputDir}: ${error.message}`);
+                 throw new Error(`Error accessing output directory: ${error.message}`);
              }
         }
 
         const extractedFiles: string[] = [];
         let oleObjectCount = 0;
 
-        // Extraer de InlineShapes
+        // Extract from InlineShapes
         for (let i = 1; i <= doc.InlineShapes.Count; i++) {
             const shape = doc.InlineShapes.Item(i);
             // wdInlineShapeOLEObject = 7, wdInlineShapeLinkedOLEObject = 8
@@ -349,68 +368,68 @@ const embeddedObjectsExecute = async (params: ToolRequestParams, context?: FastM
                 try {
                     const oleFormat = shape.OLEFormat;
                     if (oleFormat && oleFormat.Object && typeof oleFormat.Object.SaveAs === 'function') {
-                        // Generar nombre de archivo único y seguro
+                        // Generate a unique and safe filename
                         const progId = oleFormat?.ProgID?.replace(/[^a-zA-Z0-9.-]/g, '_') || 'UnknownObject';
                         let baseFilename = `embedded_inline_${i}_${progId}`;
-                        let filename = `${baseFilename}.ole`; // Extensión por defecto
+                        let filename = `${baseFilename}.ole`; // Default extension
                         let outputPath = path.join(absoluteOutputDir, filename);
                         let counter = 1;
 
-                        // Manejar colisiones de nombres
+                        // Handle name collisions
                         while (await fs.access(outputPath).then(() => true).catch(() => false)) {
                             filename = `${baseFilename}_${counter++}.ole`;
                             outputPath = path.join(absoluteOutputDir, filename);
                         }
 
-                        // Intentar guardar el objeto OLE
-                        // La API SaveAs puede requerir un formato específico o no estar disponible para todos los tipos.
-                        // Si falla, intentaremos un método alternativo si es posible.
+                        // Attempt to save the OLE object
+                        // The SaveAs API may require a specific format or not be available for all types.
+                        // If it fails, we will try an alternative method if possible.
                         try {
                            oleFormat.Object.SaveAs(outputPath);
                            extractedFiles.push(outputPath);
-                           log.info(`Extraído InlineShape ${i} a ${outputPath}`);
+                           log.info(`[EmbeddedObjects] Extracted InlineShape ${i} to ${outputPath}`);
                         } catch (saveError: any) {
-                           log.warn(`Error al usar SaveAs en InlineShape ${i} (${progId}): ${saveError.message}. Intentando método alternativo (si aplica).`);
-                           // Método alternativo: Si es una imagen OLE, intentar guardar la imagen
+                           log.warn(`[EmbeddedObjects] Error using SaveAs on InlineShape ${i} (${progId}): ${saveError.message}. Attempting alternative method (if applicable).`);
+                           // Alternative method: If it's an OLE image, try to save the picture
                            if (shape.Type === 7 && shape.OLEFormat?.ProgID?.toLowerCase().includes('package')) {
-                              // Los objetos "Package" a menudo son archivos incrustados.
-                              // No hay un método SaveAs directo en el objeto OLE.
-                              // La extracción de Packages es compleja y a menudo requiere activar el objeto.
-                              log.warn(`Extracción de objeto Package (InlineShape ${i}) no implementada directamente.`);
+                              // "Package" objects are often embedded files.
+                              // There is no direct SaveAs method on the OLE object.
+                              // Extraction of Packages is complex and often requires activating the object.
+                              log.warn(`[EmbeddedObjects] Extraction of Package object (InlineShape ${i}) not implemented directly.`);
                            } else if (shape.Picture) {
-                              // Si tiene una representación de imagen, intentar guardarla
+                              // If it has a picture representation, try to save it
                               try {
-                                 filename = `${baseFilename}.png`; // O determinar extensión
+                                 filename = `${baseFilename}.png`; // Or determine extension
                                  outputPath = path.join(absoluteOutputDir, filename);
                                  counter = 1;
                                  while (await fs.access(outputPath).then(() => true).catch(() => false)) {
                                      filename = `${baseFilename}_${counter++}.png`;
                                      outputPath = path.join(absoluteOutputDir, filename);
                                  }
-                                 shape.Picture.SaveAs(outputPath); // wdFormatPNG = 13 (o usar constante)
+                                 shape.Picture.SaveAs(outputPath); // wdFormatPNG = 13 (or use constant)
                                  extractedFiles.push(outputPath);
-                                 log.info(`Extraída imagen de InlineShape ${i} a ${outputPath}`);
+                                 log.info(`[EmbeddedObjects] Extracted image from InlineShape ${i} to ${outputPath}`);
                               } catch (pictureSaveError: any) {
-                                 log.error(`Error al extraer imagen de InlineShape ${i}: ${pictureSaveError.message}`);
+                                 log.error(`[EmbeddedObjects] Error extracting image from InlineShape ${i}: ${pictureSaveError.message}`);
                               }
                            } else {
-                              log.error(`No se pudo extraer InlineShape ${i} (${progId}) usando SaveAs ni método alternativo.`);
+                              log.error(`[EmbeddedObjects] Could not extract InlineShape ${i} (${progId}) using SaveAs or alternative method.`);
                            }
                         }
 
                     } else {
-                        log.warn(`InlineShape ${i} no parece tener un objeto OLE con método SaveAs o no es un tipo OLE manejable directamente.`);
+                        log.warn(`[EmbeddedObjects] InlineShape ${i} does not seem to have an OLE object with SaveAs method or is not a directly manageable OLE type.`);
                     }
                 } catch (extractError: any) {
-                    log.error(`Error general extrayendo InlineShape ${i}: ${extractError.message}`);
+                    log.error(`[EmbeddedObjects] General error extracting InlineShape ${i}: ${extractError.message}`);
                 } finally {
-                    // Liberar el objeto shape si es necesario, aunque winax a menudo maneja esto
+                    // Release the shape object if necessary, although winax often handles this
                     releaseObject(shape);
                 }
             }
         }
 
-        // Extraer de Shapes (objetos flotantes)
+        // Extract from Shapes (floating objects)
         for (let i = 1; i <= doc.Shapes.Count; i++) {
              const shape = doc.Shapes.Item(i);
              // msoEmbeddedOLEObject = 7, msoLinkedOLEObject = 10
@@ -419,56 +438,56 @@ const embeddedObjectsExecute = async (params: ToolRequestParams, context?: FastM
                  try {
                      const oleFormat = shape.OLEFormat;
                      if (oleFormat && oleFormat.Object && typeof oleFormat.Object.SaveAs === 'function') {
-                         // Generar nombre de archivo único y seguro
+                         // Generate a unique and safe filename
                          const progId = oleFormat?.ProgID?.replace(/[^a-zA-Z0-9.-]/g, '_') || 'UnknownObject';
                          let baseFilename = `embedded_shape_${i}_${progId}`;
-                         let filename = `${baseFilename}.ole`; // Extensión por defecto
+                         let filename = `${baseFilename}.ole`; // Default extension
                          let outputPath = path.join(absoluteOutputDir, filename);
                          let counter = 1;
 
-                         // Manejar colisiones de nombres
+                         // Handle name collisions
                          while (await fs.access(outputPath).then(() => true).catch(() => false)) {
                              filename = `${baseFilename}_${counter++}.ole`;
                              outputPath = path.join(absoluteOutputDir, filename);
                          }
 
-                         // Intentar guardar el objeto OLE
+                         // Attempt to save the OLE object
                          try {
                             oleFormat.Object.SaveAs(outputPath);
                             extractedFiles.push(outputPath);
-                            log.info(`Extraído Shape ${i} a ${outputPath}`);
+                            log.info(`[EmbeddedObjects] Extracted Shape ${i} to ${outputPath}`);
                          } catch (saveError: any) {
-                            log.warn(`Error al usar SaveAs en Shape ${i} (${progId}): ${saveError.message}. Intentando método alternativo (si aplica).`);
-                            // Método alternativo: Si es una imagen OLE, intentar guardar la imagen
+                            log.warn(`[EmbeddedObjects] Error using SaveAs on Shape ${i} (${progId}): ${saveError.message}. Attempting alternative method (if applicable).`);
+                            // Alternative method: If it's an OLE image, try to save the picture
                             if (shape.Type === 7 && shape.OLEFormat?.ProgID?.toLowerCase().includes('package')) {
-                               log.warn(`Extracción de objeto Package (Shape ${i}) no implementada directamente.`);
+                               log.warn(`[EmbeddedObjects] Extraction of Package object (Shape ${i}) not implemented directly.`);
                             } else if (shape.Picture) {
                                 try {
-                                   filename = `${baseFilename}.png`; // O determinar extensión
+                                   filename = `${baseFilename}.png`; // Or determine extension
                                    outputPath = path.join(absoluteOutputDir, filename);
                                    counter = 1;
                                    while (await fs.access(outputPath).then(() => true).catch(() => false)) {
                                        filename = `${baseFilename}_${counter++}.png`;
                                        outputPath = path.join(absoluteOutputDir, filename);
                                    }
-                                   shape.Picture.SaveAs(outputPath); // wdFormatPNG = 13 (o usar constante)
+                                   shape.Picture.SaveAs(outputPath); // wdFormatPNG = 13 (or use constant)
                                    extractedFiles.push(outputPath);
-                                   log.info(`Extraída imagen de Shape ${i} a ${outputPath}`);
+                                   log.info(`[EmbeddedObjects] Extracted image from Shape ${i} to ${outputPath}`);
                                 } catch (pictureSaveError: any) {
-                                   log.error(`Error al extraer imagen de Shape ${i}: ${pictureSaveError.message}`);
+                                   log.error(`[EmbeddedObjects] Error extracting image from Shape ${i}: ${pictureSaveError.message}`);
                                 }
                              } else {
-                                log.error(`No se pudo extraer Shape ${i} (${progId}) usando SaveAs ni método alternativo.`);
+                                log.error(`[EmbeddedObjects] Could not extract Shape ${i} (${progId}) using SaveAs or alternative method.`);
                              }
                           }
 
                       } else {
-                          log.warn(`Shape ${i} no parece tener un objeto OLE con método SaveAs o no es un tipo OLE manejable directamente.`);
+                          log.warn(`[EmbeddedObjects] Shape ${i} does not seem to have an OLE object with SaveAs method or is not a directly manageable OLE type.`);
                       }
                   } catch (extractError: any) {
-                      log.error(`Error general extrayendo Shape ${i}: ${extractError.message}`);
+                      log.error(`[EmbeddedObjects] General error extracting Shape ${i}: ${extractError.message}`);
                   } finally {
-                      // Liberar el objeto shape si es necesario
+                      // Release the shape object if necessary
                       releaseObject(shape);
                   }
               }
@@ -476,61 +495,61 @@ const embeddedObjectsExecute = async (params: ToolRequestParams, context?: FastM
 
 
          if (oleObjectCount === 0) {
-           return { success: true, message: 'No se encontraron objetos OLE incrustados o vinculados en el documento.', data: null }; // Añadir data: null
+           return { success: true, message: 'No embedded or linked OLE objects found in the document.', data: null }; // Add data: null
          } else {
-           return { success: true, message: `Se encontraron ${oleObjectCount} objetos OLE (inline o flotantes). Archivos extraídos: ${extractedFiles.length}.`, data: { extractedPaths: extractedFiles } }; // Mover a data
+           return { success: true, message: `Found ${oleObjectCount} OLE objects (inline or floating). Extracted files: ${extractedFiles.length}.`, data: { extractedPaths: extractedFiles } }; // Move to data
          }
        }
 
        // case 'getProperties':
-       //   // Lógica para obtener propiedades
-       //   log.warn('Operación "getProperties" aún no implementada.');
-       //   return { success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Operación "getProperties" no implementada.' } }; // Devolver ErrorResponse
+       //   // Logic to get properties
+       //   log.warn('Operation "getProperties" not implemented yet.');
+       //   return { success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Operation "getProperties" not implemented.' } }; // Return ErrorResponse
 
        default:
-          // El error "Property 'operation' does not exist on type 'never'" indica que TS
-          // ha verificado que todos los casos de la unión discriminada están cubiertos.
-          // Por lo tanto, este caso 'default' es teóricamente inalcanzable.
-          // Lanzar un error genérico sin acceder a 'input'.
-          // const unreachableCase: never = validatedRequest; // Mantenemos esto para la verificación de tipos
-          // log.error(`Caso inalcanzable en switch detectado: ${JSON.stringify(unreachableCase)}`);
-          throw new Error(`Operación desconocida o no manejada.`);
+          // The error "Property 'operation' does not exist on type 'never'" indicates that TS
+          // has verified that all cases of the discriminated union are covered.
+          // Therefore, this 'default' case is theoretically unreachable.
+          // Throw a generic error without accessing 'input'.
+          // const unreachableCase: never = validatedRequest; // We keep this for type checking
+          // log.error(`Unreachable case in switch detected: ${JSON.stringify(unreachableCase)}`);
+          throw new Error(`Unknown or unhandled operation.`);
      }
    } catch (error: any) {
      const message = error instanceof Error ? error.message : String(error);
-     // Usar context.log si está disponible
-     const logFn = context?.log?.error || logger.error; // Fallback a logger global si context no está
-     // Acceder a operation y filePath aquí es seguro porque están fuera del switch/default
-     // Comprobar si validatedRequest existe antes de acceder a sus propiedades en caso de error muy temprano
-     const operation = (validatedRequest as any)?.operation || 'desconocida'; // Usar validatedRequest
-     const filePathLog = (validatedRequest as any)?.filePath || 'desconocido'; // Usar validatedRequest
-     logFn(`Error en la operación '${operation}' en archivo '${filePathLog}': ${message}`, { error: String(error) }); // Serializar error
-     // Devolver un mensaje de error más informativo
-     return { success: false, error: { code: 'EMBEDDED_OBJECTS_ERROR', message: `Error durante la operación '${operation}': ${message}`, details: String(error) } }; // Devolver ErrorResponse
+     // Use context.log if available
+     const logFn = context?.log?.error || logger.error; // Fallback to global logger if context is not available
+     // Access operation and filePath here is safe because they are outside the switch/default
+     // Check if validatedRequest exists before accessing its properties in case of a very early error
+     const operation = (validatedRequest as any)?.operation || 'unknown'; // Use validatedRequest
+     const filePathLog = (validatedRequest as any)?.filePath || 'unknown'; // Use validatedRequest
+     logFn(`[EmbeddedObjects] Error in operation '${operation}' on file '${filePathLog}': ${message}`, { error: String(error) }); // Serialize error
+     // Return a more informative error message
+     return { success: false, error: { code: 'EMBEDDED_OBJECTS_ERROR', message: `Error during operation '${operation}': ${message}`, details: String(error) } }; // Return ErrorResponse
    } finally {
-     // --- Bloque Finally Mejorado ---
+     // --- Improved Finally Block ---
      const logFnDebug = context?.log?.debug || logger.debug;
      const logFnWarn = context?.log?.warn || logger.warn;
      const logFnInfo = context?.log?.info || logger.info;
 
      if (doc) {
        try {
-         // Cerrar sin guardar cambios, especialmente si fue solo lectura o hubo error
-         // Si hubo éxito en insert/modify/delete, ya se debería haber guardado.
+         // Close without saving changes, especially if it was read-only or there was an error
+         // If insert/modify/delete was successful, it should have already been saved.
          // wdDoNotSaveChanges = 0
          doc.Close(0);
-         logFnDebug(`[EmbeddedObjects] Documento cerrado: ${absoluteFilePath}`);
+         logFnDebug(`[EmbeddedObjects] Document closed: ${absoluteFilePath}`);
        } catch (closeError: any) {
-         logFnWarn(`[EmbeddedObjects] Error al cerrar el documento ${absoluteFilePath}: ${closeError.message}`);
+         logFnWarn(`[EmbeddedObjects] Error closing document ${absoluteFilePath}: ${closeError.message}`);
        }
-       releaseObject(doc); // Liberar objeto del documento
-       doc = null; // Ayuda a GC y evita doble liberación
+       releaseObject(doc); // Release document object
+       doc = null; // Helps GC and prevents double release
      }
      if (wordApp) {
        try {
-         // Intentar cerrar Word solo si no quedan otros documentos abiertos
-         // Esto es arriesgado si el usuario tiene otros documentos abiertos.
-         // Una opción más segura es simplemente liberar el objeto y dejar que Word se cierre solo eventualmente.
+         // Attempt to close Word only if no other documents are open
+         // This is risky if the user has other documents open.
+         // A safer option is to simply release the object and let Word close eventually on its own.
          // if (wordApp.Documents.Count === 0) {
          //    wordApp.Quit();
          //    logFnDebug('[EmbeddedObjects] Word application Quit() called.');
@@ -538,72 +557,33 @@ const embeddedObjectsExecute = async (params: ToolRequestParams, context?: FastM
          //    logFnDebug('[EmbeddedObjects] Word application has other documents open, not quitting.');
          // }
        } catch (quitError: any) {
-          logFnWarn(`[EmbeddedObjects] Error al intentar cerrar Word: ${quitError.message}`);
+          logFnWarn(`[EmbeddedObjects] Error attempting to quit Word: ${quitError.message}`);
        }
-       releaseObject(wordApp); // Liberar objeto de la aplicación
-       wordApp = null; // Ayuda a GC
+       releaseObject(wordApp); // Release application object
+       wordApp = null; // Helps GC
      }
-     // Acceder a operation y filePath aquí es seguro
-     // Comprobar si validatedRequest existe antes de acceder a sus propiedades en caso de error muy temprano
-     const operationFinal = (validatedRequest as any)?.operation || 'desconocida'; // Usar validatedRequest
-     const filePathFinal = (validatedRequest as any)?.filePath || 'desconocido'; // Usar validatedRequest
-     logFnInfo(`Finalizada operación '${operationFinal}' en archivo: ${filePathFinal}`);
+     // Access operation and filePath here is safe
+     // Check if validatedRequest exists before accessing its properties in case of a very early error
+     const operationFinal = (validatedRequest as any)?.operation || 'unknown'; // Use validatedRequest
+     const filePathFinal = (validatedRequest as any)?.filePath || 'unknown'; // Use validatedRequest
+     logFnInfo(`[EmbeddedObjects] Finished operation '${operationFinal}' on file: ${filePathFinal}`);
    }
  };
 
- // --- Definición de la Herramienta ---
  /**
-  * @tool word/embedded-objects
-  * @description Gestiona objetos OLE incrustados en documentos Word (.docx) usando COM Interop.
-  * Permite insertar ('insert'), modificar ('modify'), eliminar ('delete') y extraer todos ('extractAll') los objetos incrustados.
-  * La operación 'extractAll' intenta guardar todos los objetos OLE detectados (tanto inline como flotantes) en un directorio especificado.
-  * Requiere investigación adicional de la API COM para la implementación completa, especialmente para 'extractAll' y 'modify'.
-  * Utiliza winax para la interacción COM. Asegúrate de que Word esté instalado y accesible.
-  *
-  * @inputSchema See `WordEmbeddedObjectsInputSchema` (z.object). Uses combined properties from all operations.
-  *
-  * @output_schema
-  * {
-  *   "type": "object",
-  *   "properties": {
-  *     "success": { "type": "boolean" },
-  *     "message": { "type": "string" },
-  *     "data": { "type": "object", "optional": true, "description": "Información adicional (ej: paths extraídos)." } // Cambiado de details a data
-  *   },
-  *   "required": ["success", "message", "data"] // data es requerido incluso si es null
-  * }
-  *
-  * @example_usage
-  * // Extraer todos los objetos
-  * {
-  *   "tool_name": "word/embedded-objects",
-  *   "arguments": {
-  *     "operation": "extractAll",
-  *     "filePath": "documentos/informe_con_objetos.docx",
-  *     "outputDirectory": "output/objetos_extraidos"
-  *   }
-  * }
-  * // Eliminar el segundo objeto (considerando InlineShapes y Shapes)
-  * {
-  *   "tool_name": "word/embedded-objects",
-  *   "arguments": {
-  *     "operation": "delete",
-  *     "filePath": "documentos/informe_con_objetos.docx",
-  *     "objectIndex": 2
-  *   }
-  * }
+  * McpResource definition for the 'word/embedded-objects' tool.
+  * Manages embedded OLE objects in Word documents.
   */
- // Eliminar anotación de tipo explícita, dejar que FastMCP la infiera al usar server.addTool
- export const embeddedObjectsTool: McpResource = { // Añadir tipo McpResource
-   path: 'word/embedded-objects', // Propiedad path requerida
-   description: 'Gestiona objetos OLE incrustados en documentos Word (insert, modify, delete, extractAll).',
-   // FastMCP espera 'parameters' y 'execute', no 'schema' y 'handler' directamente en la definición del objeto.
-   // El esquema Zod se pasa a 'parameters'.
-   schema: WordEmbeddedObjectsInputSchema, // Usar el nuevo esquema z.object y renombrar a schema
-   // outputSchema: z.any(), // Opcional: definir si es necesario
-   handler: embeddedObjectsExecute, // Renombrar 'execute' a 'handler'
-   // Eliminar la propiedad annotations
+ export const embeddedObjectsTool: McpResource = {
+   path: 'word/embedded-objects', // Required path property
+   description: 'Manages embedded OLE objects in Word documents (insert, modify, delete, extractAll).',
+   // FastMCP expects 'parameters' and 'execute', not 'schema' and 'handler' directly in the object definition.
+   // The Zod schema is passed to 'parameters'.
+   schema: WordEmbeddedObjectsInputSchema, // Use the new z.object schema and rename to schema
+   // outputSchema: z.any(), // Optional: define if needed
+   handler: embeddedObjectsExecute, // Rename 'execute' to 'handler'
+   // Remove the annotations property
  };
 
- // Exportar para index.ts
+ // Export for index.ts
  export default embeddedObjectsTool;

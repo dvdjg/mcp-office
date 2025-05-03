@@ -1,3 +1,10 @@
+/**
+ * @file Provides utility functions for interacting with Microsoft Office applications via COM Interop.
+ * @author David Jurado
+ * @date 2025-05-03
+ * @copyright Copyright (c) 2025 David Jurado
+ * @license MIT
+ */
 import * as winax from 'winax';
 import * as fs from 'fs/promises'; // For async file operations
 import * as path from 'path';     // For path manipulation
@@ -8,8 +15,10 @@ export type OfficeAppName = 'Word.Application' | 'Excel.Application' | 'PowerPoi
 
 /**
  * Gets an instance of an Office application (existing or new).
+ * Attempts to connect to an existing instance or create a new one using COM.
  * @param appName The ProgID name of the Office application (e.g., 'Word.Application').
  * @returns A promise resolving to the application's COM object.
+ * @throws {Error} If the application instance cannot be obtained or created.
  */
 export async function getOfficeApplication(appName: OfficeAppName): Promise<any> {
   logger.info(`[OfficeInterop] Attempting to get/create instance of ${appName}...`);
@@ -64,6 +73,7 @@ export async function getOfficeApplication(appName: OfficeAppName): Promise<any>
 
 /**
  * Releases a COM object.
+ * Attempts to call the __release method if available, otherwise relies on garbage collection.
  * @param comObject The COM object to release.
  */
 export function releaseObject(comObject: any): void {
@@ -91,9 +101,10 @@ export function releaseObject(comObject: any): void {
  * Opens a Word document.
  * @param wordApp The Word application COM object.
  * @param filePath The path to the document.
- * @param readOnly Whether to open the document as read-only.
- * @param visible Whether to make the document visible.
+ * @param readOnly Whether to open the document as read-only. Defaults to false.
+ * @param visible Whether to make the document visible upon opening. Defaults to false.
  * @returns A promise resolving to the document's COM object.
+ * @throws {Error} If the document fails to open.
  */
 export async function openWordDocument(wordApp: any, filePath: string, readOnly: boolean = false, visible: boolean = false): Promise<any> {
   logger.info(`[OfficeInterop] Attempting to open document: ${filePath}`);
@@ -123,6 +134,7 @@ export async function openWordDocument(wordApp: any, filePath: string, readOnly:
  * @param filePath Path to the Word document.
  * @param imageIdentifier Image index (1-based). String identifiers are not supported.
  * @returns A Promise resolving to a Buffer containing the image data.
+ * @throws {Error} If the image identifier is invalid or extraction fails.
  */
 export async function extractImageFromWord(
   filePath: string,
@@ -256,6 +268,7 @@ export async function extractImageFromWord(
  * @param position Insertion position identifier (e.g., 'end', 'start', 'paragraph:N'). Bookmarks not implemented.
  * @param options Optional parameters (width, height, altText).
  * @returns A Promise resolving when the image is inserted.
+ * @throws {Error} If the document fails to open, the position is invalid, or image insertion fails.
  */
 export async function insertImageIntoWord(
   filePath: string,
@@ -391,10 +404,12 @@ export async function insertImageIntoWord(
 
 /**
  * Gets content (text or image buffer) from a specific element in a Word document.
+ * Supports retrieving text from a paragraph or extracting an image by index.
  * @param filePath Path to the Word document.
  * @param elementType Type of element ('paragraph' or 'image').
  * @param identifier Index of the element (1-based).
- * @returns A Promise resolving to the text content (string) or image data (Buffer).
+ * @returns A Promise resolving to the text content (string) for a paragraph or image data (Buffer) for an image.
+ * @throws {Error} If the element type or index is invalid, or if content retrieval fails.
  */
 export async function getWordElementContent(
     filePath: string,

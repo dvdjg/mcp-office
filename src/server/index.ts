@@ -1,8 +1,10 @@
-// /src/server/index.ts
-// =============================================================================
 /**
  * @file Main entry point for the msoffice-mcp server.
- * Initializes FastMCP and registers all defined tools.
+ * Initializes FastMCP, registers tools and resources, and handles server startup/shutdown.
+ * @author David Jurado
+ * @date 2025-05-03
+ * @copyright Copyright (c) 2025 David Jurado
+ * @license MIT
  */
 import { FastMCP, UserError, UnexpectedStateError, Context as FastMCPContext, ContentResult, TextContent, ToolParameters, audioContent, imageContent, SerializableValue } from 'fastmcp';
 import { StandardSchemaV1 } from '@standard-schema/spec'; // Import StandardSchemaV1
@@ -16,39 +18,52 @@ import { getWordElementContent as getOfficeElementContentInterop } from '@/utils
 import { McpResource, ToolRequestParams, ApiResponse } from '@/types/common.types'; // Removed SerializableValue import from here
 import { version as packageVersion, name as packageName } from '../../package.json'; // Import name and version
 import { z } from 'zod';
+
 // --- Authentication ---
 
-// Define the structure of the session data returned on successful authentication
-// Add index signature to satisfy FastMCPSessionAuth constraint
+/**
+ * Defines the structure of the session data returned on successful authentication.
+ * Includes an index signature to satisfy FastMCPSessionAuth constraint.
+ */
 interface AuthSessionData {
-  clientId: string; // Example session data: store the client ID
+  /** The client ID of the authenticated user. */
+  clientId: string;
+  /** Timestamp of successful authentication. */
   authenticatedAt: number;
-  [key: string]: unknown; // Index signature
+  [key: string]: unknown; // Allows for additional session data properties.
 }
 
-// Define a type alias for the FastMCP context specific to this server
+/**
+ * Define a type alias for the FastMCP context specific to this server, including authentication session data.
+ */
 type ServerContext = FastMCPContext<AuthSessionData>;
 
-// Authentication Handler Function (English)
-// Make the function async to return a Promise<AuthSessionData>
-const authenticateHandler = async ( // Added async
-    request: IncomingMessage, // Accept request directly
-    metadata?: Record<string, unknown> // Metadata as optional second argument
-): Promise<AuthSessionData> => { // Return Promise<AuthSessionData>
+/**
+ * Authentication Handler Function.
+ * Validates the provided API key against an expected token from environment variables.
+ * @param request - The incoming HTTP request.
+ * @param metadata - Optional metadata provided during the authentication attempt.
+ * @returns A promise resolving to the session data if authentication is successful.
+ * @throws {Response} A Response object with status 401 if authentication fails.
+ */
+const authenticateHandler = async (
+    request: IncomingMessage,
+    metadata?: Record<string, unknown>
+): Promise<AuthSessionData> => {
     const expectedToken = process.env.MCP_AUTH_TOKEN || 'default-secret-token'; // Use env var or default
     // Read token from metadata first, then from Node.js headers
     const providedToken = metadata?.apiKey as string || request.headers['x-api-key'] as string;
 
-    logger.info(`Authentication attempt. Provided token (type): ${typeof providedToken}`); // Log attempt type
+    logger.info(`[Auth] Authentication attempt. Provided token (type): ${typeof providedToken}`);
 
     if (!providedToken) {
-        logger.warn('Authentication failed: No token provided.');
+        logger.warn('[Auth] Authentication failed: No token provided.');
         // Throwing a Response is the standard way to reject in FastMCP authenticate
         throw new Response('Unauthorized: API key required in metadata.apiKey or x-api-key header.', { status: 401 });
     }
 
     if (providedToken !== expectedToken) {
-        logger.warn('Authentication failed: Invalid token provided.');
+        logger.warn('[Auth] Authentication failed: Invalid token provided.');
         throw new Response('Unauthorized: Invalid API key.', { status: 401 });
     }
 
@@ -57,7 +72,7 @@ const authenticateHandler = async ( // Added async
         clientId: metadata?.clientName as string || 'unknown-client', // Get client name from metadata if available
         authenticatedAt: Date.now(),
     };
-    logger.info(`Authentication successful for client: ${sessionData.clientId}`);
+    logger.info(`[Auth] Authentication successful for client: ${sessionData.clientId}`);
     return sessionData;
 };
 
@@ -65,15 +80,18 @@ const authenticateHandler = async ( // Added async
 // --- FastMCP Server Configuration ---
 const OFFICE_MCP_PORT = process.env.OFFICE_MCP_PORT;
 
-logger.debug('Creating FastMCP server instance...'); // Added log
-// Instantiate FastMCP with name, version, instructions, and authentication
+logger.debug('Creating FastMCP server instance...');
+/**
+ * The FastMCP server instance for the MS Office MCP.
+ * Configured with server name, version, instructions, and authentication handler.
+ */
 const mcpServer = new FastMCP<AuthSessionData>({ // Specify session data type for the server instance
     name: packageName,
     version: packageVersion as `${number}.${number}.${number}`, // Assert type for version
     instructions: "This server provides tools to interact with Microsoft Office files (Word, Excel, PowerPoint). Use the available tools to read, write, modify, and analyze documents. Authentication is required.",
     authenticate: authenticateHandler, // Add the authentication handler
 });
-logger.debug('FastMCP server instance created with authentication.'); // Added log
+logger.debug('FastMCP server instance created with authentication.');
 
 // --- Register Tools ---
 logger.info(`Registering ${allRegisteredTools.length} tools...`);
@@ -90,24 +108,22 @@ for (let i = 0; i < allRegisteredTools.length; i++) {
     // If it's an FS tool, check if FS access is allowed and if running in STDIO mode
     if (isFsTool) {
         if (!isFsAccessAllowed || !isStdioMode) {
-            logger.info(`Skipping registration for FS tool '${item.path}' because FS access is disabled or not in STDIO mode.`);
+            logger.info(`[Tool Registration] Skipping registration for FS tool '${item.path}' because FS access is disabled or not in STDIO mode.`);
             continue; // Skip registration if conditions are not met
         }
-        logger.info(`Registering FS tool '${item.path}' as FS access is allowed and in STDIO mode.`);
+        logger.info(`[Tool Registration] Registering FS tool '${item.path}' as FS access is allowed and in STDIO mode.`);
     }
 
 
     // Ensure item has a schema before registering as a tool
     if (!item.schema) {
-        logger.warn(`Skipping registration for item without schema at index ${i}: ${item.path}`);
+        logger.warn(`[Tool Registration] Skipping registration for item without schema at index ${i}: ${item.path}`);
         continue; // Skip items without schema (likely resources or invalid entries)
     }
 
     try {
-        let url = z.object({ url: z.string() });
-        logger.debug(`Attempting to register tool at index ${i}: ${item.path}`);
-        logger.debug(`Schema ${i}:: ${JSON.stringify(item.schema)}`);
-        //logger.debug(`Schema url: ${JSON.stringify(url)}`);
+        logger.debug(`[Tool Registration] Attempting to register tool at index ${i}: ${item.path}`);
+        logger.debug(`[Tool Registration] Schema ${i}:: ${JSON.stringify(item.schema)}`);
         // Register as a tool
         // Define annotations, adding specific ones for potentially slow tools
         const annotations: Record<string, unknown> = { title: item.description || item.path }; // Use description as title if available, else path
@@ -120,7 +136,7 @@ for (let i = 0; i < allRegisteredTools.length; i++) {
             name: item.path, // Use the unique path as the tool name
             description: item.description,
             // Use item.schema as parameters, already checked it exists
-            parameters: item.schema as ToolParameters, // Cast schema
+            parameters: item.schema as ToolParameters, // Cast schema to ToolParameters
             annotations: annotations, // Add annotations
             // Adjust return type to Promise<ContentResult>
             // Ensure the context type here matches the updated ServerContext with AuthSessionData
@@ -211,10 +227,10 @@ for (let i = 0; i < allRegisteredTools.length; i++) {
             },
             // Completions are handled differently in FastMCP (e.g., via Prompt/Resource arguments), remove from here.
         });
-        logger.debug(`Registered tool at index ${i}: ${item.path}`);
+        logger.debug(`[Tool Registration] Registered tool at index ${i}: ${item.path}`);
 
     } catch (error) {
-         logger.error(`Failed to register tool at index ${i}: ${item.path}`, { error });
+         logger.error(`[Tool Registration] Failed to register tool at index ${i}: ${item.path}`, { error });
     }
 }
 
@@ -222,8 +238,8 @@ for (let i = 0; i < allRegisteredTools.length; i++) {
 logger.info("Registering prompts...");
 try {
     mcpServer.addPrompt({
-        name: "summarize-word-section", // English name
-        description: "Summarizes a specific section (e.g., paragraph) of a Word document.", // English description
+        name: "summarize-word-section",
+        description: "Summarizes a specific section (e.g., paragraph) of a Word document.",
         arguments: [
             {
                 name: "filePath",
@@ -241,7 +257,11 @@ try {
                 required: false,
             }
         ],
-        // The 'load' function generates the actual prompt text sent to the LLM
+        /**
+         * Generates the actual prompt text sent to the LLM for summarizing a Word document section.
+         * @param args - The arguments provided to the prompt.
+         * @returns The generated prompt text.
+         */
         load: async (args) => {
             // Construct the prompt using arguments.
             // This example assumes the client will use a tool like 'word/text/get'
@@ -258,9 +278,9 @@ try {
             return promptText;
         },
     });
-    logger.info("Registered prompt: summarize-word-section");
+    logger.info("[Prompt Registration] Registered prompt: summarize-word-section");
 } catch (error) {
-    logger.error("Failed to register prompts", { error });
+    logger.error("[Prompt Registration] Failed to register prompts", { error });
 }
 logger.info("Prompt registration complete.");
 
@@ -269,17 +289,47 @@ logger.info("All tools registered.");
 // --- Register Resources ---
 logger.info("Registering resources...");
 try {
-    logger.debug(`Attempting to register resource: ${aiAssistantGuideResource[0].path}`); // Access first element
+    logger.debug(`[Resource Registration] Attempting to register resource: ${aiAssistantGuideResource[0].path}`); // Access first element
     mcpServer.addResource({
         uri: aiAssistantGuideResource[0].path, // Access first element
         name: aiAssistantGuideResource[0].description || 'Unnamed Resource', // Access first element
         mimeType: 'text/markdown', // Specify MIME type for Markdown
+        /**
+         * Loads the content of the AI assistant guide resource.
+         * @returns A promise resolving to an object with the text content.
+         * @throws {UnexpectedStateError} If the resource fails to load.
+         */
         load: async () => {
+            // Resources don't have parameters, call handler without args
+            // Pass undefined for context as resource loader doesn't provide it
+            const apiResponse: ApiResponse<any> = await aiAssistantGuideResource[0].handler({}, undefined);
+            if (apiResponse.success) {
+                return { text: String(apiResponse.data) }; // Assuming text content
+            } else {
+                logger.error(`[Resource Registration] Failed to load resource: ${aiAssistantGuideResource[0].path}`, { error: apiResponse.error }); // Access first element
+                throw new UnexpectedStateError(`Failed to load resource: ${aiAssistantGuideResource[0].path}`); // Access first element
+            }
+        },
+    });
+    logger.debug(`[Resource Registration] Registered resource: ${aiAssistantGuideResource[0].path}`); // Access first element
+    logger.info("Resource registration complete.");
+} catch (error) {
+    // Log the error, attempting to access path safely
+    const resourcePath = aiAssistantGuideResource && aiAssistantGuideResource[0] ? aiAssistantGuideResource[0].path : 'unknown resource';
+    logger.error(`[Resource Registration] Failed to register resource: ${resourcePath}`, { error });
+}
+
 // --- Register Resource Templates ---
 logger.info("Registering resource templates...");
 
-// Define the resource template load function
-// It only receives the parsed arguments from the uriTemplate, not the context
+/**
+ * Loads content for an Office document element resource template.
+ * Handles retrieving text from paragraphs or images from Word documents.
+ * @param params - Parsed arguments from the URI template.
+ * @returns A promise resolving to an object with either text or blob content.
+ * @throws {UserError} If the URI is invalid, the application/element type is unsupported, or the element is not found.
+ * @throws {UnexpectedStateError} If an unexpected content type is returned from the interop function.
+ */
 async function loadOfficeResource(
     params: { app: string; filepath: string; elementType: string; identifier: string }
 ): Promise<{ text: string } | { blob: string }> { // Return type based on README (no null)
@@ -298,7 +348,7 @@ async function loadOfficeResource(
         const decodedFilepath = decodeURIComponent(filepath);
 
         // **Security Validation is CRUCIAL here** - Reuse or enhance validateFilePath
-        await validateFilePath(decodedFilepath); // Ensure path is safe and within workspace
+        validateFilePath(decodedFilepath); // Ensure path is safe and within workspace
 
         // Variable to hold the raw content (TextContent structure or Buffer)
         let rawContent: TextContent | Buffer | null = null;
@@ -328,13 +378,13 @@ async function loadOfficeResource(
                 break;
             case 'excel':
                 // TODO: Implement Excel handling - Placeholder
-                logger.warn(`[ResourceTemplate] Excel resource handling not implemented yet.`, { filepath: decodedFilepath, elementType, identifier }); // Use logger
+                logger.warn(`[ResourceTemplate] Excel resource handling not implemented yet.`, { filepath: decodedFilepath, elementType, identifier });
                 throw new UserError(`Excel resource handling not implemented yet.`);
                 // rawContent = await getExcelElementContent(decodedFilepath, elementType.toLowerCase(), identifier);
                 break;
             case 'powerpoint':
                 // TODO: Implement PowerPoint handling - Placeholder
-                logger.warn(`[ResourceTemplate] PowerPoint resource handling not implemented yet.`, { filepath: decodedFilepath, elementType, identifier }); // Use logger
+                logger.warn(`[ResourceTemplate] PowerPoint resource handling not implemented yet.`, { filepath: decodedFilepath, elementType, identifier });
                 throw new UserError(`PowerPoint resource handling not implemented yet.`);
                 // rawContent = await getPowerPointElementContent(decodedFilepath, elementType.toLowerCase(), identifier);
                 break;
@@ -354,11 +404,11 @@ async function loadOfficeResource(
         if (Buffer.isBuffer(rawContent)) {
             // If it's a buffer, convert to base64 and return as blob
             const base64Data = rawContent.toString('base64');
-            logger.info(`[ResourceTemplate] Successfully loaded resource as blob.`, { durationMs: Date.now() - startTime, app, filepath: decodedFilepath, elementType, identifier, size: base64Data.length }); // Use logger
+            logger.info(`[ResourceTemplate] Successfully loaded resource as blob.`, { durationMs: Date.now() - startTime, app, filepath: decodedFilepath, elementType, identifier, size: base64Data.length });
             return { blob: base64Data };
         } else if (typeof rawContent === 'string') {
              // If it's a string (e.g., paragraph text), return as text
-             logger.info(`[ResourceTemplate] Successfully loaded resource as text.`, { durationMs: Date.now() - startTime, app, filepath: decodedFilepath, elementType, identifier }); // Use logger
+             logger.info(`[ResourceTemplate] Successfully loaded resource as text.`, { durationMs: Date.now() - startTime, app, filepath: decodedFilepath, elementType, identifier });
              return { text: rawContent };
         } else {
              // Should not happen if interop function returns string or Buffer
@@ -382,7 +432,7 @@ async function loadOfficeResource(
 // Register the template
 try {
     const officeUriPattern = 'office://:app/:filepath/:elementType/:identifier';
-     logger.debug(`Attempting to register resource template: ${officeUriPattern}`);
+     logger.debug(`[Resource Template Registration] Attempting to register resource template: ${officeUriPattern}`);
    mcpServer.addResourceTemplate({
        uriTemplate: officeUriPattern, // Use uriTemplate property
        load: loadOfficeResource,      // Use load property with the correct function
@@ -398,31 +448,20 @@ try {
        // Optional: Add description
        description: "Access specific elements within Office documents (Word, Excel, PowerPoint)."
    });
-   logger.info(`Registered resource template: ${officeUriPattern}`);
+   logger.info(`[Resource Template Registration] Registered resource template: ${officeUriPattern}`);
    logger.info("Resource template registration complete.");
 } catch (error) {
-    logger.error(`Failed to register office resource template`, { error });
-}
-            // Resources don't have parameters, call handler without args
-            // Pass undefined for context as resource loader doesn't provide it
-            const apiResponse: ApiResponse<any> = await aiAssistantGuideResource[0].handler({}, undefined);
-            if (apiResponse.success) {
-                return { text: String(apiResponse.data) }; // Assuming text content
-            } else {
-                logger.error(`Failed to load resource: ${aiAssistantGuideResource[0].path}`, { error: apiResponse.error }); // Access first element
-                throw new UnexpectedStateError(`Failed to load resource: ${aiAssistantGuideResource[0].path}`); // Access first element
-            }
-        },
-    });
-    logger.debug(`Registered resource: ${aiAssistantGuideResource[0].path}`); // Access first element
-    logger.info("Resource registration complete.");
-} catch (error) {
-    // Log the error, attempting to access path safely
-    const resourcePath = aiAssistantGuideResource && aiAssistantGuideResource[0] ? aiAssistantGuideResource[0].path : 'unknown resource';
-    logger.error(`Failed to register resource: ${resourcePath}`, { error });
+    logger.error(`[Resource Template Registration] Failed to register office resource template`, { error });
 }
 
+
 // --- Helper to hide sensitive data from logs ---
+/**
+ * Hides sensitive parameter values from logs.
+ * Replaces values for specified keys with '********' or a summary for large content.
+ * @param params - The parameters object to process.
+ * @returns A new object with sensitive values hidden.
+ */
 function hideSensitiveParams(params: ToolRequestParams): ToolRequestParams {
     const sensitiveKeys = ['password', 'apiKey', 'secret', 'token', 'content']; // Add keys to hide
     const loggedParams = { ...params };
@@ -442,10 +481,13 @@ function hideSensitiveParams(params: ToolRequestParams): ToolRequestParams {
 }
 
 
-// --- Start Server ---
-// --- Prueba COM Interop (Opcional con winax) ---
+// --- COM Interop Test (Optional with winax) ---
 import { getOfficeApplication, releaseObject } from '@/utils/officeInterop'; // Usar alias
 
+/**
+ * Performs a basic test of COM Interop by attempting to get a Word application instance.
+ * Logs the outcome of the test.
+ */
 async function testCom() {
   const comStartTime = Date.now();
   logger.info("[COM TEST START] Testing COM Interop (winax)...");
@@ -493,8 +535,9 @@ async function testCom() {
 logger.info("Calling testCom()...");
 testCom(); // Llama a la función de prueba al inicio
 logger.info("testCom() finished.");
-// --- Fin Prueba COM Interop ---
-logger.debug('Attempting to start MCP server...'); // Added log
+// --- End COM Interop Test ---
+
+logger.debug('Attempting to start MCP server...');
 // Start the server
 if (OFFICE_MCP_PORT) {
     // Use SSE transport if port is defined
@@ -518,7 +561,7 @@ if (OFFICE_MCP_PORT) {
         transportType: "stdio"
     })
     .then(() => {
-        logger.info('🚀 msoffice-mcp server started successfully in STDIO mode'); // Added log
+        logger.info('🚀 msoffice-mcp server started successfully in STDIO mode');
     })
     .catch((error: Error) => {
         logger.error('Failed to start msoffice-mcp server in STDIO mode:', error);
@@ -527,34 +570,34 @@ if (OFFICE_MCP_PORT) {
 }
 
 // Graceful shutdown handling
-// --- Manejo de Errores EPIPE en Streams ---
-// Estos manejadores intentan capturar errores EPIPE que pueden ocurrir si
-// el proceso intenta escribir en stdout/stderr después de que la tubería
-// se haya cerrado (común cuando el proceso padre termina abruptamente).
-// Nota: Esto generalmente solo silencia el síntoma, no arregla la causa
-// raíz si el cierre no es limpio (p.ej., con fastmcp dev).
+// --- EPIPE Error Handling in Streams ---
+// These handlers attempt to catch EPIPE errors that can occur if
+// the process tries to write to stdout/stderr after the pipe
+// has been closed (common when the parent process terminates abruptly).
+// Note: This generally only silences the symptom, it doesn't fix the root
+// cause if the shutdown is not clean (e.g., with fastmcp dev).
 
 /*
 process.stdout.on('error', (err: NodeJS.ErrnoException) => {
   if (err.code === 'EPIPE') {
-    // Ignorar EPIPE en stdout, probablemente causado por cierre abrupto.
-    logger.warn('Error EPIPE en stdout ignorado durante el cierre.');
+    // Ignore EPIPE on stdout, likely caused by abrupt closure.
+    logger.warn('EPIPE error on stdout ignored during shutdown.');
   } else {
-    // Registrar otros errores inesperados de stdout
-    logger.error('Error inesperado en process.stdout:', { error: err });
-    // Considerar salir si es un error crítico no relacionado con EPIPE
+    // Log other unexpected stdout errors
+    logger.error('Unexpected error on process.stdout:', { error: err });
+    // Consider exiting if it's a critical error unrelated to EPIPE
     // process.exit(1);
   }
 });
 
 process.stderr.on('error', (err: NodeJS.ErrnoException) => {
   if (err.code === 'EPIPE') {
-    // Ignorar EPIPE en stderr, probablemente causado por cierre abrupto.
-    logger.warn('Error EPIPE en stderr ignorado durante el cierre.');
+    // Ignore EPIPE on stderr, likely caused by abrupt closure.
+    logger.warn('EPIPE error on stderr ignored during shutdown.');
   } else {
-    // Registrar otros errores inesperados de stderr
-    logger.error('Error inesperado en process.stderr:', { error: err });
-    // Considerar salir si es un error crítico no relacionado con EPIPE
+    // Log other unexpected stderr errors
+    logger.error('Unexpected error on process.stderr:', { error: err });
+    // Consider exiting if it's a critical error unrelated to EPIPE
     // process.exit(1);
   }
 });
@@ -565,7 +608,7 @@ process.on('SIGTERM', () => {
          logger.info('Server closed.');
          process.exit(0);
     }).catch(err => { // Add catch block for stop() errors
-        logger.error('Error during mcpServer.stop() for SIGTERM:', { error: err }); // Use logger
+        logger.error('Error during mcpServer.stop() for SIGTERM:', { error: err });
         process.exit(1);
     });
 });
@@ -576,7 +619,7 @@ process.on('SIGINT', () => {
          logger.info('Server closed.');
          process.exit(0);
     }).catch(err => { // Add catch block for stop() errors
-        logger.error('Error during mcpServer.stop() for SIGINT:', { error: err }); // Use logger
+        logger.error('Error during mcpServer.stop() for SIGINT:', { error: err });
         process.exit(1);
     });
 });

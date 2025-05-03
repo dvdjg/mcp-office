@@ -1,5 +1,9 @@
 /**
- * @file Configures the application logger using Winston or FastMCP based on environment variable.
+ * @file Logger configuration for the MS Office MCP server.
+ * @author David Jurado
+ * @date 2025-05-03
+ * @copyright Copyright (c) 2025 David Jurado
+ * @license MIT
  */
 import winston, { Logger } from 'winston';
 // Assuming fastmcp is an available module and exports a logger named 'log'
@@ -14,8 +18,6 @@ let logger: Logger; // Add explicit type annotation
 if (loggerType === 'fastmcp') {
   // Use the fastmcp logger if the environment variable indicates
   // logger = fastmcpLog; // Uncomment if fastmcp is available
-  // Temporarily, if fastmcp is not available, use the Winston logger
-  console.warn("MCP_LOGGER_TYPE is set to 'fastmcp', but fastmcp logger is not fully integrated yet. Using default Winston logger.");
   // Fallback to Winston if fastmcp is not ready or cannot be imported
   logger = createWinstonLogger();
 
@@ -24,7 +26,10 @@ if (loggerType === 'fastmcp') {
   logger = createWinstonLogger();
 }
 
-// Function to create and configure the Winston logger
+/**
+ * Creates and configures the Winston logger instance.
+ * @returns {Logger} The configured Winston logger instance.
+ */
 function createWinstonLogger(): Logger { // Add return type annotation
   const winstonLogger = winston.createLogger({
     level: process.env.LOG_LEVEL || 'debug',
@@ -57,6 +62,5 @@ function createWinstonLogger(): Logger { // Add return type annotation
 }
 
 
-// The fallback logic `const log = context?.log ?? logger;` will be applied where this logger is used.
 // Export the selected logger
 export default logger;

@@ -1,25 +1,31 @@
-// =============================================================================
 /**
- * @file Provides security-related utility functions.
+ * @file Provides security-related utility functions, primarily for file path validation.
+ * @author David Jurado
+ * @date 2025-05-03
+ * @copyright Copyright (c) 2025 David Jurado
+ * @license MIT
  */
-import os from 'os'; // Importado os
+import os from 'os';
 import path from 'path';
 import fs from 'fs-extra'; // Use fs-extra for path existence checks
 import { createErrorResponse } from './errorHandler';
 import logger from './logger'; // Import logger
 
-// Define allowed base paths for file system operations
-// IMPORTANT: Configure this securely based on your deployment environment!
 // Define allowed base paths for file system operations based on ALLOWED_FS_PATHS environment variable.
 // IMPORTANT: Configure this securely based on your deployment environment!
 const allowedFsPathsEnv = process.env.ALLOWED_FS_PATHS;
 
-// Function to resolve '~' to the home directory
+/**
+ * Resolves a file path that starts with '~' to the user's home directory.
+ * If the path does not start with '~', it is returned unchanged.
+ * @param filePath - The file path to resolve.
+ * @returns The resolved absolute path if it starts with '~', otherwise the original path.
+ */
 function resolveHome(filePath: string): string {
     if (filePath.startsWith('~')) {
         const homeDir = os.homedir();
         if (!homeDir) {
-            logger.warn(`Could not determine home directory for path: ${filePath}.`);
+            logger.warn(`[Security] Could not determine home directory for path: ${filePath}.`);
             // Return original path if home directory cannot be determined
             return filePath;
         }
@@ -34,18 +40,17 @@ let isFsAccessAllowed = true;
 
 if (allowedFsPathsEnv === 'none') {
     isFsAccessAllowed = false;
-    logger.info('ALLOWED_FS_PATHS is set to "none". File system access is disabled.');
+    logger.info('[Security] ALLOWED_FS_PATHS is set to "none". File system access is disabled.');
 } else if (allowedFsPathsEnv) {
-    // Split the environment variable by semicolon and resolve each path
     // Split the environment variable by semicolon or colon and resolve each path
     const rawAllowedPaths = allowedFsPathsEnv.split(/[:;]/);
     ALLOWED_BASE_PATHS.push(...rawAllowedPaths.map(p => path.resolve(resolveHome(p))));
-    logger.info(`Allowed file system base paths: ${ALLOWED_BASE_PATHS.join(';')}`); // Still log with ; for consistency, but accept : or ; as input
+    logger.info(`[Security] Allowed file system base paths: ${ALLOWED_BASE_PATHS.join(';')}`); // Still log with ; for consistency, but accept : or ; as input
 } else {
     // If ALLOWED_FS_PATHS is not set, allow all paths.
     // In a real-world scenario, you might want to default to a restricted set.
     // For this implementation, we interpret undefined as allowing all paths.
-    logger.warn('ALLOWED_FS_PATHS environment variable is not set. Allowing all file system paths.');
+    logger.warn('[Security] ALLOWED_FS_PATHS environment variable is not set. Allowing all file system paths.');
     // An empty ALLOWED_BASE_PATHS array will be handled in validateFilePath
 }
 
@@ -56,7 +61,7 @@ if (allowedFsPathsEnv === 'none') {
  * Prevents directory traversal attacks.
  * @param filePath - The absolute or relative file path to validate.
  * @returns The resolved, absolute path if valid.
- * @throws An error if the path is invalid or outside allowed directories when restrictions are in place.
+ * @throws {Error} An error if file system access is disabled, the path is invalid, or outside allowed directories when restrictions are in place.
  */
 export function validateFilePath(filePath: string): string {
     // If file system access is globally disabled, throw an error immediately.

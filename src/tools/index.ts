@@ -1,8 +1,10 @@
-// /src/tools/index.ts
-// =============================================================================
 /**
- * @file Aggregates all tool definitions for registration with the MCP server.
- * Exports tools conforming to the McpResource interface.
+ * @file Aggregates all tool and resource definitions for registration with the MCP server.
+ * Exports lists of tools and resources conforming to the McpResource interface.
+ * @author David Jurado
+ * @date 2025-05-03
+ * @copyright Copyright (c) 2025 David Jurado
+ * @license MIT
  */
 import { McpResource } from '@/types/common.types';
 import { z } from 'zod';
@@ -35,28 +37,31 @@ import analyzeToolDefinition from './word/analyze.tool'; // Import the new analy
 
 // Import Excel tools
 import { excelWorksheetsTool } from './excel/worksheets.tool';
-import excelRangeTool from './excel/range.tool'; // Importar la nueva herramienta excel/range
-import excelTablesTool from './excel/tables.tool'; // Importar la nueva herramienta excel/tables
-import excelChartsTool from './excel/charts.tool'; // Importar la nueva herramienta excel/charts
-import { excelDataAnalysisTool } from './excel/dataAnalysis.tool'; // Importar la nueva herramienta excel/data-analysis
+import excelRangeTool from './excel/range.tool'; // Import the new excel/range tool
+import excelTablesTool from './excel/tables.tool'; // Import the new excel/tables tool
+import excelChartsTool from './excel/charts.tool'; // Import the new excel/charts tool
+import { excelDataAnalysisTool } from './excel/dataAnalysis.tool'; // Import the new excel/data-analysis tool
 
 // Import PowerPoint tools
-import slidesTool from './powerpoint/slides.tool'; // Importar la nueva herramienta powerpoint/slides
-import powerpointShapesTool from './powerpoint/shapes.tool'; // Importar la nueva herramienta powerpoint/shapes
-import { powerpointPropertiesTool } from './powerpoint/properties.tool'; // Importar la nueva herramienta powerpoint/properties
-import animationsTool from './powerpoint/animations.tool'; // Importar la nueva herramienta powerpoint/animations
-import officeTransferTool from './office/transfer.tool'; // Importar la nueva herramienta office/transfer
-import { OfficeWorkflowTool } from './office/workflow.tool'; // Importar la nueva herramienta office/workflow
-import { pdfExportTool } from './office/pdfExport.tool'; // Importar la nueva herramienta office/pdf/export
-import pdfParseTool from './office/pdfParse.tool'; // Importar la nueva herramienta office/pdf/parse
-import { officeCombineTool } from './office/combine.tool'; // Importar la nueva herramienta office/combine
+import slidesTool from './powerpoint/slides.tool'; // Import the new powerpoint/slides tool
+import powerpointShapesTool from './powerpoint/shapes.tool'; // Import the new powerpoint/shapes tool
+import { powerpointPropertiesTool } from './powerpoint/properties.tool'; // Import the new powerpoint/properties tool
+import animationsTool from './powerpoint/animations.tool'; // Import the new powerpoint/animations tool
+import officeTransferTool from './office/transfer.tool'; // Import the new office/transfer tool
+import { OfficeWorkflowTool } from './office/workflow.tool'; // Import the new office/workflow tool
+import { pdfExportTool } from './office/pdfExport.tool'; // Import the new office/pdf/export tool
+import pdfParseTool from './office/pdfParse.tool'; // Import the new office/pdf/parse tool
+import { officeCombineTool } from './office/combine.tool'; // Import the new office/combine tool
 // Import dynamic tools
 import { dynamicResourcesTool } from './dynamic/resources.tool';
 
 // Import static resources
 import aiAssistantGuideResource from '../resources/static/ai_assistant_guide.resource';
 
-// Adapt the analyze tool definition to the McpResource interface
+/**
+ * Adapts the analyze tool definition to the McpResource interface.
+ * Provides a placeholder handler as the execution is delegated to the server wrapper.
+ */
 const analyzeMcpResource: McpResource = {
     path: analyzeToolDefinition.name, // Use name as path
     handler: async (params, context) => {
@@ -64,7 +69,7 @@ const analyzeMcpResource: McpResource = {
              // Placeholder handler, execution delegated to server.ts wrapper
              return { success: true, data: "Handler called, but execution delegated to server.ts wrapper." };
         } catch (error) {
-             return handleToolError(error, 'ANALYZE_ERROR'); // Usar un código de error específico
+             return handleToolError(error, 'ANALYZE_ERROR'); // Use a specific error code
         }
     },
     schema: analyzeToolDefinition.inputSchema as z.ZodSchema<any>, // Use inputSchema as schema
@@ -72,66 +77,68 @@ const analyzeMcpResource: McpResource = {
 };
 
 
-// Combine all tools into a potentially nested array first
-const nestedToolsList = [
-    fsDirectoryTool, // Array
-    fsFileTool,      // Array
-    wordStylesTool,  // Array
-    wordMarkdownTool,// Array
-    wordTemplateTool,// Array
-    wordTextTool,    // Array
-    wordImageTools,  // Array
+/**
+ * A flattened array containing all implemented tool definitions conforming to the McpResource interface.
+ * This list is used by the server to register the tools.
+ */
+const allImplementedTools: McpResource[] = [
+    ...fsDirectoryTool, // Array
+    ...fsFileTool,      // Array
+    ...wordStylesTool,  // Array
+    ...wordMarkdownTool,// Array
+    ...wordTemplateTool,// Array
+    ...wordTextTool,    // Array
+    ...wordImageTools,  // Array
     // Single objects
+    wordMergeTool,
     wordSearchReplaceTool,
     wordTablesTool,
     wordChartsTool,
     wordGenerateAndInsertTextTool,
     wordPageTool,
     wordHeadersFootersTool,
-    embeddedObjectsTool, // Use embeddedObjectsTool directly
-    batchTool, // Añadida la nueva herramienta batchTool
-    mermaidImportTool, // Añadida la herramienta de importación de Mermaid
-    mermaidExportTool, // Añadida la herramienta de exportación de Mermaid
-    reformatTool, // Añadida la herramienta reformatTool
-    analyzeMcpResource, // Añadida la herramienta analyzeTool adaptada
-   excelWorksheetsTool, // Añadida la herramienta excel/worksheets
-   excelRangeTool, // Añadida la nueva herramienta excel/range
-   excelTablesTool, // Añadida la nueva herramienta excel/tables
-   excelChartsTool, // Añadida la nueva herramienta excel/charts
-   excelDataAnalysisTool, // Añadida la nueva herramienta excel/data-analysis
-   slidesTool, // Añadida la nueva herramienta powerpoint/slides
-   powerpointShapesTool, // Añadida la nueva herramienta powerpoint/shapes
-   powerpointPropertiesTool, // Añadida la nueva herramienta powerpoint/properties
-   animationsTool, // Añadida la nueva herramienta powerpoint/animations
-   officeTransferTool, // Añadida la nueva herramienta office/transfer
-   new OfficeWorkflowTool(), // Añadida la nueva herramienta office/workflow
-   pdfExportTool, // Añadida la nueva herramienta office/pdf/export
-   pdfParseTool, // Añadida la nueva herramienta office/pdf/parse
-   officeCombineTool, // Añadida la nueva herramienta office/combine
-   dynamicResourcesTool, // Añadida la herramienta dynamic/resources
+    embeddedObjectsTool,
+    batchTool,
+    mermaidImportTool,
+    mermaidExportTool,
+    reformatTool,
+    analyzeMcpResource,
+    excelWorksheetsTool,
+    excelRangeTool,
+    excelTablesTool,
+    excelChartsTool,
+    excelDataAnalysisTool,
+    slidesTool,
+    powerpointShapesTool,
+    powerpointPropertiesTool,
+    animationsTool,
+    officeTransferTool,
+    new OfficeWorkflowTool(),
+    pdfExportTool,
+    pdfParseTool,
+    officeCombineTool,
+    dynamicResourcesTool,
      // Add other imported tools here
- ];
+ ].flat(); // Flatten the array to ensure it only contains McpResource objects
 
-// Flatten the array to ensure it only contains McpResource objects
-const allImplementedTools: McpResource[] = nestedToolsList.flat();
 
 // Placeholder tools for unimplemented features (ensure they conform to McpResource)
 const placeholderTools: McpResource[] = [
-    // { path: 'word/embedded-objects', ... }, // REMOVED
-    // { path: 'word/metadata', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/metadata not implemented.'), description: 'Manage document properties and comments (Not Implemented)', schema: z.object({}) }, // REMOVED - Implemented
-    // { path: 'word/batch', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/batch not implemented.'), description: 'Execute multiple operations (Not Implemented)', schema: z.object({}) }, // Eliminado el placeholder
-    // { path: 'word/mermaid/import', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/mermaid/import not implemented.'), description: 'Import and render Mermaid diagrams (Not Implemented)', schema: z.object({}) }, // Eliminado el placeholder
-    // { path: 'word/mermaid/export', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/mermaid/export not implemented.'), description: 'Export Mermaid diagrams (Not Implemented)', schema: z.object({}) }, // Eliminado el placeholder
-    // { path: 'word/reformat', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/reformat not implemented.'), description: 'Reformat a document professionally (Not Implemented)', schema: z.object({}) }, // Eliminado el placeholder
-    // { path: 'word/code-format', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool word/code-format not implemented.'), description: 'Format code and metadata with syntax highlighting (Not Implemented)', schema: z.object({}) }, // Eliminado el placeholder
-    // Excel (Placeholders)
-    // { path: 'excel/worksheets', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool excel/worksheets not implemented.'), description: 'Manage Excel worksheets (Not Implemented - Requires Office JS/Scripts)', schema: z.object({}) }, // Eliminado el placeholder
-    // { path: 'excel/range', handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool excel/range not implemented.'), description: 'Manipulate cell ranges (Not Implemented - Requires Office JS/Scripts)', schema: z.object({}) }, // Eliminado el placeholder
-   // PowerPoint (Placeholders) - REMOVED as implemented
- ]; // Eliminado el placeholder para office/ai-suggest
+    // Add placeholders for any tools that are defined but not yet fully implemented
+    // Example:
+    // {
+    //     path: 'office/ai-suggest',
+    //     handler: async () => createErrorResponse('NOT_IMPLEMENTED', 'Tool office/ai-suggest not implemented.'),
+    //     description: 'Provides AI-powered suggestions within Office documents (Not Implemented).',
+    //     schema: z.object({}), // Define a basic schema even for placeholders if it's a tool
+    // },
+ ];
 
 
-// Combine implemented and placeholder tools
+/**
+ * The final list of all tools and resources to be registered with the FastMCP server.
+ * Combines implemented tools and any defined placeholders.
+ */
 const allRegisteredTools = [...allImplementedTools, ...placeholderTools];
 
 // Export the list used by server.ts and the resource

@@ -1,6 +1,10 @@
-// =============================================================================
 /**
- * @file Implements the 'fs/directory' tool for directory operations.
+ * @file Implements the 'fs/directory' tool for directory operations (list, create, delete).
+ * Provides functionality to interact with the file system directories within allowed paths.
+ * @author David Jurado
+ * @date 2025-05-03
+ * @copyright Copyright (c) 2025 David Jurado
+ * @license MIT
  */
 import fs from 'fs-extra';
 import path from 'path';
@@ -9,21 +13,30 @@ import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '@/t
 import { createErrorResponse, handleToolError } from '@/utils/errorHandler';
 import { validateFilePath } from '@/utils/security';
 import logger from '@/utils/logger';
-// Removed incorrect import: import { FastMCPContext } from 'fastmcp';
 
 // --- Schemas for Input Validation ---
+
+/** Schema for the 'fs/directory/list' tool parameters. */
 const listSchema = z.object({
+    /** The path of the directory to list contents for (relative to the current workspace directory). */
     path: z.string().min(1),
+    /** Optional glob pattern to filter files (e.g., '*.ts' for TypeScript files). If not provided, it will list all files (*). */
     filter: z.string().optional(), // e.g., "*.docx", "image/*" (simple glob pattern)
+    /** Whether to list files recursively. Use true for recursive listing, false or omit for top-level only. */
     recursive: z.boolean().optional().default(false),
 });
 
+/** Schema for the 'fs/directory/create' tool parameters. */
 const createSchema = z.object({
+    /** The path of the directory to create (relative to the current workspace directory). */
     path: z.string().min(1),
 });
 
+/** Schema for the 'fs/directory/delete' tool parameters. */
 const deleteSchema = z.object({
+    /** The path of the directory to delete (relative to the current workspace directory). */
     path: z.string().min(1),
+    /** Whether to delete the directory recursively. Required for non-empty directories. Defaults to false. */
     recursive: z.boolean().optional().default(false), // Safety: require explicit recursive delete
 });
 
@@ -31,6 +44,9 @@ const deleteSchema = z.object({
 
 /**
  * Lists files and subdirectories within a given path.
+ * @param params - The parameters for the list operation, validated against `listSchema`.
+ * @param context - The FastMCP context (optional).
+ * @returns A promise resolving to an ApiResponse containing a list of directory entries (strings).
  */
 async function listDirectory(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<string[]>> { // Changed generic type to undefined
     try {
@@ -50,9 +66,8 @@ async function listDirectory(params: ToolRequestParams, context?: FastMCPContext
             const stat = await fs.stat(fullPath);
 
             if (stat.isDirectory() && validatedParams.recursive) {
-                // Recursively list if requested (implement recursive logic carefully)
-                // For simplicity, this example only lists the top level
-                logger.warn(`Recursive listing for ${fullPath} not fully implemented in this example.`);
+                // Recursive listing is not fully implemented in this example, only top level is listed.
+                logger.warn(`[fs/directory/list] Recursive listing for ${fullPath} not fully implemented.`);
                 results.push(`${entry}/`); // Indicate directory
             } else if (!stat.isDirectory()) {
                 // Apply filter if provided (simple wildcard matching)
@@ -64,7 +79,7 @@ async function listDirectory(params: ToolRequestParams, context?: FastMCPContext
             }
         }
 
-        logger.info(`Listed directory: ${safeBasePath}`, { count: results.length, params: validatedParams });
+        logger.info(`[fs/directory/list] Listed directory: ${safeBasePath}`, { count: results.length, params: validatedParams });
         return { success: true, data: results };
     } catch (error) {
         return handleToolError(error, 'FS_LIST_ERROR');
@@ -72,7 +87,10 @@ async function listDirectory(params: ToolRequestParams, context?: FastMCPContext
 }
 
 /**
- * Creates a new directory.
+ * Creates a new directory at the specified path.
+ * @param params - The parameters for the create operation, validated against `createSchema`.
+ * @param context - The FastMCP context (optional).
+ * @returns A promise resolving to an ApiResponse containing the path of the created directory.
  */
 async function createDirectory(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{ path: string }>> { // Changed generic type to undefined
     try {
@@ -88,7 +106,7 @@ async function createDirectory(params: ToolRequestParams, context?: FastMCPConte
         }
 
         await fs.mkdir(dirToCreate, { recursive: true }); // Use recursive true for intermediate dirs
-        logger.info(`Created directory: ${dirToCreate}`);
+        logger.info(`[fs/directory/create] Created directory: ${dirToCreate}`);
         return { success: true, data: { path: dirToCreate } };
     } catch (error) {
         return handleToolError(error, 'FS_CREATE_ERROR');
@@ -96,7 +114,11 @@ async function createDirectory(params: ToolRequestParams, context?: FastMCPConte
 }
 
 /**
- * Deletes a directory.
+ * Deletes a directory at the specified path.
+ * Requires the `recursive` flag to be true for non-empty directories.
+ * @param params - The parameters for the delete operation, validated against `deleteSchema`.
+ * @param context - The FastMCP context (optional).
+ * @returns A promise resolving to an empty ApiResponse indicating success.
  */
 async function deleteDirectory(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> { // Changed generic type to undefined
      try {
@@ -114,14 +136,18 @@ async function deleteDirectory(params: ToolRequestParams, context?: FastMCPConte
         }
 
         await fs.remove(safePath); // fs-extra remove handles recursive deletion
-        logger.info(`Deleted directory: ${safePath}`, { recursive: validatedParams.recursive });
+        logger.info(`[fs/directory/delete] Deleted directory: ${safePath}`, { recursive: validatedParams.recursive });
         return { success: true, data: {} };
-    } catch (error) {
+     } catch (error) {
         return handleToolError(error, 'FS_DELETE_ERROR');
-    }
+     }
 }
 
 // --- Resource Definition ---
+
+/**
+ * Array of McpResource definitions for file system directory operations.
+ */
 export const fsDirectoryTool: McpResource[] = [
     {
         path: 'fs/directory/list',
