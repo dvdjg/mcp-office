@@ -24,7 +24,7 @@ import { wordImageTools } from './word/image.tool'; // Exports McpResource[]
 import { wordGenerateAndInsertTextTool } from './word/generateAndInsertText.tool'; // Exports McpResource (single object)
 import { wordPageTool } from './word/page.tool'; // Exports McpResource (single object)
 import { wordHeadersFootersTool } from './word/headersFooters.tool'; // Exports McpResource (single object)
-import { embeddedObjectsTool as embeddedObjectsToolDefinition } from './word/embeddedObjects.tool'; // Import the FastMCP definition
+import { embeddedObjectsTool } from './word/embeddedObjects.tool'; // Import the embeddedObjectsTool directly
 import { batchTool } from './word/batch.tool'; // Import the new batch tool
 import mermaidImportTool from './word/mermaidImport.tool'; // Import the mermaid import tool
 import mermaidExportTool from './word/mermaidExport.tool'; // Import the mermaid export tool
@@ -55,21 +55,6 @@ import { dynamicResourcesTool } from './dynamic/resources.tool';
 
 // Import static resources
 import aiAssistantGuideResource from '../resources/static/ai_assistant_guide.resource';
-
-// Adapt the FastMCP tool definition to the McpResource interface
-const embeddedObjectsMcpResource: McpResource = {
-    path: embeddedObjectsToolDefinition.name, // Use name as path
-    handler: async (params, context) => {
-        try {
-             // Placeholder handler, execution delegated to server.ts wrapper
-             return { success: true, data: "Handler called, but execution delegated to server.ts wrapper." };
-        } catch (error) {
-             return handleToolError(error, 'EMBEDDED_OBJECTS_ERROR');
-        }
-    },
-    schema: embeddedObjectsToolDefinition.parameters as z.ZodSchema<any>, // Use parameters as schema
-    description: embeddedObjectsToolDefinition.description,
-};
 
 // Adapt the analyze tool definition to the McpResource interface
 const analyzeMcpResource: McpResource = {
@@ -103,7 +88,7 @@ const nestedToolsList = [
     wordGenerateAndInsertTextTool,
     wordPageTool,
     wordHeadersFootersTool,
-    embeddedObjectsMcpResource,
+    embeddedObjectsTool, // Use embeddedObjectsTool directly
     batchTool, // Añadida la nueva herramienta batchTool
     mermaidImportTool, // Añadida la herramienta de importación de Mermaid
     mermaidExportTool, // Añadida la herramienta de exportación de Mermaid

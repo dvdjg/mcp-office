@@ -7,51 +7,49 @@ import { validateFilePath } from '../../utils/security'; // Corregido: Nombre de
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import logger from '../../utils/logger'; // Corregido: Importación por defecto
+import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types'; // Importar tipos necesarios
 
 // --- Esquema de Entrada (Zod) ---
 const EmbeddedObjectBaseSchema = z.object({
-  filePath: z.string().min(1, 'El path del archivo es requerido.'),
+  filePath: z.string().min(1, 'El path del archivo es requerido.').refine(validateFilePath, {
+    message: "Invalid or potentially unsafe file path provided.",
+  }),
 });
 
-const InsertSchema = EmbeddedObjectBaseSchema.extend({
-  operation: z.literal('insert'),
-  objectPath: z.string().min(1, 'El path del objeto a insertar es requerido.'),
-  // Opcional: position, linkToFile, displayAsIcon, iconFileName, iconLabel, etc.
-  // range: z.string().optional().describe("Rango donde insertar (ej: 'paragraph:N', 'selection', 'end'). Default: 'end'"),
+// Esquema combinado para todas las operaciones (usando z.object)
+const WordEmbeddedObjectsInputSchema = z.object({
+    operation: z.enum(['insert', 'modify', 'delete', 'extractAll']).describe('The operation to perform (insert, modify, delete, or extractAll).'),
+    // Incluir todos los campos posibles de las operaciones
+    filePath: z.string().min(1, 'El path del archivo es requerido.').refine(validateFilePath, {
+        message: "Invalid or potentially unsafe file path provided.",
+    }),
+    objectPath: z.string().optional().describe("(insert) Path al archivo del objeto a insertar. Requerido para 'insert'."), // Hacer opcional aquí, validar en handler
+    objectIndex: z.number().int().positive('El índice del objeto debe ser un entero positivo. Requerido para modify, delete.').optional().describe("(modify, delete) Índice (1-based) del objeto (InlineShapes primero, luego Shapes)."), // Hacer opcional aquí, validar en handler
+    newObjectPath: z.string().optional().describe("(modify) Path al nuevo archivo del objeto. Requerido para 'modify'."), // Hacer opcional aquí, validar en handler
+    outputDirectory: z.string().optional().describe("(extractAll) Directorio donde guardar los objetos extraídos. Requerido para 'extractAll'."), // Hacer opcional aquí, validar en handler
+    // Opcional: position, linkToFile, displayAsIcon, iconFileName, iconIndex, iconLabel, etc.
+    // range: z.string().optional().describe("Rango donde insertar (ej: 'paragraph:N', 'selection', 'end'). Default: 'end'"),
+}).refine(data => {
+    // Validaciones específicas por operación dentro del refinamiento
+    if (data.operation === 'insert') {
+        return data.objectPath !== undefined; // Requiere objectPath
+    } else if (data.operation === 'modify') {
+        return data.objectIndex !== undefined && data.newObjectPath !== undefined; // Requiere objectIndex y newObjectPath
+    } else if (data.operation === 'delete') {
+        return data.objectIndex !== undefined; // Requiere objectIndex
+    } else if (data.operation === 'extractAll') {
+        return data.outputDirectory !== undefined; // Requiere outputDirectory
+    }
+    return true; // Pasa la validación si la operación no requiere campos específicos o si los tiene
+}, {
+    message: "Invalid input for the specified operation. Check required fields (objectPath, objectIndex, newObjectPath, outputDirectory).",
+    path: [], // Apply error to the whole object
 });
 
-const ModifySchema = EmbeddedObjectBaseSchema.extend({
-  operation: z.literal('modify'),
-  objectIndex: z.number().int().positive('El índice del objeto debe ser un entero positivo.'),
-  newObjectPath: z.string().min(1, 'El path del nuevo objeto es requerido.'),
-  // Opcional: linkToFile, displayAsIcon, etc.
-});
 
-const DeleteSchema = EmbeddedObjectBaseSchema.extend({
-  operation: z.literal('delete'),
-  objectIndex: z.number().int().positive('El índice del objeto debe ser un entero positivo.'),
-});
+// Inferir el tipo combinado para usar en el handler
+type WordEmbeddedObjectsInput = z.infer<typeof WordEmbeddedObjectsInputSchema>;
 
-const ExtractAllSchema = EmbeddedObjectBaseSchema.extend({
-  operation: z.literal('extractAll'),
-  outputDirectory: z.string().min(1, 'El directorio de salida es requerido.'),
-});
-
-// Opcional: GetPropertiesSchema
-// const GetPropertiesSchema = EmbeddedObjectBaseSchema.extend({
-//   operation: z.literal('getProperties'),
-//   objectIndex: z.number().int().positive('El índice del objeto debe ser un entero positivo.'),
-// });
-
-const EmbeddedObjectsInputSchema = z.discriminatedUnion('operation', [
-  InsertSchema,
-  ModifySchema,
-  DeleteSchema,
-  ExtractAllSchema,
-  // GetPropertiesSchema, // Descomentar si se implementa
-]);
-
-type EmbeddedObjectsInput = z.infer<typeof EmbeddedObjectsInputSchema>;
 
 // --- Esquema de Salida (Zod) ---
 // No es estrictamente necesario definirlo aquí si no se valida explícitamente el retorno,
@@ -63,12 +61,47 @@ const EmbeddedObjectsOutputSchema = z.object({
 });
 
 // --- Handler (ahora llamado 'execute') ---
-// El handler recibe input y el contexto (que incluye log, reportProgress, session)
-const embeddedObjectsExecute = async (input: EmbeddedObjectsInput, context: { log: any, reportProgress: (progress: any) => void, session: any }) => {
-  const log = context.log; // Usar el logger del contexto
-  log.info(`Iniciando operación '${input.operation}' en archivo: ${input.filePath}`);
+// El handler recibe params y el contexto (que incluye log, reportProgress, session)
+const embeddedObjectsExecute = async (params: ToolRequestParams, context?: FastMCPContext<any>): Promise<ApiResponse<any>> => {
+  const log = context?.log || logger; // Usar el logger del contexto si está disponible, sino el global
+  log.info(`Iniciando operación en archivo: ${params.filePath}`); // Usar params directamente para filePath inicial
+
+  let validatedRequest: WordEmbeddedObjectsInput;
+  try {
+    // Validar y parsear los params genéricos usando el nuevo WordEmbeddedObjectsInputSchema
+    validatedRequest = WordEmbeddedObjectsInputSchema.parse(params);
+  } catch (error: any) {
+     // Si la validación inicial falla, devolver un error de validación
+     if (error instanceof z.ZodError) {
+         // Serializar error.errors para que sea serializable
+         const errorDetails = JSON.stringify(error.errors, null, 2);
+         log.warn(`Input validation failed at handler entry for word/embedded-objects: ${error.message}`, { errors: errorDetails, params });
+         return {
+             success: false,
+             error: {
+                 code: 'VALIDATION_ERROR',
+                 message: `Input validation failed: ${error.errors.map(e => `${e.path.join('.')} - ${e.message}`).join(', ')}`,
+                 details: errorDetails,
+             },
+         };
+     }
+     // Otro error inesperado durante el parseo inicial
+     log.error(`Unexpected error parsing params in word/embedded-objects handler: ${error.message}`, { error: String(error), params });
+     return {
+         success: false,
+         error: {
+             code: 'INTERNAL_ERROR',
+             message: 'Failed to parse tool parameters.',
+             details: String(error),
+         },
+     };
+  }
+
+  const { operation, ...args } = validatedRequest; // Extraer operation y el resto como args
+  const { filePath, objectPath, objectIndex, newObjectPath, outputDirectory } = args; // Extraer campos específicos
+
   // Usar validateFilePath que devuelve la ruta absoluta validada o lanza error
-  const absoluteFilePath = validateFilePath(input.filePath);
+  const absoluteFilePath = validateFilePath(filePath);
   log.debug(`[EmbeddedObjects] Validated absolute path: ${absoluteFilePath}`);
 
   let wordApp: any = null; // Usar 'any' para el objeto COM de la aplicación
@@ -77,16 +110,17 @@ const embeddedObjectsExecute = async (input: EmbeddedObjectsInput, context: { lo
   try {
     wordApp = await getOfficeApplication('Word.Application');
     // Abrir el documento. Considerar ReadOnly para 'extractAll' y 'getProperties'
-    const openReadOnly = input.operation === 'extractAll'; // || input.operation === 'getProperties';
+    const openReadOnly = operation === 'extractAll'; // || operation === 'getProperties';
     log.debug(`[EmbeddedObjects] Opening document: ${absoluteFilePath} (ReadOnly: ${openReadOnly})`);
       // Parámetros Open: FileName, ConfirmConversions, ReadOnly, AddToRecentFiles, PasswordDocument, ... Visible
       // Abrir no visible para operaciones de fondo
       doc = wordApp.Documents.Open(absoluteFilePath, false, openReadOnly, false, undefined, undefined, undefined, undefined, undefined, undefined, false); // Visible = false al final
 
-    switch (input.operation) {
+    switch (operation) {
       case 'insert': {
         log.info('Iniciando operación "insert".');
-        const { objectPath } = input;
+        // Validar que objectPath no sea undefined (ya hecho en refine, pero buena práctica)
+        if (objectPath === undefined) throw new Error("objectPath is required for 'insert' operation.");
         const absoluteObjectPath = validateFilePath(objectPath);
         await fs.access(absoluteObjectPath); // Verificar existencia del archivo a insertar
 
@@ -115,12 +149,15 @@ const embeddedObjectsExecute = async (input: EmbeddedObjectsInput, context: { lo
         log.info(`Objeto insertado desde ${objectPath}.`);
         // El ID puede no ser el índice 1-based global, pero es un identificador útil.
         // Podríamos intentar encontrar el índice después de la inserción si fuera necesario.
-        return { success: true, message: `Objeto insertado desde ${objectPath}.`, details: { insertedObjectId: inlineShape.Range.InlineShape.ID } };
+        return { success: true, message: `Objeto insertado desde ${objectPath}.`, data: { insertedObjectId: inlineShape.Range.InlineShape.ID } }; // Mover a data
       }
 
       case 'modify': {
         log.info('Iniciando operación "modify".');
-        const { objectIndex, newObjectPath } = input;
+        // Validar que objectIndex y newObjectPath no sean undefined
+        if (objectIndex === undefined) throw new Error("objectIndex is required for 'modify' operation.");
+        if (newObjectPath === undefined) throw new Error("newObjectPath is required for 'modify' operation.");
+
         const absoluteNewObjectPath = validateFilePath(newObjectPath);
         await fs.access(absoluteNewObjectPath); // Verificar existencia del nuevo archivo
 
@@ -229,12 +266,15 @@ const embeddedObjectsExecute = async (input: EmbeddedObjectsInput, context: { lo
         }
 
         doc.Save(); // Guardar cambios
-        return { success: true, message: `Objeto en índice ${objectIndex} modificado (reemplazado) con ${newObjectPath}.` };
+        return { success: true, message: `Objeto en índice ${objectIndex} modificado (reemplazado) con ${newObjectPath}.`, data: null }; // Añadir data: null
       }
 
       case 'delete': {
         log.info('Iniciando operación "delete".');
-        const { objectIndex } = input;
+        const { objectIndex } = validatedRequest; // Usar validatedRequest
+        // Validar que objectIndex no sea undefined
+        if (objectIndex === undefined) throw new Error("objectIndex is required for 'delete' operation.");
+
 
         let shapeToDelete: any = null;
         let isInline = false;
@@ -266,12 +306,15 @@ const embeddedObjectsExecute = async (input: EmbeddedObjectsInput, context: { lo
         shapeToDelete.Delete(); // Eliminar el objeto
         doc.Save(); // Guardar cambios
         log.info(`Objeto en índice ${objectIndex} eliminado.`);
-        return { success: true, message: `Objeto en índice ${objectIndex} eliminado.` };
+        return { success: true, message: `Objeto en índice ${objectIndex} eliminado.`, data: null }; // Añadir data: null
       }
 
       case 'extractAll': {
         log.info('Iniciando operación "extractAll".');
-        const { outputDirectory } = input;
+        const { outputDirectory } = validatedRequest; // Usar validatedRequest
+        // Validar que outputDirectory no sea undefined
+        if (outputDirectory === undefined) throw new Error("outputDirectory is required for 'extractAll' operation.");
+
         const absoluteOutputDir = validateFilePath(outputDirectory);
         log.debug(`[EmbeddedObjects] Validated output directory: ${absoluteOutputDir}`);
 
@@ -433,37 +476,37 @@ const embeddedObjectsExecute = async (input: EmbeddedObjectsInput, context: { lo
 
 
          if (oleObjectCount === 0) {
-           return { success: true, message: 'No se encontraron objetos OLE incrustados o vinculados en el documento.' };
+           return { success: true, message: 'No se encontraron objetos OLE incrustados o vinculados en el documento.', data: null }; // Añadir data: null
          } else {
-           return { success: true, message: `Se encontraron ${oleObjectCount} objetos OLE (inline o flotantes). Archivos extraídos: ${extractedFiles.length}.`, details: { extractedPaths: extractedFiles } };
+           return { success: true, message: `Se encontraron ${oleObjectCount} objetos OLE (inline o flotantes). Archivos extraídos: ${extractedFiles.length}.`, data: { extractedPaths: extractedFiles } }; // Mover a data
          }
        }
 
        // case 'getProperties':
        //   // Lógica para obtener propiedades
        //   log.warn('Operación "getProperties" aún no implementada.');
-       //   return { success: false, message: 'Operación "getProperties" no implementada.' };
+       //   return { success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Operación "getProperties" no implementada.' } }; // Devolver ErrorResponse
 
        default:
           // El error "Property 'operation' does not exist on type 'never'" indica que TS
           // ha verificado que todos los casos de la unión discriminada están cubiertos.
           // Por lo tanto, este caso 'default' es teóricamente inalcanzable.
           // Lanzar un error genérico sin acceder a 'input'.
-          const unreachableCase: never = input; // Mantenemos esto para la verificación de tipos
-          log.error(`Caso inalcanzable en switch detectado: ${JSON.stringify(unreachableCase)}`);
+          // const unreachableCase: never = validatedRequest; // Mantenemos esto para la verificación de tipos
+          // log.error(`Caso inalcanzable en switch detectado: ${JSON.stringify(unreachableCase)}`);
           throw new Error(`Operación desconocida o no manejada.`);
      }
    } catch (error: any) {
      const message = error instanceof Error ? error.message : String(error);
      // Usar context.log si está disponible
      const logFn = context?.log?.error || logger.error; // Fallback a logger global si context no está
-     // Acceder a input.operation y input.filePath aquí es seguro porque están fuera del switch/default
-     // Comprobar si input existe antes de acceder a sus propiedades en caso de error muy temprano
-     const operation = (input as any)?.operation || 'desconocida';
-     const filePathLog = (input as any)?.filePath || 'desconocido';
-     logFn(`Error en la operación '${operation}' en archivo '${filePathLog}': ${message}`, { error });
+     // Acceder a operation y filePath aquí es seguro porque están fuera del switch/default
+     // Comprobar si validatedRequest existe antes de acceder a sus propiedades en caso de error muy temprano
+     const operation = (validatedRequest as any)?.operation || 'desconocida'; // Usar validatedRequest
+     const filePathLog = (validatedRequest as any)?.filePath || 'desconocido'; // Usar validatedRequest
+     logFn(`Error en la operación '${operation}' en archivo '${filePathLog}': ${message}`, { error: String(error) }); // Serializar error
      // Devolver un mensaje de error más informativo
-     return { success: false, message: `Error durante la operación '${operation}': ${message}` };
+     return { success: false, error: { code: 'EMBEDDED_OBJECTS_ERROR', message: `Error durante la operación '${operation}': ${message}`, details: String(error) } }; // Devolver ErrorResponse
    } finally {
      // --- Bloque Finally Mejorado ---
      const logFnDebug = context?.log?.debug || logger.debug;
@@ -500,10 +543,10 @@ const embeddedObjectsExecute = async (input: EmbeddedObjectsInput, context: { lo
        releaseObject(wordApp); // Liberar objeto de la aplicación
        wordApp = null; // Ayuda a GC
      }
-     // Acceder a input.operation y input.filePath aquí es seguro
-     // Comprobar si input existe antes de acceder a sus propiedades en caso de error muy temprano
-     const operationFinal = (input as any)?.operation || 'desconocida';
-     const filePathFinal = (input as any)?.filePath || 'desconocido';
+     // Acceder a operation y filePath aquí es seguro
+     // Comprobar si validatedRequest existe antes de acceder a sus propiedades en caso de error muy temprano
+     const operationFinal = (validatedRequest as any)?.operation || 'desconocida'; // Usar validatedRequest
+     const filePathFinal = (validatedRequest as any)?.filePath || 'desconocido'; // Usar validatedRequest
      logFnInfo(`Finalizada operación '${operationFinal}' en archivo: ${filePathFinal}`);
    }
  };
@@ -517,40 +560,7 @@ const embeddedObjectsExecute = async (input: EmbeddedObjectsInput, context: { lo
   * Requiere investigación adicional de la API COM para la implementación completa, especialmente para 'extractAll' y 'modify'.
   * Utiliza winax para la interacción COM. Asegúrate de que Word esté instalado y accesible.
   *
-  * @input_schema
-  * {
-  *   "type": "object",
-  *   "properties": {
-  *     "operation": { "enum": ["insert", "modify", "delete", "extractAll"] },
-  *     "filePath": { "type": "string", "description": "Path al archivo .docx." },
-  *     // Propiedades específicas por operación:
-  *     "objectPath": { "type": "string", "description": "(insert) Path al archivo del objeto a insertar." },
-  *     "objectIndex": { "type": "integer", "description": "(modify, delete) Índice (1-based) del objeto (InlineShapes primero, luego Shapes)." },
-  *     "newObjectPath": { "type": "string", "description": "(modify) Path al nuevo archivo del objeto." },
-  *     "outputDirectory": { "type": "string", "description": "(extractAll) Directorio donde guardar los objetos extraídos." }
-  *     // ... otras propiedades opcionales ...
-  *   },
-  *   "required": ["operation", "filePath"], // Requeridos base
-  *   // Añadir lógica para requeridos condicionales si es posible o validar en el handler
-  *   "allOf": [
-  *      {
-  *          "if": { "properties": { "operation": { "const": "insert" } } },
-  *          "then": { "required": ["objectPath"] }
-  *      },
-  *      {
-  *          "if": { "properties": { "operation": { "const": "modify" } } },
-  *          "then": { "required": ["objectIndex", "newObjectPath"] }
-  *      },
-  *      {
-  *          "if": { "properties": { "operation": { "const": "delete" } } },
-  *          "then": { "required": ["objectIndex"] }
-  *      },
-  *      {
-  *          "if": { "properties": { "operation": { "const": "extractAll" } } },
-  *          "then": { "required": ["outputDirectory"] }
-  *      }
-  *   ]
-  * }
+  * @inputSchema See `WordEmbeddedObjectsInputSchema` (z.object). Uses combined properties from all operations.
   *
   * @output_schema
   * {
@@ -558,9 +568,9 @@ const embeddedObjectsExecute = async (input: EmbeddedObjectsInput, context: { lo
   *   "properties": {
   *     "success": { "type": "boolean" },
   *     "message": { "type": "string" },
-  *     "details": { "type": "object", "optional": true, "description": "Información adicional (ej: paths extraídos)." }
+  *     "data": { "type": "object", "optional": true, "description": "Información adicional (ej: paths extraídos)." } // Cambiado de details a data
   *   },
-  *   "required": ["success", "message"]
+  *   "required": ["success", "message", "data"] // data es requerido incluso si es null
   * }
   *
   * @example_usage
@@ -584,21 +594,15 @@ const embeddedObjectsExecute = async (input: EmbeddedObjectsInput, context: { lo
   * }
   */
  // Eliminar anotación de tipo explícita, dejar que FastMCP la infiera al usar server.addTool
- export const embeddedObjectsTool = {
-   name: 'word/embedded-objects',
+ export const embeddedObjectsTool: McpResource = { // Añadir tipo McpResource
+   path: 'word/embedded-objects', // Propiedad path requerida
    description: 'Gestiona objetos OLE incrustados en documentos Word (insert, modify, delete, extractAll).',
    // FastMCP espera 'parameters' y 'execute', no 'schema' y 'handler' directamente en la definición del objeto.
    // El esquema Zod se pasa a 'parameters'.
-   parameters: EmbeddedObjectsInputSchema,
-   // El esquema de salida no se define aquí, se infiere del retorno de 'execute'.
-   execute: embeddedObjectsExecute, // Renombrar 'handler' a 'execute'
-   // Añadir anotaciones opcionales si se desea
-   annotations: {
-     title: "Word Embedded Objects Manager",
-     readOnlyHint: false, // Puede modificar (insert, modify, delete)
-     // destructiveHint: true, // Podría ser destructivo (delete)
-     // openWorldHint: false, // No interactúa con el mundo exterior directamente (solo sistema de archivos local)
-   }
+   schema: WordEmbeddedObjectsInputSchema, // Usar el nuevo esquema z.object y renombrar a schema
+   // outputSchema: z.any(), // Opcional: definir si es necesario
+   handler: embeddedObjectsExecute, // Renombrar 'execute' a 'handler'
+   // Eliminar la propiedad annotations
  };
 
  // Exportar para index.ts

@@ -3,7 +3,7 @@ import { getOfficeApplication } from '../../utils/officeInterop';
 
 // Define el esquema de entrada para la herramienta word/analyze
 const AnalyzeToolInputSchema = z.object({
-  type: z.literal('object'), // Added to satisfy validator
+  //type: z.literal('object'), // Added to satisfy validator
   filePath: z.string().describe('La ruta al documento de Word.'),
   operation: z.enum(['analyze', 'add', 'summarize']).describe('La operación a realizar.'),
   criteria: z.array(z.string()).optional().describe('Criterios para el análisis (e.g., "technical issues", "grammar errors").'),

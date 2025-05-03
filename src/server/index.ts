@@ -15,7 +15,7 @@ import { validateFilePath } from '@/utils/security'; // Import validateFilePath
 import { getWordElementContent as getOfficeElementContentInterop } from '@/utils/officeInterop';
 import { McpResource, ToolRequestParams, ApiResponse } from '@/types/common.types'; // Removed SerializableValue import from here
 import { version as packageVersion, name as packageName } from '../../package.json'; // Import name and version
-
+import { z } from 'zod';
 // --- Authentication ---
 
 // Define the structure of the session data returned on successful authentication
@@ -78,15 +78,19 @@ logger.debug('FastMCP server instance created with authentication.'); // Added l
 // --- Register Tools ---
 logger.info(`Registering ${allRegisteredTools.length} tools...`);
 
-allRegisteredTools.forEach((item: McpResource) => {
+for (let i = 0; i < allRegisteredTools.length; i++) {
+    const item: McpResource = allRegisteredTools[i];
     // Ensure item has a schema before registering as a tool
     if (!item.schema) {
-        logger.warn(`Skipping registration for item without schema: ${item.path}`);
-        return; // Skip items without schema (likely resources or invalid entries)
+        logger.warn(`Skipping registration for item without schema at index ${i}: ${item.path}`);
+        continue; // Skip items without schema (likely resources or invalid entries)
     }
 
     try {
-        logger.debug(`Attempting to register tool: ${item.path}`);
+        let url = z.object({ url: z.string() });
+        logger.debug(`Attempting to register tool at index ${i}: ${item.path}`);
+        logger.debug(`Schema ${i}:: ${JSON.stringify(item.schema)}`);
+        //logger.debug(`Schema url: ${JSON.stringify(url)}`);
         // Register as a tool
         // Define annotations, adding specific ones for potentially slow tools
         const annotations: Record<string, unknown> = { title: item.description || item.path }; // Use description as title if available, else path
@@ -99,7 +103,7 @@ allRegisteredTools.forEach((item: McpResource) => {
             name: item.path, // Use the unique path as the tool name
             description: item.description,
             // Use item.schema as parameters, already checked it exists
-            parameters: item.schema as unknown as ToolParameters, // Cast schema
+            parameters: item.schema as ToolParameters, // Cast schema
             annotations: annotations, // Add annotations
             // Adjust return type to Promise<ContentResult>
             // Ensure the context type here matches the updated ServerContext with AuthSessionData
@@ -109,7 +113,6 @@ allRegisteredTools.forEach((item: McpResource) => {
                 // Log client ID from session data, checking if session exists
                 const clientId = context.session?.clientId || 'unknown-authenticated-client';
                 context.log.info(`[${item.path}] EXECUTION START by client: ${clientId}`, { params: hideSensitiveParams(args) as SerializableValue }); // Ensure logged params are serializable
-
                 try {
                     // Validation is typically handled by FastMCP based on 'parameters' schema
                     // Authorization checks can use context.session if authentication is implemented
@@ -191,12 +194,13 @@ allRegisteredTools.forEach((item: McpResource) => {
             },
             // Completions are handled differently in FastMCP (e.g., via Prompt/Resource arguments), remove from here.
         });
-        logger.debug(`Registered tool: ${item.path}`);
+        logger.debug(`Registered tool at index ${i}: ${item.path}`);
 
     } catch (error) {
-         logger.error(`Failed to register tool: ${item.path}`, { error });
+         logger.error(`Failed to register tool at index ${i}: ${item.path}`, { error });
     }
-});
+}
+
 // --- Register Prompts ---
 logger.info("Registering prompts...");
 try {
@@ -513,7 +517,7 @@ if (OFFICE_MCP_PORT) {
 // Nota: Esto generalmente solo silencia el síntoma, no arregla la causa
 // raíz si el cierre no es limpio (p.ej., con fastmcp dev).
 
-/* 
+/*
 process.stdout.on('error', (err: NodeJS.ErrnoException) => {
   if (err.code === 'EPIPE') {
     // Ignorar EPIPE en stdout, probablemente causado por cierre abrupto.

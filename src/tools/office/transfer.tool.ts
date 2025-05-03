@@ -8,7 +8,7 @@ import { ApiResponse, ErrorResponse, SuccessResponse } from '@/types/common.type
 
 // Define the input schema for the office/transfer tool
 const officeTransferInputSchema = z.object({
-  type: z.literal('object'), // Added to satisfy validator
+  //type: z.literal('object'), // Added to satisfy validator
   source: z.string().describe('Especificación de origen (ej: "excel:./data.xlsx:Sheet1:A1:B2", "word:./document.docx:paragraph:3", "powerpoint:./presentation.pptx:slide:2:shape:5")'),
   target: z.string().describe('Especificación de destino (ej: "word:./document.docx:paragraph:3", "excel:./data.xlsx:Sheet1:A1", "powerpoint:./presentation.pptx:slide:2")'),
   operation: z.enum(['embed', 'insert', 'copy']).describe('Tipo de operación: "embed", "insert", o "copy"'),

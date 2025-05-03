@@ -15,7 +15,7 @@ import { handleToolError } from '@/utils/errorHandler'; // Import handleToolErro
  */
 
 const ReformatParamsSchema = z.object({
-  type: z.literal('object'), // Added to satisfy validator
+  //type: z.literal('object'), // Added to satisfy validator
   filePath: z.string(),
   operation: z.enum(['analyze', 'apply', 'standardize']),
   styleSet: z.string().optional(),

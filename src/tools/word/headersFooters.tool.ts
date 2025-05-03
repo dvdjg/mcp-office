@@ -24,46 +24,44 @@ const HeadersFootersBaseSchema = z.object({
   type: z.nativeEnum(WdHeaderFooterTypes).describe("Type of header/footer (Primary, FirstPage, EvenPages)."),
 });
 
-// Esquema para Insert/Modify (requiere texto)
-const HeadersFootersTextSchema = HeadersFootersBaseSchema.extend({
-  text: z.string().describe("Text content to insert or modify."),
+// Esquema combinado para todas las operaciones (usando z.object)
+const WordHeadersFootersInputSchema = z.object({
+    operation: z.enum(['insert', 'modify', 'delete', 'get', 'configure']).describe('The operation to perform (insert, modify, delete, get, or configure).'),
+    // Incluir todos los campos posibles de las operaciones
+    filePath: z.string().min(1, 'File path is required.').refine(validateFilePath, {
+        message: "Invalid or potentially unsafe file path provided.",
+    }),
+    sectionIndex: z.union([z.number().int().positive(), z.literal('all')]).optional().default(1).describe("1-based index of the section or 'all'. Defaults to 1."),
+    type: z.nativeEnum(WdHeaderFooterTypes).optional().describe("Type of header/footer (Primary, FirstPage, EvenPages). Required for insert, modify, delete, get."), // Hacer opcional aquí, validar en handler
+    text: z.string().optional().describe("Text content to insert or modify. Required for insert, modify."), // Hacer opcional aquí, validar en handler
+    linkToPrevious: z.boolean().optional().describe("Link header/footer to the previous section. Used in configure."),
+    differentFirstPage: z.boolean().optional().describe("Different header/footer on the first page for this section. Used in configure."),
+    oddAndEvenPages: z.boolean().optional().describe("Different headers/footers for odd and even pages for this section. Used in configure."),
+}).refine(data => {
+    // Validaciones específicas por operación dentro del refinamiento
+    if (data.operation === 'insert' || data.operation === 'modify') {
+        return data.type !== undefined && data.text !== undefined; // Requiere type y text
+    } else if (data.operation === 'delete' || data.operation === 'get') {
+        return data.type !== undefined; // Requiere type
+    } else if (data.operation === 'configure') {
+        return data.linkToPrevious !== undefined || data.differentFirstPage !== undefined || data.oddAndEvenPages !== undefined; // Requiere al menos una opción de configuración
+    }
+    return true; // Pasa la validación si la operación no requiere campos específicos o si los tiene
+}, {
+    message: "Invalid input for the specified operation. Check required fields (type, text) and configuration options.",
+    path: [], // Apply error to the whole object
 });
 
-// Esquema para Delete/Get (no requiere texto adicional)
-const HeadersFootersActionSchema = HeadersFootersBaseSchema;
 
-// Esquema para Configure (propiedades booleanas)
-const HeadersFootersConfigureSchema = z.object({
-   filePath: z.string().min(1, 'File path is required.').refine(validateFilePath, {
-    message: "Invalid or potentially unsafe file path provided.",
-  }),
-  sectionIndex: z.union([z.number().int().positive(), z.literal('all')]).optional().default(1).describe("1-based index of the section or 'all'. Defaults to 1."),
-  linkToPrevious: z.boolean().optional().describe("Link header/footer to the previous section."),
-  // Propiedades de PageSetup que afectan a headers/footers (ya en word/page, pero pueden ser relevantes aquí)
-  differentFirstPage: z.boolean().optional().describe("Different header/footer on the first page for this section."),
-  oddAndEvenPages: z.boolean().optional().describe("Different headers/footers for odd and even pages for this section."),
-}).refine(data => data.linkToPrevious !== undefined || data.differentFirstPage !== undefined || data.oddAndEvenPages !== undefined, {
-    message: "At least one configuration option (linkToPrevious, differentFirstPage, oddAndEvenPages) must be provided for 'configure'.",
-    path: [],
-});
-
-
-// Combinar esquemas para el handler usando discriminatedUnion
-const InputSchema = z.discriminatedUnion('operation', [
-  z.object({ operation: z.literal('insert'), arguments: HeadersFootersTextSchema }),
-  z.object({ operation: z.literal('modify'), arguments: HeadersFootersTextSchema }),
-  z.object({ operation: z.literal('delete'), arguments: HeadersFootersActionSchema }),
-  z.object({ operation: z.literal('get'), arguments: HeadersFootersActionSchema }),
-  z.object({ operation: z.literal('configure'), arguments: HeadersFootersConfigureSchema }),
-]);
-type InputSchemaType = z.infer<typeof InputSchema>;
+// Inferir el tipo combinado para usar en el handler
+type WordHeadersFootersInput = z.infer<typeof WordHeadersFootersInputSchema>;
 
 
 // --- Lógica COM (Placeholder) ---
 
 async function manageHeaderFooter(
     operation: 'insert' | 'modify' | 'delete' | 'get' | 'configure',
-    args: any // Usar 'any' temporalmente, se refinará con los tipos Zod específicos
+    args: WordHeadersFootersInput // Usar el tipo combinado
 ): Promise<any> { // Devolverá string para 'get', void/boolean para otros
     const { filePath, sectionIndex, type, text, linkToPrevious, differentFirstPage, oddAndEvenPages } = args;
     logger.info(`[word/headers-footers] Operation: ${operation}`, { filePath, sectionIndex, type });
@@ -130,19 +128,30 @@ async function manageHeaderFooter(
             try {
                  // Intentar acceder al header/footer específico. Puede fallar si el tipo no existe
                  // en esa sección (e.g., pedir EvenPages cuando OddAndEvenPagesHeaderFooter es false)
-                 headerFooter = headers.Item(type) ?? footers.Item(type); // Intentar obtener de Headers o Footers
+                 // Asegurarse de que 'type' no sea undefined antes de usarlo
+                 if (type === undefined && operation !== 'configure') {
+                     throw new Error(`Header/Footer type is required for operation '${operation}'.`);
+                 }
+                 if (type !== undefined) {
+                    headerFooter = headers.Item(type) ?? footers.Item(type); // Intentar obtener de Headers o Footers
+                 }
+
+
                  // TODO: Determinar si necesitamos distinguir entre header y footer explícitamente
                  //       o si el 'type' es suficiente. Por ahora, asumimos que Item(type) funciona
                  //       para ambos en el contexto de la sección. Revisar API COM.
                  //       Si se necesita distinguir, añadir un parámetro 'location': 'header' | 'footer'.
 
-                 if (!headerFooter) {
+                 if (!headerFooter && operation !== 'configure') { // headerFooter no es necesario para configure
                      throw new Error(`Header/Footer of type ${type} not found or accessible in section ${currentSectionIndex}. Check section PageSetup properties (DifferentFirstPage, OddAndEvenPages).`);
                  }
-                 logger.debug(`[word/headers-footers] Accessed Header/Footer object for type ${type} in section ${currentSectionIndex}.`);
+                 if (headerFooter) { // Solo loguear si se obtuvo el objeto
+                    logger.debug(`[word/headers-footers] Accessed Header/Footer object for type ${type} in section ${currentSectionIndex}.`);
+                 }
+
 
                  // Aplicar LinkToPrevious si es parte de la operación 'configure'
-                 if (operation === 'configure' && linkToPrevious !== undefined) {
+                 if (operation === 'configure' && linkToPrevious !== undefined && headerFooter) { // Solo aplicar si headerFooter existe
                      headerFooter.LinkToPrevious = linkToPrevious;
                      logger.debug(`[word/headers-footers] Section ${currentSectionIndex}, Type ${type}: Set LinkToPrevious = ${linkToPrevious}`);
                  }
@@ -151,17 +160,26 @@ async function manageHeaderFooter(
                  switch (operation) {
                      case 'insert':
                      case 'modify':
-                         headerFooter.Range.Text = text;
-                         logger.debug(`[word/headers-footers] Section ${currentSectionIndex}, Type ${type}: Set text content.`);
+                         if (headerFooter && text !== undefined) { // Asegurarse de que headerFooter y text existen
+                            headerFooter.Range.Text = text;
+                            logger.debug(`[word/headers-footers] Section ${currentSectionIndex}, Type ${type}: Set text content.`);
+                         }
                          break;
                      case 'delete':
-                         headerFooter.Range.Text = ""; // Borrar contenido
-                         // headerFooter.Delete(); // ¿Existe Delete()? Revisar API. Borrar texto es más seguro.
-                         logger.debug(`[word/headers-footers] Section ${currentSectionIndex}, Type ${type}: Cleared text content.`);
+                         if (headerFooter) { // Asegurarse de que headerFooter existe
+                            headerFooter.Range.Text = ""; // Borrar contenido
+                            // headerFooter.Delete(); // ¿Existe Delete()? Revisar API. Borrar texto es más seguro.
+                            logger.debug(`[word/headers-footers] Section ${currentSectionIndex}, Type ${type}: Cleared text content.`);
+                         }
                          break;
                      case 'get':
-                         resultData = headerFooter.Range.Text; // Solo guardamos el último si sectionIndex='all'
-                         logger.debug(`[word/headers-footers] Section ${currentSectionIndex}, Type ${type}: Retrieved text content.`);
+                         if (headerFooter) { // Asegurarse de que headerFooter existe
+                            resultData = headerFooter.Range.Text; // Solo guardamos el último si sectionIndex='all'
+                            logger.debug(`[word/headers-footers] Section ${currentSectionIndex}, Type ${type}: Retrieved text content.`);
+                         } else {
+                             resultData = null; // No se encontró el header/footer
+                             logger.debug(`[word/headers-footers] Section ${currentSectionIndex}, Type ${type}: Header/Footer object not found for get operation.`);
+                         }
                          break;
                      case 'configure':
                          // Ya manejado arriba (LinkToPrevious, DifferentFirstPage, OddAndEvenPages)
@@ -219,7 +237,7 @@ async function manageHeaderFooter(
  *  - `delete`: Clears the text content of the specified header/footer. Requires `filePath`, `type`. Optional: `sectionIndex`.
  *  - `get`: Retrieves the text content of the specified header/footer. Requires `filePath`, `type`. Optional: `sectionIndex`. Returns text of the *last* processed section if `sectionIndex` is 'all'.
  *  - `configure`: Sets section-level properties affecting headers/footers. Requires `filePath` and at least one of `linkToPrevious`, `differentFirstPage`, `oddAndEvenPages`. Optional: `sectionIndex`. Note: `linkToPrevious` applies to the specific header/footer type, others apply to the section's PageSetup.
- * @inputSchema See `InputSchema` (discriminated union based on `operation`). Uses `HeadersFootersTextSchema`, `HeadersFootersActionSchema`, `HeadersFootersConfigureSchema`.
+ * @inputSchema See `WordHeadersFootersInputSchema` (z.object). Uses combined properties from all operations.
  * @outputSchema `get`: Returns success and text content in `data`. Others: Returns success status, null data, and a message.
  * @dependencies Requires Microsoft Word installed and accessible via COM Interop (`winax`).
  * @security Input `filePath` is validated. Ensure Word COM security settings are appropriate.
@@ -228,49 +246,42 @@ async function manageHeaderFooter(
  * ```json
  * {
  *   "operation": "insert",
- *   "arguments": {
- *     "filePath": "C:/path/to/document.docx",
- *     "sectionIndex": 1,
- *     "type": "wdHeaderFooterPrimary",
- *     "text": "Company Confidential - Page %p"
- *   }
+ *   "filePath": "C:/path/to/document.docx",
+ *   "sectionIndex": 1,
+ *   "type": "wdHeaderFooterPrimary",
+ *   "text": "Company Confidential - Page %p"
  * }
  * ```
  * @example_get
  * ```json
  * {
  *   "operation": "get",
- *   "arguments": {
- *     "filePath": "C:/path/to/document.docx",
- *     "type": "wdHeaderFooterFirstPage"
- *   }
+ *   "filePath": "C:/path/to/document.docx",
+ *   "type": "wdHeaderFooterFirstPage"
  * }
  * ```
  * @example_configure
  * ```json
  * {
  *   "operation": "configure",
- *   "arguments": {
- *     "filePath": "C:/path/to/document.docx",
- *     "sectionIndex": "all",
- *     "differentFirstPage": true,
- *     "oddAndEvenPages": true
- *   }
+ *   "filePath": "C:/path/to/document.docx",
+ *   "sectionIndex": "all",
+ *   "differentFirstPage": true,
+ *   "oddAndEvenPages": true
  * }
  * ```
  */
 export const wordHeadersFootersTool: McpResource = { // Implementar McpResource
   path: 'word/headers-footers', // Propiedad path requerida
-  // name: 'word/headers-footers', // 'name' no es parte de McpResource
   description: 'Manage headers and footers in a Word document (insert, modify, delete, get, configure).',
-  schema: InputSchema, // Usar 'schema' según McpResource
+  schema: WordHeadersFootersInputSchema, // Usar el nuevo esquema z.object
   // outputSchema: z.any(), // Opcional: definir si es necesario
 
   async handler(params: ToolRequestParams, context?: FastMCPContext<any>): Promise<ApiResponse<any>> {
-    let validatedRequest: InputSchemaType;
+    let validatedRequest: WordHeadersFootersInput;
     try {
-      // Validar la estructura completa { operation: '...', arguments: { ... } }
-      validatedRequest = InputSchema.parse(params);
+      // Validar la estructura completa { operation: '...', ... }
+      validatedRequest = WordHeadersFootersInputSchema.parse(params);
     } catch (error: any) {
        if (error instanceof z.ZodError) {
            logger.warn(`[word/headers-footers] Input validation failed: ${error.message}`, { errors: error.errors, params });
@@ -280,10 +291,10 @@ export const wordHeadersFootersTool: McpResource = { // Implementar McpResource
        return createErrorResponse('INTERNAL_ERROR', 'Failed to parse tool parameters.');
     }
 
-    const { operation, arguments: args } = validatedRequest;
+    const { operation, ...args } = validatedRequest; // Extraer operation y el resto como args
 
     try {
-      const resultData = await manageHeaderFooter(operation, args);
+      const resultData = await manageHeaderFooter(operation, validatedRequest); // Pasar validatedRequest completo
 
       // Construir respuesta de éxito
       const response: ApiResponse<any> = {

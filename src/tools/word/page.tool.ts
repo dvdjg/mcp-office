@@ -29,6 +29,7 @@ const WdOrientations = {
 // La conversión a puntos (unidad de Word) se hará en la lógica COM
 const MarginSchema = z.string().regex(/^\d+(\.\d+)?\s*(in|cm|mm|pt)$/i, "Invalid margin format (e.g., '1in', '2.5cm', '72pt', '10 mm')");
 
+// Esquema base para PageSetup
 const PageSetupBaseSchema = z.object({
   filePath: z.string().min(1, 'File path is required.').refine(validateFilePath, {
     message: "Invalid or potentially unsafe file path provided.",
@@ -36,12 +37,18 @@ const PageSetupBaseSchema = z.object({
   sectionIndex: z.number().int().positive().optional().describe("1-based index of the section to modify. Defaults to the first section if omitted."), // Opcional, para aplicar a secciones específicas
 });
 
-// Esquema detallado para SET (requiere al menos una propiedad de configuración)
-const PageSetupSetSchema = PageSetupBaseSchema.extend({
+// Esquema combinado para todas las operaciones (usando z.object)
+const WordPageInputSchema = z.object({
+  operation: z.enum(['get', 'set', 'modify']).describe('The operation to perform (get, set, or modify).'),
+  // Incluir todos los campos posibles de las operaciones get, set, modify
+  filePath: z.string().min(1, 'File path is required.').refine(validateFilePath, {
+    message: "Invalid or potentially unsafe file path provided.",
+  }),
+  sectionIndex: z.number().int().positive().optional().describe("1-based index of the section to modify. Defaults to the first section if omitted."),
   size: z.nativeEnum(WdPageSizes).optional().describe("Page size constant (e.g., wdPaperA4, wdPaperLetter). Use wdPaperCustom with pageHeight/pageWidth for custom sizes."),
   orientation: z.nativeEnum(WdOrientations).optional().describe("Page orientation constant (wdOrientPortrait or wdOrientLandscape)."),
-  pageWidth: MarginSchema.optional().describe("Custom page width (required if size is wdPaperCustom). Include units (in, cm, mm, pt)."),
-  pageHeight: MarginSchema.optional().describe("Custom page height (required if size is wdPaperCustom). Include units (in, cm, mm, pt)."),
+  pageWidth: MarginSchema.optional().describe("Custom page width (required if size is wdPaperCustom for 'set'). Include units (in, cm, mm, pt)."),
+  pageHeight: MarginSchema.optional().describe("Custom page height (required if size is wdPaperCustom for 'set'). Include units (in, cm, mm, pt)."),
   topMargin: MarginSchema.optional().describe("Top margin (e.g., '1in', '2.5cm')."),
   bottomMargin: MarginSchema.optional().describe("Bottom margin (e.g., '1in', '2.5cm')."),
   leftMargin: MarginSchema.optional().describe("Left margin (e.g., '1.25in', '3cm')."),
@@ -49,59 +56,38 @@ const PageSetupSetSchema = PageSetupBaseSchema.extend({
   gutter: MarginSchema.optional().describe("Gutter margin (e.g., '0.5in')."),
   headerDistance: MarginSchema.optional().describe("Distance from edge to header (e.g., '0.5in')."),
   footerDistance: MarginSchema.optional().describe("Distance from edge to footer (e.g., '0.5in')."),
-  // Añadir otras propiedades de PageSetup si son necesarias (e.g., DifferentFirstPageHeaderFooter, OddAndEvenPagesHeaderFooter como booleanos)
   differentFirstPage: z.boolean().optional().describe("Different header/footer on the first page."),
   oddAndEvenPages: z.boolean().optional().describe("Different headers/footers for odd and even pages."),
 }).refine(data => {
-    // Validar que si size es wdPaperCustom, se proporcionen pageWidth y pageHeight
-    if (data.size === WdPageSizes.wdPaperCustom && (!data.pageWidth || !data.pageHeight)) {
-        return false;
+    // Validaciones específicas por operación dentro del refinamiento
+    if (data.operation === 'set') {
+        // Para 'set', validar que al menos una propiedad de configuración esté presente
+        const configKeys = ['size', 'orientation', 'pageWidth', 'pageHeight', 'topMargin', 'bottomMargin', 'leftMargin', 'rightMargin', 'gutter', 'headerDistance', 'footerDistance', 'differentFirstPage', 'oddAndEvenPages'];
+        if (!configKeys.some(key => data[key as keyof typeof data] !== undefined)) {
+            return false; // Falló la validación: ninguna propiedad de configuración para 'set'
+        }
+        // Para 'set' con wdPaperCustom, validar que pageWidth y pageHeight estén presentes
+        if (data.size === WdPageSizes.wdPaperCustom && (!data.pageWidth || !data.pageHeight)) {
+             return false; // Falló la validación: wdPaperCustom requiere pageWidth y pageHeight para 'set'
+        }
+    } else if (data.operation === 'modify') {
+         // Para 'modify', validar que al menos una propiedad de configuración esté presente para cambiar
+         const configKeys = ['size', 'orientation', 'pageWidth', 'pageHeight', 'topMargin', 'bottomMargin', 'leftMargin', 'rightMargin', 'gutter', 'headerDistance', 'footerDistance', 'differentFirstPage', 'oddAndEvenPages'];
+         if (!configKeys.some(key => data[key as keyof typeof data] !== undefined)) {
+             return false; // Falló la validación: ninguna propiedad de configuración para 'modify'
+         }
     }
-    // Validar que al menos una propiedad de configuración esté presente para 'set'
-    const configKeys = ['size', 'orientation', 'pageWidth', 'pageHeight', 'topMargin', 'bottomMargin', 'leftMargin', 'rightMargin', 'gutter', 'headerDistance', 'footerDistance', 'differentFirstPage', 'oddAndEvenPages'];
-    return configKeys.some(key => data[key as keyof typeof data] !== undefined);
+    // Para 'get', no se requieren propiedades adicionales aparte de filePath y opcionalmente sectionIndex
+    // Si operation es 'get', las validaciones anteriores no aplican.
+    return true; // Pasa la validación si no es 'set' o 'modify' con problemas, o si 'set'/'modify' cumplen sus requisitos
 }, {
-    message: "For 'set' operation, at least one configuration property (size, orientation, margins, etc.) must be provided. If size is wdPaperCustom, pageWidth and pageHeight are required.",
+    message: "Invalid input for the specified operation. For 'set', provide at least one configuration property and include pageWidth/pageHeight if size is wdPaperCustom. For 'modify', provide at least one configuration property to change.",
     path: [], // Apply error to the whole object
 });
 
 
-// Esquema detallado para MODIFY (todas las propiedades de configuración son opcionales)
-const PageSetupModifySchema = PageSetupBaseSchema.extend({
-  size: z.nativeEnum(WdPageSizes).optional().describe("Page size constant (e.g., wdPaperA4, wdPaperLetter). Use wdPaperCustom with pageHeight/pageWidth for custom sizes."),
-  orientation: z.nativeEnum(WdOrientations).optional().describe("Page orientation constant (wdOrientPortrait or wdOrientLandscape)."),
-  pageWidth: MarginSchema.optional().describe("Custom page width. Include units (in, cm, mm, pt)."),
-  pageHeight: MarginSchema.optional().describe("Custom page height. Include units (in, cm, mm, pt)."),
-  topMargin: MarginSchema.optional().describe("Top margin (e.g., '1in', '2.5cm')."),
-  bottomMargin: MarginSchema.optional().describe("Bottom margin (e.g., '1in', '2.5cm')."),
-  leftMargin: MarginSchema.optional().describe("Left margin (e.g., '1.25in', '3cm')."),
-  rightMargin: MarginSchema.optional().describe("Right margin (e.g., '1.25in', '3cm')."),
-  gutter: MarginSchema.optional().describe("Gutter margin (e.g., '0.5in')."),
-  headerDistance: MarginSchema.optional().describe("Distance from edge to header (e.g., '0.5in')."),
-  footerDistance: MarginSchema.optional().describe("Distance from edge to footer (e.g., '0.5in')."),
-  differentFirstPage: z.boolean().optional().describe("Different header/footer on the first page."),
-  oddAndEvenPages: z.boolean().optional().describe("Different headers/footers for odd and even pages."),
-}).refine(data => {
-    // Validar que al menos una propiedad de configuración esté presente para 'modify'
-    const configKeys = ['size', 'orientation', 'pageWidth', 'pageHeight', 'topMargin', 'bottomMargin', 'leftMargin', 'rightMargin', 'gutter', 'headerDistance', 'footerDistance', 'differentFirstPage', 'oddAndEvenPages'];
-    return configKeys.some(key => data[key as keyof typeof data] !== undefined);
-}, {
-    message: "For 'modify' operation, at least one configuration property to change must be provided.",
-    path: [], // Apply error to the whole object
-});
-
-
-// Esquema para GET (solo necesita filePath y opcionalmente sectionIndex)
-const PageSetupGetSchema = PageSetupBaseSchema;
-
-// Combinar esquemas para el handler
-const InputSchema = z.discriminatedUnion('operation', [
-  z.object({ operation: z.literal('get'), arguments: PageSetupGetSchema }),
-  z.object({ operation: z.literal('set'), arguments: PageSetupSetSchema }),
-  z.object({ operation: z.literal('modify'), arguments: PageSetupModifySchema }),
-]);
 // Inferir el tipo combinado para usar en el handler
-type InputSchemaType = z.infer<typeof InputSchema>;
+type WordPageInput = z.infer<typeof WordPageInputSchema>;
 
 
 // --- Funciones Auxiliares ---
@@ -191,10 +177,9 @@ async function getPageSetup(filePath: string, sectionIndex: number = 1): Promise
 /** Aplica la configuración de PageSetup a una sección específica */
 async function applyPageSetup(
     filePath: string,
-    // Usar los tipos específicos inferidos de Zod para set/modify
-    settings: z.infer<typeof PageSetupSetSchema> | z.infer<typeof PageSetupModifySchema>,
+    // Usar el tipo combinado para set/modify
+    settings: WordPageInput,
     sectionIndex: number = 1,
-    isModify: boolean = false // Flag para distinguir set/modify si es necesario
 ): Promise<void> {
     let wordApp: any = null;
     let doc: any = null;
@@ -253,7 +238,7 @@ async function applyPageSetup(
 
         await doc.Save();
         await doc.Close();
-        logger.info(`Page setup ${isModify ? 'modified' : 'set'} successfully for ${filePath}, section ${sectionIndex}.`);
+        logger.info(`Page setup applied/modified successfully for ${filePath}, section ${sectionIndex}.`);
 
     } catch (error: any) {
         logger.error(`Error applying page setup for ${filePath}, section ${sectionIndex}: ${error.message}`, { error, settings }); // Loguear el error completo y settings
@@ -282,7 +267,7 @@ async function applyPageSetup(
  *  - `get`: Retrieves the current page setup for the specified section. Requires `filePath`. Optional: `sectionIndex`.
  *  - `set`: Sets the page setup configuration for the specified section. Requires `filePath` and at least one setting (e.g., `size`, `orientation`, `margins`, `differentFirstPage`). Overwrites existing settings for the specified properties. Optional: `sectionIndex`.
  *  - `modify`: Modifies specific page setup properties for the specified section. Requires `filePath` and at least one setting to change. Leaves other settings untouched. Optional: `sectionIndex`.
- * @inputSchema See `InputSchema` (discriminated union based on `operation`). Uses `PageSetupGetSchema`, `PageSetupSetSchema`, `PageSetupModifySchema`. Margins/dimensions require units (in, cm, mm, pt). Size/Orientation use Word constants (e.g., `wdPaperA4`, `wdOrientLandscape`).
+ * @inputSchema See `WordPageInputSchema` (z.object). Uses combined properties from get/set/modify operations. Margins/dimensions require units (in, cm, mm, pt). Size/Orientation use Word constants (e.g., `wdPaperA4`, `wdOrientLandscape`).
  * @outputSchema `get`: Returns an object with page setup properties (values in points or Word constants). `set`/`modify`: Returns success status with null data.
  * @dependencies Requires Microsoft Word installed and accessible via COM Interop (`winax`).
  * @security Input `filePath` is validated using `validateFilePath`. Ensure Word COM security settings are appropriate.
@@ -291,53 +276,46 @@ async function applyPageSetup(
  * ```json
  * {
  *   "operation": "get",
- *   "arguments": {
- *     "filePath": "C:/path/to/document.docx",
- *     "sectionIndex": 1
- *   }
+ *   "filePath": "C:/path/to/document.docx",
+ *   "sectionIndex": 1
  * }
  * ```
  * @example_set
  * ```json
  * {
  *   "operation": "set",
- *   "arguments": {
- *     "filePath": "C:/path/to/document.docx",
- *     "size": "wdPaperA4",
- *     "orientation": "wdOrientLandscape",
- *     "topMargin": "1in",
- *     "bottomMargin": "2.5cm",
- *     "leftMargin": "72pt",
- *     "rightMargin": "30mm",
- *     "differentFirstPage": true
- *   }
+ *   "filePath": "C:/path/to/document.docx",
+ *   "size": "wdPaperA4",
+ *   "orientation": "wdOrientLandscape",
+   "topMargin": "1in",
+   "bottomMargin": "2.5cm",
+   "leftMargin": "72pt",
+   "rightMargin": "30mm",
+   "differentFirstPage": true
  * }
  * ```
  * @example_modify
  * ```json
  * {
  *   "operation": "modify",
- *   "arguments": {
- *     "filePath": "C:/path/to/document.docx",
- *     "orientation": "wdOrientPortrait",
- *     "leftMargin": "1.5in",
- *     "rightMargin": "1.5in",
- *     "oddAndEvenPages": false
- *   }
+ *   "filePath": "C:/path/to/document.docx",
+ *   "orientation": "wdOrientPortrait",
+ *   "leftMargin": "1.5in",
+ *   "rightMargin": "1.5in",
+ *   "oddAndEvenPages": false
  * }
  * ```
  */
-export const wordPageTool = { // Definir como objeto directamente
+export const wordPageTool: McpResource = { // Definir como objeto directamente
   path: 'word/page', // Añadir la propiedad path requerida por McpResource
-  name: 'word/page',
   description: 'Configures page layout settings (size, margins, orientation, headers/footers) in a Word document section.',
-  schema: InputSchema, // Renamed from inputSchema
+  schema: WordPageInputSchema, // Usar el nuevo esquema z.object
   // outputSchema: z.any(), // Opcional: definir esquema de salida si es estable
   async handler(params: ToolRequestParams, context?: FastMCPContext<any>): Promise<ApiResponse<any>> { // Hacer context opcional: context?: FastMCPContext<any>
-    // Validar y parsear los params genéricos usando el InputSchema específico
-    let validatedRequest: InputSchemaType;
+    // Validar y parsear los params genéricos usando el nuevo WordPageInputSchema
+    let validatedRequest: WordPageInput;
     try {
-      validatedRequest = InputSchema.parse(params);
+      validatedRequest = WordPageInputSchema.parse(params);
     } catch (error: any) {
        // Si la validación inicial falla, devolver un error de validación
        if (error instanceof z.ZodError) {
@@ -350,7 +328,7 @@ export const wordPageTool = { // Definir como objeto directamente
     }
 
     // Ahora usar validatedRequest que está correctamente tipado
-    const { operation, arguments: args } = validatedRequest;
+    const { operation, ...args } = validatedRequest; // Extraer operation y el resto como args
     const { filePath, sectionIndex } = args; // sectionIndex es opcional
 
     try {
@@ -359,17 +337,14 @@ export const wordPageTool = { // Definir como objeto directamente
 
       switch (operation) {
         case 'get':
-          // args ya está validado por Zod como PageSetupGetSchema
-          const config = await getPageSetup(filePath, args.sectionIndex); // Pasar sectionIndex
+          // args ya está validado por Zod como parte de WordPageInputSchema
+          const config = await getPageSetup(filePath, sectionIndex); // Pasar sectionIndex
           return { success: true, data: config };
         case 'set':
-          // args ya está validado por Zod como PageSetupSetSchema
-          await applyPageSetup(filePath, args, args.sectionIndex, false); // Pasar args completos y sectionIndex
-          return { success: true, data: null, message: `Page setup applied successfully to section ${args.sectionIndex || 1}.` }; // Añadir data: null
         case 'modify':
-          // args ya está validado por Zod como PageSetupModifySchema
-          await applyPageSetup(filePath, args, args.sectionIndex, true); // Pasar args completos, sectionIndex y flag modify
-          return { success: true, data: null, message: `Page setup modified successfully for section ${args.sectionIndex || 1}.` }; // Añadir data: null
+          // args ya está validado por Zod como parte de WordPageInputSchema
+          await applyPageSetup(filePath, validatedRequest, sectionIndex); // Pasar validatedRequest completo y sectionIndex
+          return { success: true, data: null, message: `Page setup ${operation}ed successfully for section ${sectionIndex || 1}.` }; // Añadir data: null y mensaje dinámico
         // No se necesita default case debido a Zod discriminatedUnion
       }
     } catch (error: any) {
