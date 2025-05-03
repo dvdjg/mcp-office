@@ -2,30 +2,30 @@
  * @file Configures the application logger using Winston or FastMCP based on environment variable.
  */
 import winston, { Logger } from 'winston';
-// Asumimos que fastmcp es un módulo disponible y exporta un logger llamado 'log'
-// Si no, esta importación fallará y habrá que ajustarla.
-// import { log as fastmcpLog } from 'fastmcp'; // Descomentar si fastmcp está disponible
+// Assuming fastmcp is an available module and exports a logger named 'log'
+// If not, this import will fail and need adjustment.
+// import { log as fastmcpLog } from 'fastmcp'; // Uncomment if fastmcp is available
 
-// Define la variable de entorno para seleccionar el logger
+// Define the environment variable to select the logger
 const loggerType = process.env.MCP_LOGGER_TYPE;
 
-let logger: Logger; // Añadir anotación de tipo explícita
+let logger: Logger; // Add explicit type annotation
 
 if (loggerType === 'fastmcp') {
-  // Usar el logger de fastmcp si la variable de entorno lo indica
-  // logger = fastmcpLog; // Descomentar si fastmcp está disponible
-  // Temporalmente, si fastmcp no está disponible, usamos el logger de Winston
+  // Use the fastmcp logger if the environment variable indicates
+  // logger = fastmcpLog; // Uncomment if fastmcp is available
+  // Temporarily, if fastmcp is not available, use the Winston logger
   console.warn("MCP_LOGGER_TYPE is set to 'fastmcp', but fastmcp logger is not fully integrated yet. Using default Winston logger.");
-  // Fallback a Winston si fastmcp no está listo o no se puede importar
+  // Fallback to Winston if fastmcp is not ready or cannot be imported
   logger = createWinstonLogger();
 
 } else {
-  // Usar el logger de Winston por defecto
+  // Use the default Winston logger
   logger = createWinstonLogger();
 }
 
-// Función para crear y configurar el logger de Winston
-function createWinstonLogger(): Logger { // Añadir anotación de tipo de retorno
+// Function to create and configure the Winston logger
+function createWinstonLogger(): Logger { // Add return type annotation
   const winstonLogger = winston.createLogger({
     level: process.env.LOG_LEVEL || 'debug',
     format: winston.format.combine(
@@ -43,13 +43,13 @@ function createWinstonLogger(): Logger { // Añadir anotación de tipo de retorn
     ],
   });
 
-  // Si no en producción Y no en modo STDIO, también log a la consola con salida colorizada
-  // Verificar si OFFICE_MCP_PORT está definido para inferir si se está ejecutando en modo SSE (no STDIO)
+  // If not in production AND not in STDIO mode, also log to the console with colorized output
+  // Check if OFFICE_MCP_PORT is defined to infer if it's running in SSE mode (not STDIO)
   if (process.env.NODE_ENV !== 'production' && process.env.OFFICE_MCP_PORT) {
     winstonLogger.add(new winston.transports.Console({
       format: winston.format.combine(
         winston.format.colorize(),
-        winston.format.simple() // Formato simple para consola
+        winston.format.simple() // Simple format for console
       ),
     }));
   }
@@ -57,6 +57,6 @@ function createWinstonLogger(): Logger { // Añadir anotación de tipo de retorn
 }
 
 
-// La lógica de fallback `const log = context?.log ?? logger;` se aplicará donde se use este logger.
-// Exportar el logger seleccionado
+// The fallback logic `const log = context?.log ?? logger;` will be applied where this logger is used.
+// Export the selected logger
 export default logger;
