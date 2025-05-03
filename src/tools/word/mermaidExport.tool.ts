@@ -7,6 +7,7 @@ import { handleToolError } from '@/utils/errorHandler'; // Import handleToolErro
 
 // Esquema de entrada para la herramienta word/mermaid/export
 const mermaidExportInputSchema = z.object({
+  type: z.literal('object'), // Added to satisfy validator
   filePath: z.string().describe('Ruta al documento Word.'),
   diagramIdentifier: z.string().optional().describe('Identificador del diagrama a exportar (p. ej., nombre del ContentControl).'),
   outputDirectory: z.string().describe('Directorio donde guardar el archivo del diagrama.'),

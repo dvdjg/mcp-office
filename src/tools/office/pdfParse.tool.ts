@@ -8,6 +8,7 @@ import * as fs from 'fs/promises';
 
 // Esquema de entrada para la herramienta office/pdf/parse
 const PdfParseInputSchema = z.object({
+  type: z.literal('object'), // Added to satisfy validator
   filePath: z.string().min(1, { message: 'filePath es requerido.' }),
   operation: z.enum(['parse', 'convert']),
   outputDirectory: z.string().optional(), // Requerido para 'convert'

@@ -97,7 +97,6 @@ const nestedToolsList = [
     wordTextTool,    // Array
     wordImageTools,  // Array
     // Single objects
-    wordMergeTool,
     wordSearchReplaceTool,
     wordTablesTool,
     wordChartsTool,
