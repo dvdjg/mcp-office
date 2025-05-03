@@ -106,17 +106,39 @@ npm run build
 ```
 
 ### Running the Server
-The Office MCP server runs by default using STDIO for communication.
+The Office MCP server runs by default using STDIO for local communication.
 
-To run the server using a specific port (e.g., 3000) for network communication, set the `OFFICE_MCP_PORT` environment variable:
+**File System Access Control:**
+For security, access to file system tools (`fs/`) is restricted. These tools are only available when the server is running in **STDIO mode (local execution)** AND the `ALLOWED_FS_PATHS` environment variable is **NOT** set to the literal value `"none"`.
+
+- If `OFFICE_MCP_PORT` is set (running in SSE mode), FS tools are disabled.
+- If `OFFICE_MCP_PORT` is not set (running in STDIO mode):
+    - If `ALLOWED_FS_PATHS` is set to `"none"`, FS tools are disabled.
+    - If `ALLOWED_FS_PATHS` is set to a list of paths (e.g., `/path/to/docs;/another/path`), FS tools are enabled, but operations are restricted to these paths and their subdirectories.
+    - If `ALLOWED_FS_PATHS` is not set (or is an empty string), FS tools are enabled, and all paths are allowed (use with caution!).
+
+**Configuring Allowed Paths:**
+Use the `ALLOWED_FS_PATHS` environment variable to specify directories where file system operations are permitted. Separate multiple paths with a semicolon (`;`) or a colon (`:`). The `~` character at the beginning of a path will be expanded to the user's home directory.
+
+Example:
 ```bash
-OFFICE_MCP_PORT=3000 npm start
+# Allow access to /docs and /data/user_files
+ALLOWED_FS_PATHS="/docs;./data/user_files" npm start
+
+# Allow access to the user's home directory and a specific project folder
+ALLOWED_FS_PATHS="~;/path/to/my/project" npm start
+
+# Disable all file system access
+ALLOWED_FS_PATHS="none" npm start
+
+# Allow all file system access (use with caution!)
+# (Do not set ALLOWED_FS_PATHS or set it to an empty string)
+npm start
 ```
 
-For production, use PM2:
+To run the server using a specific port (e.g., 3000) for network communication (disabling FS tools), set the `OFFICE_MCP_PORT` environment variable:
 ```bash
-npm install -g pm2
-pm2 start dist/server/index.js --name mcp-office
+OFFICE_MCP_PORT=3000 npm start
 ```
 
 For production, use PM2:
@@ -214,6 +236,13 @@ graph TD
 ### File System Tools
 
 Manage directories, files, and blobs like a filesystem ninja.
+
+**Path Handling and Security:**
+File system tools respect the `ALLOWED_FS_PATHS` environment variable for security.
+- If `ALLOWED_FS_PATHS` is defined (and not `"none"`), all file paths provided to FS tools must be within the specified directories or their subdirectories.
+- If `ALLOWED_FS_PATHS` is not defined (or is an empty string), all file paths are allowed.
+- The `~` character at the beginning of a path is supported and will be expanded to the user's home directory.
+- Multiple allowed paths can be separated by a semicolon (`;`) or a colon (`:`).
 
 #### `fs/directory`
 - **Description**: Read and manage directories.
@@ -751,7 +780,7 @@ We picked dependencies like choosing toppings for the perfect pizza:
 
 ### Security and Performance
 - **Security**:
-  - Path validation (`path.resolve`) stops directory traversal. **Note:** You can also use the `HOME/` prefix in paths defined in `ALLOWED_BASE_PATHS` (in `src/utils/security.ts`) to reference directories relative to the user's home directory (e.g., `HOME/Documents/MyProject`). This improves configuration portability across different environments.
+  - **Enhanced Path Validation**: Implemented robust path validation using `ALLOWED_FS_PATHS` environment variable to restrict file system operations to specified directories, preventing directory traversal. Supports `~` for home directory expansion.
   - `zod` schemas enforce input sanity.
   - Role-based access controls protect sensitive ops (implementation may vary).
   - Basic token authentication via FastMCP's `authenticate`.

@@ -36,12 +36,6 @@ export async function mergeDocuments(params: ToolRequestParams, context?: FastMC
         // return createErrorResponse('CONFIGURATION_ERROR', 'Tool context is missing required properties (log, reportProgress).');
     }
 
-    // TODO: Revisit how allowedPaths are determined. Using a placeholder for now.
-    // This should ideally come from server configuration or environment variables, not context.
-    const allowedPaths: string[] = ['C:\\Users\\David\\Documents\\MCP\\mcp-office\\datatest_files']; // Placeholder - REMOVE/REPLACE
-    log.warn("Using placeholder allowedPaths. TODO: Implement proper configuration loading.");
-
-
     let wordApp: any = null;
     let targetDoc: any = null;
     const sourceDocs: any[] = []; // Para llevar registro de los documentos fuente abiertos
@@ -51,29 +45,17 @@ export async function mergeDocuments(params: ToolRequestParams, context?: FastMC
         const validatedParams = mergeSchema.parse(params);
         log.info(`Validating input parameters for merge operation.`);
 
-        // Validar rutas de archivo using placeholder allowedPaths
-        const safeOutputPath = validateFilePath(validatedParams.output, allowedPaths);
-        if (!safeOutputPath) {
-            throw new Error(`Output path validation failed for: ${validatedParams.output}`);
-        }
-        // Asegurarse de que el directorio de salida existe y está permitido
-        const outputDir = path.dirname(safeOutputPath);
-        // First check if the exact directory is allowed (might be explicitly listed)
-        if (!validateFilePath(outputDir, allowedPaths)) {
-             // If not explicitly listed, check if it's within an allowed root path
-             const isAllowed = allowedPaths.some((allowedRoot: string) => outputDir.startsWith(allowedRoot));
-             if (!isAllowed) {
-                throw new Error(`Output directory validation failed for: ${outputDir}. Not within allowed paths.`);
-             }
-             // If it's within an allowed path, we assume it's okay to proceed (COM might create dirs or fail)
-             log.warn(`Output directory ${outputDir} is not explicitly listed but is within an allowed root. Proceeding.`);
-        }
-
+        // Validar rutas de archivo
+        const safeOutputPath = validateFilePath(validatedParams.output);
+        // validateFilePath now handles the allowed paths logic internally based on env vars.
+        // No need to pass allowedPaths or perform additional checks here.
 
         const safeSourcePaths: string[] = [];
         for (const docPath of validatedParams.docs) {
-            const safePath = validateFilePath(docPath, allowedPaths);
+            const safePath = validateFilePath(docPath);
             if (!safePath) {
+                // validateFilePath should throw an error if validation fails,
+                // so this check might be redundant, but kept for safety.
                 throw new Error(`Source path validation failed for: ${docPath}`);
             }
             safeSourcePaths.push(safePath);

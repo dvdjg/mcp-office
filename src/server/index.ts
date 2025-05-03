@@ -10,7 +10,7 @@ import { IncomingMessage } from 'http'; // Ensure IncomingMessage is imported
 import { allRegisteredTools, aiAssistantGuideResource } from '@/tools'; // Updated import
 import logger from '@/utils/logger';
 import { handleToolError, createErrorResponse } from '@/utils/errorHandler';
-import { validateFilePath } from '@/utils/security'; // Import validateFilePath
+import { validateFilePath, isFsAccessAllowed } from '@/utils/security'; // Import validateFilePath and isFsAccessAllowed
 // Import the actual getWordElementContent function
 import { getWordElementContent as getOfficeElementContentInterop } from '@/utils/officeInterop';
 import { McpResource, ToolRequestParams, ApiResponse } from '@/types/common.types'; // Removed SerializableValue import from here
@@ -78,8 +78,25 @@ logger.debug('FastMCP server instance created with authentication.'); // Added l
 // --- Register Tools ---
 logger.info(`Registering ${allRegisteredTools.length} tools...`);
 
+// Determine if the server is running in STDIO mode (local execution)
+const isStdioMode = !OFFICE_MCP_PORT;
+
 for (let i = 0; i < allRegisteredTools.length; i++) {
     const item: McpResource = allRegisteredTools[i];
+
+    // Check if the tool is an FS tool
+    const isFsTool = item.path.startsWith('fs/');
+
+    // If it's an FS tool, check if FS access is allowed and if running in STDIO mode
+    if (isFsTool) {
+        if (!isFsAccessAllowed || !isStdioMode) {
+            logger.info(`Skipping registration for FS tool '${item.path}' because FS access is disabled or not in STDIO mode.`);
+            continue; // Skip registration if conditions are not met
+        }
+        logger.info(`Registering FS tool '${item.path}' as FS access is allowed and in STDIO mode.`);
+    }
+
+
     // Ensure item has a schema before registering as a tool
     if (!item.schema) {
         logger.warn(`Skipping registration for item without schema at index ${i}: ${item.path}`);
