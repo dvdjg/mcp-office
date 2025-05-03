@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
 import { validateFilePath } from '../../utils/security';
 import { handleToolError } from '../../utils/errorHandler';
+import { saveResource } from '../dynamic/resources.tool'; // Importar saveResource
 // Import FastMCPContext and remove ToolContext
 import type {
     ApiResponse, // Type alias for SuccessResponse | ErrorResponse
@@ -110,6 +111,27 @@ async function searchAndReplace(
             log.info(`Saving document: ${safeFilePath}`);
             await doc.Save();
             log.info(`Document saved.`);
+
+            // Leer el contenido del documento modificado antes de cerrarlo
+            let modifiedContent = '';
+            try {
+                 // Leer el texto del documento COM object
+                 modifiedContent = doc.Content.Text;
+                 log.info(`Read content from modified document.`);
+             } catch (readContentError: any) {
+                 log.error(`Failed to read content from modified document before closing: ${readContentError.message}`);
+                 // No lanzar error aquí, intentar guardar el recurso vacío o con error
+             }
+
+            // Guardar el documento modificado como un recurso dinámico después de cerrarlo
+            try {
+                await saveResource('word/search-replace', path.basename(safeFilePath), modifiedContent);
+                log.info(`Saved ${safeFilePath} as a dynamic resource.`);
+            } catch (resourceSaveError: any) {
+                log.error(`Failed to save ${safeFilePath} as a dynamic resource: ${resourceSaveError.message}`);
+                // Continuar la ejecución aunque falle el guardado del recurso
+            }
+
         } else {
             log.info(`No replacements made, document not saved.`);
         }

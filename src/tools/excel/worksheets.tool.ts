@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { McpResource, ToolRequestParams } from '../../types/common.types';
 import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
+import { saveResource } from '../dynamic/resources.tool'; // Importar saveResource
+import * as fs from 'fs-extra'; // Importar fs para leer el archivo Excel
+import * as path from 'path'; // Importar path
 
 // Define el esquema de entrada para la herramienta excel/worksheets
 const ExcelWorksheetsInputSchema = z.object({
@@ -161,6 +164,22 @@ export const excelWorksheetsTool: McpResource[] = [{
       // Guardar los cambios y cerrar el libro
       workbook.Save();
       workbook.Close();
+
+      // Guardar el archivo Excel modificado como un recurso dinámico
+      // Solo si la operación modificó el archivo (add, delete, rename)
+      if (operation === 'add' || operation === 'delete' || operation === 'rename') {
+          try {
+              const excelContent = await fs.readFile(filePath, null); // Leer como Buffer
+              await saveResource('excel/worksheets', path.basename(filePath), excelContent);
+              // No usar context.log aquí, ya que el handler no recibe context
+              // logger.info(`Saved ${filePath} as a dynamic resource.`);
+          } catch (resourceSaveError: any) {
+              // No usar context.log aquí
+              // logger.error(`Failed to save ${filePath} as a dynamic resource: ${resourceSaveError.message}`);
+              // Continuar la ejecución aunque falle el guardado del recurso
+          }
+      }
+
 
       return { success: true, data: resultData };
 

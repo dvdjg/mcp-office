@@ -2,6 +2,9 @@ import { z } from 'zod';
 import { McpResource, ToolRequestParams, ApiResponse } from '../../types/common.types';
 import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
 import logger from '../../utils/logger'; // Importar logger
+import { saveResource } from '../dynamic/resources.tool'; // Importar saveResource
+import * as fs from 'fs-extra'; // Importar fs para leer el archivo PowerPoint
+import * as path from 'path'; // Importar path
 
 // Esquema de entrada para la herramienta powerpoint/slides
 const SlidesToolInputSchema = z.object({
@@ -34,10 +37,12 @@ const slidesTool: McpResource = {
   handler: async (params: ToolRequestParams): Promise<ApiResponse<any>> => {
     let pptApp: any = null;
     let presentation: any = null;
+    let filePath: string | undefined; // Declarar filePath fuera del try y permitir undefined
 
     try {
       const input = SlidesToolInputSchema.parse(params);
-      const { filePath, operation, slideIndex, slideLayout } = input;
+      filePath = input.filePath; // Asignar filePath aquí
+      const { operation, slideIndex, slideLayout } = input;
 
       // Obtener instancia de PowerPoint
       pptApp = await getOfficeApplication('PowerPoint.Application');
@@ -105,6 +110,20 @@ const slidesTool: McpResource = {
       if (presentation) {
         try {
             presentation.Save();
+            // Guardar el archivo PowerPoint modificado como un recurso dinámico
+            // Esto se hace en el finally porque Save() ocurre aquí para todas las operaciones de modificación.
+            // No necesitamos verificar la operación específica aquí.
+            // Asegurarse de que filePath tiene un valor antes de intentar leer el archivo
+            if (filePath) {
+                try {
+                    const pptContent = await fs.readFile(filePath, null); // Leer como Buffer
+                    await saveResource('powerpoint/slides', path.basename(filePath), pptContent);
+                    // logger.info(`Saved ${filePath} as a dynamic resource.`);
+                } catch (resourceSaveError: any) {
+                    // logger.error(`Failed to save ${filePath} as a dynamic resource: ${resourceSaveError.message}`);
+                    // Continuar la ejecución aunque falle el guardado del recurso
+                }
+            }
             presentation.Close();
         } catch (closeError: any) {
             logger.warn(`Error al cerrar la presentación: ${closeError.message}`); // Usar logger
@@ -114,6 +133,11 @@ const slidesTool: McpResource = {
       // La aplicación de PowerPoint se gestiona externamente, no la cerramos aquí.
       releaseObject(pptApp);
     }
+    // Añadir un retorno al final para cubrir todos los casos posibles
+    // Esto solo se alcanzará si no se lanzó un error o se retornó antes.
+    // En un escenario ideal, todos los casos del switch deberían retornar.
+    // Pero para satisfacer al linter, añadimos este retorno de fallback.
+    return { success: false, error: { code: 'UNHANDLED_CASE', message: 'La operación de diapositiva de PowerPoint no retornó un resultado explícito.' } };
   },
 };
 

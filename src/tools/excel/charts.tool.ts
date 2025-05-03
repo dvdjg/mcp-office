@@ -2,6 +2,9 @@ import { z } from 'zod';
 import { McpResource, ToolRequestParams, ApiResponse } from '../../types/common.types';
 import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
 import logger from '../../utils/logger'; // Importar logger
+import { saveResource } from '../dynamic/resources.tool'; // Importar saveResource
+import * as fs from 'fs-extra'; // Importar fs para leer el archivo Excel
+import * as path from 'path'; // Importar path
 
 // Definir el esquema de entrada para la herramienta excel/charts
 const ExcelChartsInputSchema = z.object({
@@ -42,12 +45,16 @@ const excelChartsTool: McpResource = {
     let excelApp: any = null;
     let workbook: any = null;
     let worksheet: any = null;
+    let filePath: string | undefined; // Declarar filePath fuera del try y permitir undefined
 
     try {
       const input = ExcelChartsInputSchema.parse(params);
+      filePath = input.filePath; // Asignar filePath aquí
+
+      const { operation, sheetName, sheetIndex, rangeAddress, chartType, chartTitle, chartIndex, chartName, position, newRangeAddress } = input;
 
       excelApp = await getOfficeApplication('Excel.Application');
-      workbook = excelApp.Workbooks.Open(input.filePath);
+      workbook = excelApp.Workbooks.Open(filePath);
 
       if (input.sheetName) {
         worksheet = workbook.Sheets(input.sheetName);
@@ -63,81 +70,81 @@ const excelChartsTool: McpResource = {
 
       const chartObjects = worksheet.ChartObjects();
 
-      switch (input.operation) {
+      switch (operation) {
         case 'insert': {
-          if (!input.rangeAddress || !input.chartType) {
+          if (!rangeAddress || !chartType) {
             throw new Error('Para insertar un gráfico, se requieren rangeAddress y chartType.');
           }
-          const range = worksheet.Range(input.rangeAddress);
+          const range = worksheet.Range(rangeAddress);
           if (!range) {
-            throw new Error(`Rango de datos "${input.rangeAddress}" no válido.`);
+            throw new Error(`Rango de datos "${rangeAddress}" no válido.`);
           }
 
           // winax puede requerir el valor numérico del tipo de gráfico
           // Aquí usamos un enfoque simple, se podría mapear strings a constantes COM
-          const chartType = excelApp.constants[input.chartType] || parseInt(input.chartType, 10);
-          if (isNaN(chartType)) {
-             throw new Error(`Tipo de gráfico "${input.chartType}" no reconocido.`);
+          const chartTypeValue = excelApp.constants[chartType] || parseInt(chartType, 10);
+          if (isNaN(chartTypeValue)) {
+             throw new Error(`Tipo de gráfico "${chartType}" no reconocido.`);
           }
 
           const chartObject = chartObjects.Add(0, 0, 300, 200); // Posición y tamaño inicial
           const chart = chartObject.Chart;
           chart.SetSourceData(range);
-          chart.ChartType = chartType;
+          chart.ChartType = chartTypeValue;
 
-          if (input.chartTitle) {
+          if (chartTitle) {
             chart.HasTitle = true;
-            chart.ChartTitle.Text = input.chartTitle;
+            chart.ChartTitle.Text = chartTitle;
           }
 
           // Reposicionar si se especifica
-          if (input.position) {
-            if (input.position.left !== undefined) chartObject.Left = input.position.left;
-            if (input.position.top !== undefined) chartObject.Top = input.position.top;
-            if (input.position.width !== undefined) chartObject.Width = input.position.width;
-            if (input.position.height !== undefined) chartObject.Height = input.position.height;
+          if (position) {
+            if (position.left !== undefined) chartObject.Left = position.left;
+            if (position.top !== undefined) chartObject.Top = position.top; // Corregido de position.position a position.top
+            if (position.width !== undefined) chartObject.Width = position.width;
+            if (position.height !== undefined) chartObject.Height = position.height;
           }
 
           return { success: true, data: 'Gráfico insertado correctamente.' }; // Retorno ajustado
         }
 
         case 'modify': {
-          if (!input.chartIndex && !input.chartName) {
+          if (!chartIndex && !chartName) {
             throw new Error('Para modificar un gráfico, se requiere chartIndex o chartName.');
           }
-          const chartObject = input.chartIndex ? chartObjects.Item(input.chartIndex) : chartObjects.Item(input.chartName);
+          const chartObject = chartIndex ? chartObjects.Item(chartIndex) : chartObjects.Item(chartName);
           if (!chartObject) {
-            throw new Error(`Gráfico con índice ${input.chartIndex} o nombre "${input.chartName}" no encontrado.`);
+            throw new Error(`Gráfico con índice ${chartIndex} o nombre "${chartName}" no encontrado.`);
           }
           const chart = chartObject.Chart;
 
-          if (input.newRangeAddress) {
-             const newRange = worksheet.Range(input.newRangeAddress);
+          if (newRangeAddress) {
+             const newRange = worksheet.Range(newRangeAddress);
              if (!newRange) {
-                throw new Error(`Nuevo rango de datos "${input.newRangeAddress}" no válido.`);
+                throw new Error(`Nuevo rango de datos "${newRangeAddress}" no válido.`);
              }
              chart.SetSourceData(newRange);
           }
 
-          if (input.chartType) {
-             const chartType = excelApp.constants[input.chartType] || parseInt(input.chartType, 10);
-             if (isNaN(chartType)) {
-                throw new Error(`Tipo de gráfico "${input.chartType}" no reconocido.`);
+          if (chartType) {
+             const chartTypeValue = excelApp.constants[chartType] || parseInt(chartType, 10);
+             if (isNaN(chartTypeValue)) {
+                throw new Error(`Tipo de gráfico "${chartType}" no reconocido.`);
              }
-             chart.ChartType = chartType;
+             chart.ChartType = chartTypeValue;
           }
 
-          if (input.chartTitle) {
+          if (chartTitle) {
             chart.HasTitle = true;
-            chart.ChartTitle.Text = input.chartTitle;
-          } else if (input.chartTitle === '') { // Permitir eliminar el título
+            chart.ChartTitle.Text = chartTitle;
+          } else if (chartTitle === '') { // Permitir eliminar el título
              chart.HasTitle = false;
           }
 
           // Modificar tamaño si se especifica
-          if (input.position) {
-            if (input.position.width !== undefined) chartObject.Width = input.position.width;
-            if (input.position.height !== undefined) chartObject.Height = input.position.height;
+          if (position) {
+            if (position.width !== undefined) chartObject.Width = position.width;
+            if (position.height !== undefined) chartObject.Height = position.height;
           }
 
 
@@ -145,33 +152,33 @@ const excelChartsTool: McpResource = {
         }
 
         case 'delete': {
-          if (!input.chartIndex && !input.chartName) {
+          if (!chartIndex && !chartName) {
             throw new Error('Para eliminar un gráfico, se requiere chartIndex o chartName.');
           }
-          const chartObject = input.chartIndex ? chartObjects.Item(input.chartIndex) : chartObjects.Item(input.chartName);
+          const chartObject = chartIndex ? chartObjects.Item(chartIndex) : chartObjects.Item(chartName);
           if (!chartObject) {
-            throw new Error(`Gráfico con índice ${input.chartIndex} o nombre "${input.chartName}" no encontrado.`);
+            throw new Error(`Gráfico con índice ${chartIndex} o nombre "${chartName}" no encontrado.`);
           }
           chartObject.Delete();
           return { success: true, data: 'Gráfico eliminado correctamente.' }; // Retorno ajustado
         }
 
         case 'reposition': {
-          if (!input.chartIndex && !input.chartName) {
+          if (!chartIndex && !chartName) {
             throw new Error('Para reposicionar un gráfico, se requiere chartIndex o chartName.');
           }
-           if (!input.position) {
+           if (!position) {
              throw new Error('Para reposicionar un gráfico, se requiere la propiedad position.');
            }
-          const chartObject = input.chartIndex ? chartObjects.Item(input.chartIndex) : chartObjects.Item(input.chartName);
+          const chartObject = chartIndex ? chartObjects.Item(chartIndex) : chartObjects.Item(chartName);
           if (!chartObject) {
-            throw new Error(`Gráfico con índice ${input.chartIndex} o nombre "${input.chartName}" no encontrado.`);
+            throw new Error(`Gráfico con índice ${chartIndex} o nombre "${chartName}" no encontrado.`);
           }
 
-          if (input.position.left !== undefined) chartObject.Left = input.position.left;
-          if (input.position.top !== undefined) chartObject.Top = input.position.top;
-          if (input.position.width !== undefined) chartObject.Width = input.position.width; // Permitir modificar tamaño al reposicionar
-          if (input.position.height !== undefined) chartObject.Height = input.position.height; // Permitir modificar tamaño al reposicionar
+          if (position.left !== undefined) chartObject.Left = position.left;
+          if (position.top !== undefined) chartObject.Top = position.top;
+          if (position.width !== undefined) chartObject.Width = position.width; // Permitir modificar tamaño al reposicionar
+          if (position.height !== undefined) chartObject.Height = position.height; // Permitir modificar tamaño al reposicionar
 
 
           return { success: true, data: 'Gráfico reposicionado correctamente.' }; // Retorno ajustado
@@ -196,7 +203,7 @@ const excelChartsTool: McpResource = {
         }
 
         default:
-          throw new Error(`Operación "${input.operation}" no soportada.`);
+          throw new Error(`Operación "${operation}" no soportada.`);
       }
     } catch (error: any) {
       // Aquí puedes usar tu manejador de errores si tienes uno centralizado
@@ -206,6 +213,20 @@ const excelChartsTool: McpResource = {
       if (workbook) {
         try {
             workbook.Save();
+            // Guardar el archivo Excel modificado como un recurso dinámico
+            // Esto se hace en el finally porque Save() ocurre aquí para todas las operaciones de modificación.
+            // No necesitamos verificar la operación específica aquí.
+            // Asegurarse de que filePath tiene un valor antes de intentar leer el archivo
+            if (filePath) {
+                try {
+                    const excelContent = await fs.readFile(filePath, null); // Leer como Buffer
+                    await saveResource('excel/charts', path.basename(filePath), excelContent);
+                    // logger.info(`Saved ${filePath} as a dynamic resource.`);
+                } catch (resourceSaveError: any) {
+                    // logger.error(`Failed to save ${filePath} as a dynamic resource: ${resourceSaveError.message}`);
+                    // Continuar la ejecución aunque falle el guardado del recurso
+                }
+            }
             workbook.Close();
         } catch (closeError: any) {
             // Ignorar errores al cerrar si ya hubo un error principal
@@ -216,6 +237,11 @@ const excelChartsTool: McpResource = {
       // La aplicación de Excel se gestiona externamente, no la cerramos aquí.
       releaseObject(excelApp);
     }
+    // Añadir un retorno al final para cubrir todos los casos posibles
+    // Esto solo se alcanzará si no se lanzó un error o se retornó antes.
+    // En un escenario ideal, todos los casos del switch deberían retornar.
+    // Pero para satisfacer al linter, añadimos este retorno de fallback.
+    return { success: false, error: { code: 'UNHANDLED_CASE', message: 'La operación de gráfico de Excel no retornó un resultado explícito.' } };
   },
 };
 

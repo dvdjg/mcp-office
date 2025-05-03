@@ -1,6 +1,9 @@
 import { z } from 'zod';
-import { McpResource } from '../../types/common.types';
+import { McpResource, ToolRequestParams } from '../../types/common.types';
 import { getOfficeApplication } from '../../utils/officeInterop';
+import { saveResource } from '../dynamic/resources.tool'; // Importar saveResource
+import * as fs from 'fs-extra'; // Importar fs para leer el archivo Excel
+import * as path from 'path'; // Importar path
 
 // Define el esquema de entrada para la herramienta excel/range
 const ExcelRangeInputSchema = z.object({
@@ -85,6 +88,15 @@ const excelRangeTool: McpResource = {
              range.Value = input.values;
           }
           workbook.Save();
+          // Guardar el archivo Excel modificado como un recurso dinámico
+          try {
+              const excelContent = await fs.readFile(input.filePath, null); // Leer como Buffer
+              await saveResource('excel/range', path.basename(input.filePath), excelContent);
+              // logger.info(`Saved ${input.filePath} as a dynamic resource.`);
+          } catch (resourceSaveError: any) {
+              // logger.error(`Failed to save ${input.filePath} as a dynamic resource: ${resourceSaveError.message}`);
+              // Continuar la ejecución aunque falle el guardado del recurso
+          }
           return { success: true, data: null, message: `Valores escritos en el rango "${input.rangeAddress}".` }; // Incluir data: null
 
         case 'format':
@@ -111,6 +123,15 @@ const excelRangeTool: McpResource = {
             }
           }
           workbook.Save();
+          // Guardar el archivo Excel modificado como un recurso dinámico
+          try {
+              const excelContent = await fs.readFile(input.filePath, null); // Leer como Buffer
+              await saveResource('excel/range', path.basename(input.filePath), excelContent);
+              // logger.info(`Saved ${input.filePath} as a dynamic resource.`);
+          } catch (resourceSaveError: any) {
+              // logger.error(`Failed to save ${input.filePath} as a dynamic resource: ${resourceSaveError.message}`);
+              // Continuar la ejecución aunque falle el guardado del recurso
+          }
           return { success: true, data: null, message: `Formato aplicado al rango "${input.rangeAddress}".` }; // Incluir data: null
 
         case 'apply':
@@ -124,6 +145,15 @@ const excelRangeTool: McpResource = {
             }
           }
           workbook.Save();
+          // Guardar el archivo Excel modificado como un recurso dinámico
+          try {
+              const excelContent = await fs.readFile(input.filePath, null); // Leer como Buffer
+              await saveResource('excel/range', path.basename(input.filePath), excelContent);
+              // logger.info(`Saved ${input.filePath} as a dynamic resource.`);
+          } catch (resourceSaveError: any) {
+              // logger.error(`Failed to save ${input.filePath} as a dynamic resource: ${resourceSaveError.message}`);
+              // Continuar la ejecución aunque falle el guardado del recurso
+          }
           return { success: true, data: null, message: `Propiedades aplicadas al rango "${input.rangeAddress}".` }; // Incluir data: null
 
         default:

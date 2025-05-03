@@ -2,6 +2,9 @@ import { z } from 'zod';
 import { McpResource, ToolRequestParams, ApiResponse } from '../../types/common.types';
 import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
 import logger from '../../utils/logger'; // Importar logger
+import { saveResource } from '../dynamic/resources.tool'; // Importar saveResource
+import * as fs from 'fs-extra'; // Importar fs para leer el archivo Excel
+import * as path from 'path'; // Importar path
 
 // Esquema de entrada para la herramienta excel/tables
 const ExcelTablesInputSchema = z.object({
@@ -35,10 +38,12 @@ const excelTablesTool: McpResource = {
     let excelApp: any = null;
     let workbook: any = null;
     let worksheet: any = null;
+    let filePath: string | undefined; // Declarar filePath fuera del try y permitir undefined
 
     try {
       const input = ExcelTablesInputSchema.parse(params);
-      const { filePath, operation, sheetName, sheetIndex, rangeAddress, tableName, data, location, count, position } = input;
+      filePath = input.filePath; // Asignar filePath aquí
+      const { operation, sheetName, sheetIndex, rangeAddress, tableName, data, location, count, position } = input;
 
       excelApp = await getOfficeApplication('Excel.Application'); // Usar getOfficeApplication
       workbook = excelApp.Workbooks.Open(filePath);
@@ -183,6 +188,20 @@ const excelTablesTool: McpResource = {
       if (workbook) {
         try {
             workbook.Save();
+            // Guardar el archivo Excel modificado como un recurso dinámico
+            // Esto se hace en el finally porque Save() ocurre aquí para todas las operaciones de modificación.
+            // No necesitamos verificar la operación específica aquí.
+            // Asegurarse de que filePath tiene un valor antes de intentar leer el archivo
+            if (filePath) {
+                try {
+                    const excelContent = await fs.readFile(filePath, null); // Leer como Buffer
+                    await saveResource('excel/tables', path.basename(filePath), excelContent);
+                    // logger.info(`Saved ${filePath} as a dynamic resource.`);
+                } catch (resourceSaveError: any) {
+                    // logger.error(`Failed to save ${filePath} as a dynamic resource: ${resourceSaveError.message}`);
+                    // Continuar la ejecución aunque falle el guardado del recurso
+                }
+            }
             workbook.Close();
         } catch (closeError: any) {
             logger.warn(`Error al cerrar el libro de trabajo: ${closeError.message}`); // Usar logger
@@ -192,6 +211,11 @@ const excelTablesTool: McpResource = {
       // La aplicación de Excel se gestiona externamente, no la cerramos aquí.
       releaseObject(excelApp);
     }
+    // Añadir un retorno al final para cubrir todos los casos posibles
+    // Esto solo se alcanzará si no se lanzó un error o se retornó antes.
+    // En un escenario ideal, todos los casos del switch deberían retornar.
+    // Pero para satisfacer al linter, añadimos este retorno de fallback.
+    return { success: false, error: { code: 'UNHANDLED_CASE', message: 'La operación de tabla de Excel no retornó un resultado explícito.' } };
   },
 };
 

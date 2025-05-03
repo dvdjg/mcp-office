@@ -8,6 +8,19 @@ import logger from '@/utils/logger'; // Importar logger
 // Directorio base para almacenar recursos dinámicos
 const DYNAMIC_STORAGE_DIR = path.join(__dirname, '..', '..', '..', 'dynamic_storage');
 
+// Opciones de configuración para el sistema de recursos
+const RESOURCE_SYSTEM_ENABLED = process.env.RESOURCE_SYSTEM_ENABLED !== 'false'; // Habilitado por defecto
+const RESOURCE_LIMIT_PER_TYPE = process.env.RESOURCE_LIMIT_PER_TYPE ? parseInt(process.env.RESOURCE_LIMIT_PER_TYPE, 10) : undefined; // Límite por tipo de recurso
+const RESOURCE_LIMIT_TOTAL = process.env.RESOURCE_LIMIT_TOTAL ? parseInt(process.env.RESOURCE_LIMIT_TOTAL, 10) : undefined; // Límite total
+
+// Estructura de directorios virtual: <tool_name>/<YYYY-MM-DD>/<filename>
+const getOrganizedResourcePath = (toolName: string, filename: string): string => {
+  const today = new Date();
+  const datePath = today.toISOString().split('T')[0]; // YYYY-MM-DD
+  const resourceRelativePath = path.join(toolName, datePath, filename);
+  return path.join(DYNAMIC_STORAGE_DIR, resourceRelativePath);
+};
+
 // Inicializar caché para metadatos (opcional, para mejorar rendimiento)
 const metadataCache = new NodeCache({ stdTTL: 600, checkperiod: 120 }); // Cache por 10 minutos
 
@@ -49,15 +62,49 @@ const DynamicResourcesInputSchema = z.object({
 type DynamicResourcesInput = z.infer<typeof DynamicResourcesInputSchema>;
 
 
-// Función para obtener la ruta completa de un recurso
-const getResourcePath = (filePath: string): string => {
-  const fullPath = path.join(DYNAMIC_STORAGE_DIR, filePath);
+// Función para obtener la ruta completa de un recurso a partir de su ruta relativa dentro de dynamic_storage
+const getFullPathFromRelative = (relativePath: string): string => {
+  const fullPath = path.join(DYNAMIC_STORAGE_DIR, relativePath);
   // Asegurarse de que la ruta esté dentro del directorio de almacenamiento dinámico
   // Esto es una validación de seguridad crucial
   if (!fullPath.startsWith(DYNAMIC_STORAGE_DIR)) {
     throw new Error('Acceso denegado: la ruta del recurso está fuera del directorio de almacenamiento permitido.');
   }
   return fullPath;
+};
+
+// Función para guardar un recurso con la estructura organizada
+const saveResource = async (toolName: string, filename: string, content: string | Buffer): Promise<string> => {
+  if (!RESOURCE_SYSTEM_ENABLED) {
+    logger.info('[dynamic/resources] Resource system is disabled. Skipping save.');
+    return ''; // Devolver cadena vacía o similar si está deshabilitado
+  }
+
+  const fullPath = getOrganizedResourcePath(toolName, filename);
+  await fs.ensureDir(path.dirname(fullPath)); // Asegurar que el directorio padre exista
+  await fs.writeFile(fullPath, content); // Usar writeFile que maneja strings y Buffers
+
+  // Implementar lógica de límites aquí si es necesario
+  // Esto podría ser complejo (listar todos los archivos, ordenar por fecha, eliminar los más antiguos)
+  // Por ahora, solo guardamos. La lógica de límites se puede añadir después.
+
+  // Devolver la ruta relativa dentro de dynamic_storage
+  return path.relative(DYNAMIC_STORAGE_DIR, fullPath);
+};
+
+// Función para eliminar recursos antiguos según los límites configurados
+const enforceResourceLimits = async () => {
+  if (!RESOURCE_SYSTEM_ENABLED || (!RESOURCE_LIMIT_PER_TYPE && !RESOURCE_LIMIT_TOTAL)) {
+    return; // No hacer nada si el sistema está deshabilitado o no hay límites configurados
+  }
+
+  logger.info('[dynamic/resources] Enforcing resource limits...');
+
+  // Implementación de límites (simplificada por ahora)
+  // Esto requeriría listar todos los archivos, agruparlos por tipo/herramienta,
+  // ordenar por fecha de modificación y eliminar los excedentes.
+  // Dada la complejidad, esta parte se deja como un TODO para una implementación futura más robusta.
+  logger.warn('[dynamic/resources] Resource limit enforcement is not fully implemented yet.');
 };
 
 // Implementación del manejador del recurso
@@ -104,29 +151,54 @@ const handler = async (params: ToolRequestParams, context?: FastMCPContext<any>)
 
     switch (operation) {
       case 'list': {
-        const files = await fs.readdir(DYNAMIC_STORAGE_DIR);
-        // Implementación básica de listado, se podría añadir filtrado por tipo o búsqueda aquí
-        // Para una búsqueda completa, se usaría la operación 'search'
-        const resources = await Promise.all(files.map(async (file) => {
-          const filePath = path.join(DYNAMIC_STORAGE_DIR, file);
-          const stats = await fs.stat(filePath);
-          return {
-            id: file, // Usar el nombre del archivo como ID simple
-            name: file,
-            type: stats.isDirectory() ? 'directory' : 'file', // Tipo básico
-            createdAt: stats.birthtime,
-            updatedAt: stats.mtime,
-            size: stats.size,
-            filePath: file, // Ruta relativa
-          };
-        }));
-        const filteredResources = type ? resources.filter(res => res.type === type) : resources;
+        // Listar recursos de forma recursiva para reflejar la estructura organizada
+        const listFilesRecursively = async (dir: string, relativeDir = ''): Promise<any[]> => {
+          const entries = await fs.readdir(dir, { withFileTypes: true });
+          let resources: any[] = [];
+
+          for (const entry of entries) {
+            const fullPath = path.join(dir, entry.name);
+            const relativePath = path.join(relativeDir, entry.name);
+            const stats = await fs.stat(fullPath);
+
+            if (entry.isDirectory()) {
+              // Si es un directorio, listar recursivamente
+              resources.push({
+                id: relativePath,
+                name: entry.name,
+                type: 'directory',
+                filePath: relativePath,
+                createdAt: stats.birthtime,
+                updatedAt: stats.mtime,
+                size: stats.size, // Tamaño del directorio puede no ser preciso
+              });
+              resources = resources.concat(await listFilesRecursively(fullPath, relativePath));
+            } else {
+              // Si es un archivo
+              resources.push({
+                id: relativePath,
+                name: entry.name,
+                type: 'file',
+                filePath: relativePath,
+                createdAt: stats.birthtime,
+                updatedAt: stats.mtime,
+                size: stats.size,
+              });
+            }
+          }
+          return resources;
+        };
+
+        const allResources = await listFilesRecursively(DYNAMIC_STORAGE_DIR);
+        // Filtrar por tipo si se especifica
+        const filteredResources = type ? allResources.filter(res => res.type === type) : allResources;
+
         return { success: true, data: filteredResources };
       }
 
       case 'read': {
         // Validar que se proporcionó filePath o resourceId (ya hecho en refine)
-        const targetPath = filePath ? getResourcePath(filePath) : (resourceId ? getResourcePath(resourceId) : undefined);
+        const targetPath = filePath ? getFullPathFromRelative(filePath) : (resourceId ? getFullPathFromRelative(resourceId) : undefined);
         if (!targetPath) throw new Error("filePath or resourceId is required for 'read' operation.");
 
         if (!await fs.pathExists(targetPath)) {
@@ -137,20 +209,24 @@ const handler = async (params: ToolRequestParams, context?: FastMCPContext<any>)
       }
 
       case 'write': {
-        // Validar que filePath y content no sean undefined (ya hecho en refine)
-        if (!filePath || content === undefined) throw new Error("filePath and content are required for 'write' operation.");
-
-        const fullPath = getResourcePath(filePath);
-        await fs.ensureDir(path.dirname(fullPath)); // Asegurar que el directorio padre exista
-        await fs.writeFile(fullPath, content, 'utf-8');
-        // Invalidar caché para este recurso si existía
-        metadataCache.del(filePath);
-        return { success: true, data: { filePath: filePath } };
+        // Esta operación ahora se usará internamente por otras herramientas a través de saveResource
+        // No debería ser llamada directamente por el cliente con esta lógica.
+        // Podríamos mantenerla para flexibilidad, pero la lógica de organización y límites
+        // debería pasar por saveResource.
+        // Por ahora, la dejamos como estaba, pero con la validación de ruta completa.
+         if (!filePath || content === undefined) throw new Error("filePath and content are required for 'write' operation.");
+         const fullPath = getFullPathFromRelative(filePath);
+         await fs.ensureDir(path.dirname(fullPath));
+         await fs.writeFile(fullPath, content, 'utf-8');
+         metadataCache.del(filePath);
+         // Después de escribir, aplicar límites
+         await enforceResourceLimits();
+         return { success: true, data: { filePath: filePath } };
       }
 
       case 'delete': {
         // Validar que se proporcionó filePath o resourceId (ya hecho en refine)
-        const targetPath = filePath ? getResourcePath(filePath) : (resourceId ? getResourcePath(resourceId) : undefined);
+        const targetPath = filePath ? getFullPathFromRelative(filePath) : (resourceId ? getFullPathFromRelative(resourceId) : undefined);
         if (!targetPath) throw new Error("filePath or resourceId is required for 'delete' operation.");
 
          if (!await fs.pathExists(targetPath)) {
@@ -160,12 +236,14 @@ const handler = async (params: ToolRequestParams, context?: FastMCPContext<any>)
         // Invalidar caché para este recurso
         const cacheKey = filePath || resourceId;
         if (cacheKey) metadataCache.del(cacheKey); // Invalidar usando filePath o resourceId
+        // Después de eliminar, aplicar límites (esto podría ser redundante si la eliminación fue manual)
+        await enforceResourceLimits();
         return { success: true, data: { filePath: filePath || resourceId } };
       }
 
       case 'metadata': {
         // Validar que se proporcionó filePath o resourceId (ya hecho en refine)
-        const targetPath = filePath ? getResourcePath(filePath) : (resourceId ? getResourcePath(resourceId) : undefined);
+        const targetPath = filePath ? getFullPathFromRelative(filePath) : (resourceId ? getFullPathFromRelative(resourceId) : undefined);
         if (!targetPath) throw new Error("filePath or resourceId is required for 'metadata' operation.");
 
         const cacheKey = filePath || resourceId; // Usar filePath o resourceId como clave de caché
@@ -200,24 +278,43 @@ const handler = async (params: ToolRequestParams, context?: FastMCPContext<any>)
 
         // Implementación básica de búsqueda: buscar archivos que contengan la consulta en su nombre
         // Una implementación más avanzada podría indexar contenido o usar herramientas de búsqueda dedicadas
-        const files = await fs.readdir(DYNAMIC_STORAGE_DIR);
-        const matchingFiles = files.filter(file => file.includes(query!));
+        // Para buscar en la estructura organizada, necesitamos listar recursivamente primero
+        const listFilesRecursively = async (dir: string, relativeDir = ''): Promise<string[]> => {
+            const entries = await fs.readdir(dir, { withFileTypes: true });
+            let filePaths: string[] = [];
 
-        const resources = await Promise.all(matchingFiles.map(async (file) => {
-           const filePath = path.join(DYNAMIC_STORAGE_DIR, file);
-           const stats = await fs.stat(filePath);
+            for (const entry of entries) {
+                const fullPath = path.join(dir, entry.name);
+                const relativePath = path.join(relativeDir, entry.name);
+
+                if (entry.isDirectory()) {
+                    filePaths = filePaths.concat(await listFilesRecursively(fullPath, relativePath));
+                } else {
+                    filePaths.push(relativePath);
+                }
+            }
+            return filePaths;
+        };
+
+        const allRelativePaths = await listFilesRecursively(DYNAMIC_STORAGE_DIR);
+        const matchingRelativePaths = allRelativePaths.filter(relativePath => relativePath.includes(query!));
+
+        const resources = await Promise.all(matchingRelativePaths.map(async (relativePath) => {
+           const fullPath = getFullPathFromRelative(relativePath);
+           const stats = await fs.stat(fullPath);
            return {
-             id: file,
-             name: file,
-             type: stats.isDirectory() ? 'directory' : 'file',
+             id: relativePath,
+             name: path.basename(relativePath),
+             type: 'file', // Asumimos que la búsqueda es solo en archivos por ahora
              createdAt: stats.birthtime,
              updatedAt: stats.mtime,
              size: stats.size,
-             filePath: file,
+             filePath: relativePath,
            };
-        }));
-        // Opcional: filtrar por tipo si se especifica
+         }));
+        // Opcional: filtrar por tipo si se especifica (aunque la búsqueda actual es solo en nombres de archivo)
         const filteredResources = type ? resources.filter(res => res.type === type) : resources;
+
 
         return { success: true, data: filteredResources };
       }
@@ -233,6 +330,9 @@ const handler = async (params: ToolRequestParams, context?: FastMCPContext<any>)
     return { success: false, error: { code: 'TOOL_EXECUTION_ERROR', message: `Error en la herramienta dynamic/resources: ${message}`, details: String(error) } }; // Devolver ErrorResponse
   }
 };
+
+// Exportar la función saveResource para que otras herramientas puedan usarla
+export { saveResource };
 
 // Definición de la herramienta McpResource
 export const dynamicResourcesTool: McpResource[] = [{

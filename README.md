@@ -40,10 +40,16 @@ This README is your map to Office MCP mastery. Hit the **Quick Start** for insta
    - [Use Case 4: Markdown Import Mania](#use-case-4-markdown-import-mania)
    - [Use Case 5: Reformatting Rescue](#use-case-5-reformatting-rescue)
    - [Use Case 6: Embedded Object Extraction Extravaganza](#use-case-6-embedded-object-extraction-extravaganza)
-   - [Use Case 7: Mermaid Import Marvel](#use-case-7-mermaid-import-marvel)
+   - [Use Case 7: Embedded Object Insertion Innovation](#use-case-7-embedded-object-insertion-innovation)
+   - [Use Case 8: Embedded Object Modification Magic](#use-case-8-embedded-object-modification-magic)
+   - [Use Case 9: Embedded Object Deletion Duty](#use-case-9-embedded-object-deletion-duty)
+   - [Use Case 10: Mermaid Import Marvel](#use-case-10-mermaid-import-marvel)
    - [Use Case 8: Mermaid Export Escapade](#use-case-8-mermaid-export-escapade)
    - [Use Case 9: Analysis Antics](#use-case-9-analysis-antics)
    - [Use Case 10: Code Formatting Fiesta](#use-case-10-code-formatting-fiesta)
+   - [Use Case 11: Instant Image Injection](#use-case-11-instant-image-injection)
+   - [Use Case 12: AI Ghostwriter for the Win](#use-case-12-ai-ghostwriter-for-the-win)
+   - [Use Case 13: Surgical Strike Styling with URIs](#use-case-13-surgical-strike-styling-with-uris)
 5. [Interacting with an AI Using Office MCP](#interacting-with-an-ai-using-mcp)
    - [Example 1: Merging Documents](#example-1-merging-documents)
    - [Example 2: Formatting Code](#example-2-formatting-code)
@@ -65,6 +71,7 @@ Picture this: You’re drowning in a sea of Word documents, Excel spreadsheets, 
 - **AI Smarts**: FastMCP prompts let AI suggest formatting, analyze content, or merge documents like a seasoned editor.
 - **Modern and Scalable**: Built for 2025, with TypeScript, RESTful APIs, and cross-platform support.
 - **Developer-Friendly**: Modular tools, clear docs, and a static guide (`memory://ai_assistant_guide`) make integration a breeze.
+- **Rock-Solid**: >90% test coverage means it’s ready for your wildest automation adventures. Includes basic `authenticate` support.
 
 Office MCP leaves alternatives in the dust. Python’s `win32com` is Windows-only and verbose. Office add-ins can’t handle complex tasks like merging or Markdown conversion. Office MCP is the future, and it’s here to make your Office life *fabulous*.
 
@@ -454,19 +461,34 @@ Manage guides and user content.
   curl -X GET "http://localhost:3000/memory/ai_assistant_guide?section=tool_usage"
   ```
 
-#### `dynamic/resources`
-- **Description**: Manage user-generated content (docs, images, etc.).
-- **Operations**:
-  - `list`: List resources
-  - `read`: Retrieve content
-  - `write`: Upload/modify
-  - `delete`: Remove
-  - `metadata`: Get/set metadata
-  - `search`: Search by content/metadata
-- **Example**:
-  ```bash
-  curl -X GET "http://localhost:3000/dynamic/resources/list?type=docx"
-  ```
+#### Dynamic Resource Management System
+Office MCP includes a dynamic resource management system to automatically store files generated or used by the Office tools. This system helps organize and manage output files, logs, and other relevant resources.
+
+**Storage Location:**
+Resources are stored in the `/dynamic_storage` directory within the workspace.
+
+**Directory Structure:**
+Files are organized within `/dynamic_storage` using the following virtual directory structure:
+`/dynamic_storage/<tool_name>/<YYYY-MM-DD>/<filename>`
+This structure allows for easy identification of which tool generated a file and when.
+
+**`dynamic/resources` Tool:**
+The `dynamic/resources` tool provides operations to interact with this system:
+- `list`: List available resources, with optional filtering by type.
+- `read`: Retrieve the content of a specific resource by its relative path within `/dynamic_storage`.
+- `write`: Manually save content as a resource (primarily used internally by other tools).
+- `delete`: Remove a specific resource by its relative path.
+- `metadata`: Get metadata (size, dates, etc.) for a resource.
+- `search`: Search for resources by filename or (basic) content.
+
+**Configuration:**
+The behavior of the dynamic resource system can be configured using environment variables:
+- `RESOURCE_SYSTEM_ENABLED`: Set to `false` to disable the resource system entirely. Defaults to `true`.
+- `RESOURCE_LIMIT_PER_TYPE`: Set a positive integer to limit the number of resources stored *per tool*. When the limit is reached for a tool, the oldest resources for that tool will be automatically deleted. (Note: This feature is planned but may not be fully implemented in the current version).
+- `RESOURCE_LIMIT_TOTAL`: Set a positive integer to limit the total number of resources stored across all tools. When the total limit is reached, the oldest resources overall will be automatically deleted. (Note: This feature is planned but may not be fully implemented in the current version).
+
+**Integration:**
+Office MCP tools that generate or modify files (e.g., Word export/import, Excel table operations, PDF export) are integrated to automatically save relevant output files into the dynamic resource system using the structured directory format.
 
 **Visual Overview**:
 ```mermaid
@@ -638,16 +660,16 @@ Office MCP uses `word/image/insert` to inject your chosen image right after para
 # Assuming a prompt 'write-conclusion' is defined
 curl -X POST "http://localhost:3000/word/generate-and-insert-text?document=/docs/MiNovela.docx&prompt=write-conclusion&position=end"
 ```
-With `word/generate-and-insert-text` and a suitable prompt, Office MCP's AI crafts a stunning conclusion and appends it to your document. You just beat writer's block with the power of silicon! Take that, blank page!
+With `word/generate-and-insert-text` and a suitable prompt, Office MCP’s AI crafts a stunning conclusion and appends it to your document. You just beat writer’s block with the power of silicon! Take that, blank page!
 
 ### Use Case 13: Surgical Strike Styling with URIs
-**Scenario**: You need to apply the "Emphasis" style *only* to the fifth paragraph of `DiscursoMotivador.docx`. Manually finding it is tedious, and applying it document-wide is overkill. You need precision! 🎯
+**Scenario**: You need to apply the “Emphasis” style *only* to the fifth paragraph of `DiscursoMotivador.docx`. Manually finding it is tedious, and applying it document-wide is overkill. You need precision! 🎯
 
 **Solution**:
 ```bash
 curl -X POST "http://localhost:3000/word/styles/apply?document=office://docs/DiscursoMotivador.docx?range=paragraph:5&style=Emphasis"
 ```
-Using the `office://` URI scheme, `word/styles/apply` targets *exactly* paragraph 5. It's like performing microsurgery on your document, but without the tiny scalpels. Perfect emphasis, zero collateral damage.
+Using the `office://` URI scheme, `word/styles/apply` targets *exactly* paragraph 5. It’s like performing microsurgery on your document, but without the tiny scalpels. Perfect emphasis, zero collateral damage.
 
 **Visual Summary**:
 ```mermaid
@@ -824,7 +846,6 @@ npm run test:e2e # Assuming this script is configured in package.json
 ```
 
 Alternatively, you can run all types of tests (unit, integration, and e2e) using the standard test command:
-
 ```bash
 npm test
 ```

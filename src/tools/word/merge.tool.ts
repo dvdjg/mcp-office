@@ -3,6 +3,7 @@ import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
 import { validateFilePath } from '../../utils/security';
 // Import FastMCPContext and remove ToolContext/ToolRequestParams if not needed elsewhere
 import { ApiResponse, McpResource, ToolRequestParams } from '../../types/common.types';
+import { saveResource } from '../dynamic/resources.tool'; // Importar saveResource
 import { Context as FastMCPContext } from 'fastmcp'; // Import FastMCP Context
 import { handleToolError, createErrorResponse } from '../../utils/errorHandler'; // Importar createErrorResponse
 import path from 'path';
@@ -39,6 +40,7 @@ export async function mergeDocuments(params: ToolRequestParams, context?: FastMC
     let wordApp: any = null;
     let targetDoc: any = null;
     const sourceDocs: any[] = []; // Para llevar registro de los documentos fuente abiertos
+    let officeAppInstance: any = null; // Declarar officeAppInstance fuera del try
 
     try {
         // Validar y parsear parámetros
@@ -64,7 +66,8 @@ export async function mergeDocuments(params: ToolRequestParams, context?: FastMC
 
         // Obtener instancia de Word
         log.info('Getting Word application instance...');
-        wordApp = await getOfficeApplication('Word.Application');
+        officeAppInstance = await getOfficeApplication('Word.Application'); // Asignar aquí
+        wordApp = officeAppInstance.app;
         wordApp.Visible = false; // Ejecutar en segundo plano
         wordApp.DisplayAlerts = 0; // wdAlertsNone = 0
 
@@ -156,11 +159,31 @@ export async function mergeDocuments(params: ToolRequestParams, context?: FastMC
         targetDoc.SaveAs2(safeOutputPath);
         log.info(`Merged document saved successfully.`);
 
+        // Leer el contenido del documento combinado antes de cerrarlo
+        let mergedContent = '';
+        try {
+             // Leer el texto del documento COM object
+             mergedContent = targetDoc.Content.Text;
+             log.info(`Read content from merged document.`);
+         } catch (readContentError: any) {
+             log.error(`Failed to read content from merged document before closing: ${readContentError.message}`);
+             // No lanzar error aquí, intentar guardar el recurso vacío o con error
+         }
+
         // Cerrar el documento destino
         targetDoc.Close(false); // wdDoNotSaveChanges = 0
         // Liberar explícitamente el objeto targetDoc ahora que está cerrado y guardado
         releaseObject(targetDoc);
         targetDoc = null;
+
+        // Guardar el documento combinado como un recurso dinámico después de cerrarlo
+        try {
+            await saveResource('word/merge', path.basename(safeOutputPath), mergedContent);
+            log.info(`Saved ${safeOutputPath} as a dynamic resource.`);
+        } catch (resourceSaveError: any) {
+            log.error(`Failed to save ${safeOutputPath} as a dynamic resource: ${resourceSaveError.message}`);
+            // Continuar la ejecución aunque falle el guardado del recurso
+        }
 
 
         // Using correct { progress, total } signature - representing completion, only if reportProgress is available
@@ -206,11 +229,15 @@ export async function mergeDocuments(params: ToolRequestParams, context?: FastMC
         }
         // Liberar aplicación Word
          if (wordApp) {
-             // No llamar a Quit() directamente aquí, confiar en releaseObject y officeInterop
-             releaseObject(wordApp);
-             log.info('Word application object reference released.');
+              // No llamar a Quit() directamente aquí, confiar en releaseObject y officeInterop
+              releaseObject(wordApp);
+              log.info('Word application object reference released.');
          }
-        log.info('Cleanup process finished.');
+         // Liberar officeAppInstance
+         if (officeAppInstance) {
+             officeAppInstance.release();
+             log.info('Office application instance released.');
+         }
     }
 }
 

@@ -1,8 +1,10 @@
 import { z } from 'zod';
+import * as path from 'path'; // Importar el módulo path
 import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types'; // Import FastMCPContext, remove ToolContext
 import { getOfficeApplication, releaseObject } from '../../utils/officeInterop'; // Removed getRangeFromSpecifier import
 import { validateFilePath } from '../../utils/security';
 import logger from '../../utils/logger';
+import { saveResource } from '../dynamic/resources.tool'; // Importar saveResource
 
 // --- Schemas ---
 
@@ -215,6 +217,17 @@ export async function insertText(requestParams: ToolRequestParams, context?: Fas
 
         doc.Save();
         logger.info(`Successfully inserted text at position "${params.position}" and saved ${params.filePath}`);
+
+        // Guardar el documento modificado como un recurso dinámico
+        try {
+            const updatedContent = await officeAppInstance.readDocumentContent(params.filePath); // Asumiendo que existe un método para leer el contenido
+            await saveResource('word/text', path.basename(params.filePath), updatedContent);
+            logger.info(`Saved ${params.filePath} as a dynamic resource.`);
+        } catch (resourceSaveError: any) {
+            logger.error(`Failed to save ${params.filePath} as a dynamic resource: ${resourceSaveError.message}`);
+            // Continuar la ejecución aunque falle el guardado del recurso
+        }
+
         return { success: true, data: {} };
 
     } catch (error: any) {
@@ -260,6 +273,17 @@ export async function modifyText(requestParams: ToolRequestParams, context?: Fas
 
         doc.Save();
         logger.info(`Successfully modified text in range "${params.range}" and saved ${params.filePath}`);
+
+        // Guardar el documento modificado como un recurso dinámico
+        try {
+             const updatedContent = await officeAppInstance.readDocumentContent(params.filePath); // Asumiendo que existe un método para leer el contenido
+            await saveResource('word/text', path.basename(params.filePath), updatedContent);
+            logger.info(`Saved ${params.filePath} as a dynamic resource.`);
+        } catch (resourceSaveError: any) {
+            logger.error(`Failed to save ${params.filePath} as a dynamic resource: ${resourceSaveError.message}`);
+            // Continuar la ejecución aunque falle el guardado del recurso
+        }
+
         return { success: true, data: {} };
 
     } catch (error: any) {
@@ -304,6 +328,17 @@ export async function deleteText(requestParams: ToolRequestParams, context?: Fas
 
         doc.Save();
         logger.info(`Successfully deleted text in range "${params.range}" and saved ${params.filePath}`);
+
+        // Guardar el documento modificado como un recurso dinámico
+        try {
+             const updatedContent = await officeAppInstance.readDocumentContent(params.filePath); // Asumiendo que existe un método para leer el contenido
+            await saveResource('word/text', path.basename(params.filePath), updatedContent);
+            logger.info(`Saved ${params.filePath} as a dynamic resource.`);
+        } catch (resourceSaveError: any) {
+            logger.error(`Failed to save ${params.filePath} as a dynamic resource: ${resourceSaveError.message}`);
+            // Continuar la ejecución aunque falle el guardado del recurso
+        }
+
         return { success: true, data: {} };
 
     } catch (error: any) {

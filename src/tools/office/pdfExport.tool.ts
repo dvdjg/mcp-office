@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { McpResource, ToolRequestParams, ApiResponse } from '../../types/common.types';
 import { OfficeAppName, getOfficeApplication } from '../../utils/officeInterop'; // Importar los nombres correctos
+import { saveResource } from '../dynamic/resources.tool'; // Importar saveResource
+import * as fs from 'fs-extra'; // Importar fs para leer el archivo PDF
+import * as path from 'path'; // Importar path
 
 // Esquema de entrada para la herramienta office/pdf/export
 const PdfExportInputSchema = z.object({
@@ -135,6 +138,15 @@ export const pdfExportTool: McpResource = {
           exportConfig.Item || 0,
           exportConfig.OpenAfterExport || false
         );
+        // Guardar el archivo PDF exportado como un recurso dinámico
+        try {
+            const pdfContent = await fs.readFile(outputFilePath, null); // Leer como Buffer
+            await saveResource('office/pdf/export', path.basename(outputFilePath), pdfContent);
+            context?.log.info(`Saved ${outputFilePath} as a dynamic resource.`);
+        } catch (resourceSaveError: any) {
+            context?.log.error(`Failed to save ${outputFilePath} as a dynamic resource: ${resourceSaveError.message}`);
+            // Continuar la ejecución aunque falle el guardado del recurso
+        }
       } else if (application === 'Excel') {
         // Excel usa ExportAsFixedFormat
         doc.ExportAsFixedFormat(
@@ -148,6 +160,15 @@ export const pdfExportTool: McpResource = {
           exportConfig.OpenAfterPublish || false,
           exportConfig.FixedFormatExtClassPtr || null
         );
+        // Guardar el archivo PDF exportado como un recurso dinámico
+        try {
+            const pdfContent = await fs.readFile(outputFilePath, null); // Leer como Buffer
+            await saveResource('office/pdf/export', path.basename(outputFilePath), pdfContent);
+            context?.log.info(`Saved ${outputFilePath} as a dynamic resource.`);
+        } catch (resourceSaveError: any) {
+            context?.log.error(`Failed to save ${outputFilePath} as a dynamic resource: ${resourceSaveError.message}`);
+            // Continuar la ejecución aunque falle el guardado del recurso
+        }
       } else if (application === 'PowerPoint') {
         // PowerPoint usa ExportAsFixedFormat
         doc.ExportAsFixedFormat(
@@ -169,6 +190,15 @@ export const pdfExportTool: McpResource = {
           exportConfig.CreateHiddenSlides || false,
           exportConfig.OpenAfterExport || false
         );
+        // Guardar el archivo PDF exportado como un recurso dinámico
+        try {
+            const pdfContent = await fs.readFile(outputFilePath, null); // Leer como Buffer
+            await saveResource('office/pdf/export', path.basename(outputFilePath), pdfContent);
+            context?.log.info(`Saved ${outputFilePath} as a dynamic resource.`);
+        } catch (resourceSaveError: any) {
+            context?.log.error(`Failed to save ${outputFilePath} as a dynamic resource: ${resourceSaveError.message}`);
+            // Continuar la ejecución aunque falle el guardado del recurso
+        }
       }
 
 

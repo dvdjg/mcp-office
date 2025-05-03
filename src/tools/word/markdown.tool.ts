@@ -9,6 +9,7 @@ import MarkdownIt from 'markdown-it';
 import { z } from 'zod';
 // Import FastMCPContext and remove ToolContext
 import { McpResource, ApiResponse, ToolRequestParams } from '@/types/common.types';
+import { saveResource } from '../dynamic/resources.tool'; // Importar saveResource
 import { Context as FastMCPContext } from 'fastmcp'; // Import FastMCP Context
 import { handleToolError } from '@/utils/errorHandler';
 import { validateFilePath } from '@/utils/security';
@@ -137,6 +138,16 @@ async function exportToMarkdown(params: ToolRequestParams, context?: FastMCPCont
         log.info(`Successfully wrote extracted text via COM to ${safeOutputPath}`);
         reportProgress?.({ progress: 2, total: totalSteps }); // Step 2: File Written
 
+        // Guardar el archivo Markdown exportado como un recurso dinámico
+        try {
+            const markdownFileContent = await fs.readFile(safeOutputPath, 'utf8');
+            await saveResource('word/markdown/export', path.basename(safeOutputPath), markdownFileContent);
+            log.info(`Saved ${safeOutputPath} as a dynamic resource.`);
+        } catch (resourceSaveError: any) {
+            log.error(`Failed to save ${safeOutputPath} as a dynamic resource: ${resourceSaveError.message}`);
+            // Continuar la ejecución aunque falle el guardado del recurso
+        }
+
         reportProgress?.({ progress: 3, total: totalSteps }); // Step 3: Complete
         return { success: true, data: { outputPath: safeOutputPath } };
 
@@ -234,6 +245,26 @@ async function importFromMarkdown(params: ToolRequestParams, context?: FastMCPCo
         newDoc.SaveAs2(safeOutputPath, wdFormatDocumentDefault);
         log.info(`Successfully saved new Word document via COM to ${safeOutputPath}`);
         reportProgress?.({ progress: 4, total: totalSteps }); // Step 4: Saved (Complete)
+
+        // Leer el contenido del documento Word importado antes de cerrarlo
+        let importedDocContent = '';
+        try {
+             // Leer el texto del documento COM object
+             importedDocContent = newDoc.Content.Text;
+             log.info(`Read content from imported document.`);
+         } catch (readContentError: any) {
+             log.error(`Failed to read content from imported document before closing: ${readContentError.message}`);
+             // No lanzar error aquí, intentar guardar el recurso vacío o con error
+         }
+
+        // Guardar el documento Word importado como un recurso dinámico después de cerrarlo
+        try {
+            await saveResource('word/markdown/import', path.basename(safeOutputPath), importedDocContent);
+            log.info(`Saved ${safeOutputPath} as a dynamic resource.`);
+        } catch (resourceSaveError: any) {
+            log.error(`Failed to save ${safeOutputPath} as a dynamic resource: ${resourceSaveError.message}`);
+            // Continuar la ejecución aunque falle el guardado del recurso
+        }
 
         return { success: true, data: { outputPath: safeOutputPath } };
 

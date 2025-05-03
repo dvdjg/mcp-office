@@ -4,6 +4,9 @@ import { z } from 'zod';
 import { McpResource, ToolRequestParams, ApiResponse } from '../../types/common.types';
 import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
 import logger from '../../utils/logger';
+import { saveResource } from '../dynamic/resources.tool'; // Importar saveResource
+import * as fs from 'fs-extra'; // Importar fs para leer el archivo PowerPoint
+import * as path from 'path'; // Importar path
 
 // Define el esquema de entrada para la herramienta powerpoint/shapes
 const PowerPointShapesInputSchema = z.object({
@@ -60,14 +63,16 @@ const powerpointShapesTool: McpResource = {
     let app: any = null;
     let presentation: any = null;
     let slide: any = null;
+    let filePath: string | undefined; // Declarar filePath fuera del try y permitir undefined
 
     try {
       // Validate input parameters using the Zod schema
       const input = PowerPointShapesInputSchema.parse(params);
+      filePath = input.filePath; // Asignar filePath aquí
+
 
       const {
-        filePath,
-        operation,
+        operation, // Eliminar filePath de la desestructuración aquí
         slideIndex,
         shapeType,
         position,
@@ -262,7 +267,23 @@ const powerpointShapesTool: McpResource = {
         // Ensure presentation is closed if it was opened
         if (presentation) {
             try {
-                presentation.Close(); // Close without saving changes by default for safety
+                // Guardar la presentación antes de cerrarla
+                presentation.Save();
+                // Guardar el archivo PowerPoint modificado como un recurso dinámico
+                // Esto se hace en el finally porque Save() ocurre aquí para todas las operaciones de modificación.
+                // No necesitamos verificar la operación específica aquí.
+                // Asegurarse de que filePath tiene un valor antes de intentar leer el archivo
+                if (filePath) {
+                    try {
+                        const pptContent = await fs.readFile(filePath, null); // Leer como Buffer
+                        await saveResource('powerpoint/shapes', path.basename(filePath), pptContent);
+                        // logger.info(`Saved ${filePath} as a dynamic resource.`);
+                    } catch (resourceSaveError: any) {
+                        // logger.error(`Failed to save ${filePath} as a dynamic resource: ${resourceSaveError.message}`);
+                        // Continuar la ejecución aunque falle el guardado del recurso
+                    }
+                }
+                presentation.Close(); // Close after saving
             } catch (closeError: any) {
                 logger.warn(`[OfficeInterop] Failed to close presentation: ${closeError.message}`);
             }
@@ -273,6 +294,11 @@ const powerpointShapesTool: McpResource = {
         // and no other operations are pending. Releasing the object reference is safer.
         releaseObject(app);
     }
+    // Añadir un retorno al final para cubrir todos los casos posibles
+    // Esto solo se alcanzará si no se lanzó un error o se retornó antes.
+    // En un escenario ideal, todos los casos del switch deberían retornar.
+    // Pero para satisfacer al linter, añadimos este retorno de fallback.
+    return { success: false, error: { code: 'UNHANDLED_CASE', message: 'La operación de formas de PowerPoint no retornó un resultado explícito.' } };
   },
 };
 
