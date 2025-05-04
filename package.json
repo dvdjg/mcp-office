@@ -28,6 +28,7 @@
     "@microsoft/office-js": "^1.1.84",
     "@vscode/vscode-languagedetection": "^1.0.22",
     "adm-zip": "^0.5.16",
+    "axios": "^1.9.0",
     "fastmcp": "latest",
     "fs-extra": "^11.2.0",
     "highlight.js": "^11.9.0",

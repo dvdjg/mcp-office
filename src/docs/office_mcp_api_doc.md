@@ -125,7 +125,7 @@ The Office MCP Server integrates with AI agents (e.g., Claude) via FastMCP's pro
 
 **Example**:
 - User: “Merge two Word documents, draft1.docx and draft2.docx, into one.”
-- AI Infers: `word/merge` with `docs=/docs/draft1.docx,/docs/draft2.docx`.
+- AI Infers: `word/merge` with `docs=/docs/draft1.docx,/docs/doc2.docx`.
 - AI Queries: `GET /dynamic/resources/list?type=docx` to confirm file existence.
 
 ---
@@ -741,30 +741,36 @@ The Office MCP Server integrates with AI agents (e.g., Claude) via FastMCP's pro
 **Completions**: File paths, position ranges.
 
 ### word/generate-and-insert-text
-**Description**: Uses AI (via FastMCP's `requestSampling`) to generate text based on context and insert it into a Word document. *Note: Requires COM interop for insertion.*
+**Description**: Uses a server-side LLM to generate text based on a prompt and inserts it into a Word document. *Note: Requires COM interop for insertion and server-side LLM configuration.*
 
 **Operations**:
-- **generate**: Generates text based on surrounding content or a prompt.
-- **insert**: Inserts the generated text at a specified position.
-  - **Input**: `document` (string), `range` (string, context range, optional), `prompt` (string, prompt name or text), `position` (string, insertion point, e.g., `after`, `paragraph:N`).
-  - **Output**: `{ success: true, generatedText: string }`.
-  - **Example (using a predefined prompt)**:
+- **generate**: Generates text based on a prompt and inserts it.
+  - **Input**: `filePath` (string, path to the Word file), `position` (string, insertion point, e.g., `start`, `end`, `paragraph:N:start`, `selection`), `prompt` (string, the prompt for text generation), `maxTokens` (number, optional, maximum tokens for generated text).
+  - **Output**: `{ success: true }`.
+  - **Example**:
     ```bash
-    # Assumes a prompt named 'summarize-section' is defined via addPrompt
-    curl -X POST "http://localhost:3000/word/generate-and-insert-text?document=/docs/report.docx&range=paragraph:5&prompt=summarize-section&position=after"
+    curl -X POST "http://localhost:3000/word/generate-and-insert-text" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "filePath": "/docs/report.docx",
+        "position": "end",
+        "prompt": "Write a concluding paragraph for this report.",
+        "maxTokens": 150
+      }'
     ```
-    **Response**:
-    ```json
-    { "success": true, "generatedText": "This section discusses the key findings..." }
-    ```
+
+**Configuration**: This tool requires server-side configuration to connect to an LLM provider. The following environment variables must be set where the Office MCP server is running:
+- `LLM_PROVIDER_API_KEY`: Your API key for the LLM provider.
+- `LLM_PROVIDER_ENDPOINT`: The API endpoint URL for the LLM provider (e.g., `https://api.openai.com/v1/chat/completions` for OpenAI, or a similar endpoint for other providers).
+- `LLM_MODEL_NAME`: (Optional) The name of the specific LLM model to use (e.g., `gpt-4o`, `gemini-1.5-pro`). If not set, a default model may be used by the server-side LLM utility.
 
 **AI Request Examples**:
-- User: "Summarize the fifth paragraph of report.docx and insert the summary after it."
-  - AI Infers: `POST /word/generate-and-insert-text?document=/docs/report.docx&range=paragraph:5&prompt=summarize-section&position=after`.
-- User: "Generate an introductory sentence for report.docx and insert it at the beginning."
-  - AI Infers: `POST /word/generate-and-insert-text?document=/docs/report.docx&prompt=generate-intro&position=start`.
+- User: "Generate a concluding paragraph for report.docx and insert it at the end."
+  - AI Infers: `POST /word/generate-and-insert-text` with `filePath=/docs/report.docx`, `position=end`, and a suitable `prompt`.
+- User: "Write an introductory sentence for report.docx and insert it at the beginning."
+  - AI Infers: `POST /word/generate-and-insert-text` with `filePath=/docs/report.docx`, `position=start`, and a suitable `prompt`.
 
-**Completions**: Document paths, range formats, prompt names/text, position specifiers.
+**Completions**: Document paths, position specifiers, prompt text.
 
 ---
 

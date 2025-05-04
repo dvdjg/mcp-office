@@ -16,7 +16,6 @@ import { validateFilePath, isFsAccessAllowed } from '@/utils/security';
 import { getWordElementContent as getOfficeElementContentInterop } from '@/utils/officeInterop';
 import { McpResource, ToolRequestParams, ApiResponse } from '@/types/common.types';
 import { version as packageVersion, name as packageName } from '../../package.json';
-import { z } from 'zod';
 import * as fs from 'fs/promises'; // Import fs.promises for async file operations
 import * as path from 'path'; // Import path module
 
@@ -160,6 +159,10 @@ for (let i = 0; i < allRegisteredTools.length; i++) {
                 // Log client ID from session data, checking if session exists
                 const clientId = context.session?.clientId || 'unknown-authenticated-client';
                 context.log.info(`[${item.path}] EXECUTION START by client: ${clientId}`, { params: hideSensitiveParams(args) as SerializableValue }); // Ensure logged params are serializable
+
+                // Add logging for requestSampling availability
+                logger.info(`[${item.path}] requestSampling availability: ${typeof context.session?.requestSampling === 'function' ? 'available' : 'unavailable'}`);
+
                 try {
                     // Validation is typically handled by FastMCP based on 'parameters' schema
                     // Authorization checks can use context.session if authentication is implemented
@@ -502,7 +505,9 @@ try {
    logger.info(`[Resource Template Registration] Registered resource template: ${officeUriPattern}`);
    logger.info("Resource template registration complete.");
 } catch (error) {
-    logger.error(`[Resource Template Registration] Failed to register office resource template`, { error });
+    // Log the error, attempting to access path safely
+    const resourcePath = aiAssistantGuideResource && aiAssistantGuideResource[0] ? aiAssistantGuideResource[0].path : 'unknown resource';
+    logger.error(`[Resource Registration] Failed to register resource: ${resourcePath}`, { error });
 }
 
 
@@ -614,12 +619,50 @@ if (OFFICE_MCP_PORT) {
     })
     .then(() => {
         logger.info('🚀 msoffice-mcp server started successfully in STDIO mode');
+        //mcpServer.sessions.forEach((session) => {
+        //    logger.info(`[word/generate-and-insert-text] FastMCP context=${session.context} context.session=${session.context?.session}.`);
+        //});
     })
     .catch((error: Error) => {
         logger.error('Failed to start msoffice-mcp server in STDIO mode:', error);
         process.exit(1);
     });
 }
+
+mcpServer.on("connect", (event) => {
+    logger.info("Client connected:", event.session);
+    /*
+    if (typeof event.session.requestSampling === 'function') {
+        logger.info("Client requestSampling");
+        event.session.requestSampling({
+            messages: [
+              {
+                role: "user",
+                content: {
+                  type: "text",
+                  text: "Me llamo David. ¿y tú?",
+                },
+              },
+            ],
+            systemPrompt: "Eres un amable asistente.",
+            includeContext: "thisServer",
+            maxTokens: 100,
+          }).then((response) => {
+            logger.info("Request sampling response:", response);
+            // Handle the response as needed
+            // For example, send the response back to the client
+            // event.session.sendResponse(response);
+          }).catch((error) => {
+            logger.error("Error during request sampling:", error);
+            // Handle the error as needed
+          });
+    }
+    */
+});
+
+mcpServer.on("disconnect", (event) => {
+    logger.info("Client disconnected:", event.session);
+});
 
 // Graceful shutdown handling
 
