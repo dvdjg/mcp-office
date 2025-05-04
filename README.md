@@ -4,10 +4,13 @@ Welcome to the **Office MCP Server**, your go-to tool for automating Microsoft O
 
 ## Why Office MCP?
 - **AI-Powered Magic**: Leverage AI to suggest styles, resolve merge conflicts, or generate text via FastMCP’s prompt system.
+- **Archive Handling**: Easily manage files within ZIP, 7z, and other archive formats (listing, extracting, creating for ZIP/7z).
+- **Intelligent Language Detection**: Automatically detect programming languages in code snippets for accurate formatting.
 - **Granular Control**: Fine-tune every paragraph, table, or embedded object.
 - **Cross-Platform**: Supports Office 365, desktop Office, and Power Automate.
 - **Developer-Friendly**: Type-safe, modular, and well-documented for easy integration.
 - **Rock-Solid**: >90% test coverage ensures reliability for your automation adventures.
+- **Cloud Document Access (Future)**: Planned support for accessing and working with documents via Teams/Office 365 links with user permissions.
 
 ## Quick Start
 Get started in minutes:
@@ -38,8 +41,8 @@ For detailed setup, see [Installation & API](INSTALLATION_AND_API.md).
 ## Explore Office MCP
 Dive into specific topics:
 - **[Installation & API](INSTALLATION_AND_API.md)**: Guides for setup, Docker, environment configs, and the full RESTful API.
-- **[Use Cases](USE_CASES.md)**: Fun, practical examples for automating Word, Excel, PowerPoint, and multi-app workflows.
-- **[Technical Details](TECHNICAL_DETAILS.md)**: Insights into TypeScript, FastMCP, testing, security, future plans, and licensing.
+- **[Use Cases](USE_CASES.md)**: Fun, practical examples for automating Word, Excel, PowerPoint, and multi-app workflows, including archive management.
+- **[Technical Details](TECHNICAL_DETAILS.md)**: Insights into TypeScript, FastMCP, testing, security, future plans (including cloud document access), and licensing.
 
 ## Join the Automation Party
 Office MCP is your key to effortless Office automation. Have ideas or questions? Open an issue on [GitHub](https://github.com/dvdjg/mcp-office/issues) or check `memory://ai_assistant_guide` for tips. Let’s make Office tasks a joy! 🚀

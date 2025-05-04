@@ -14,6 +14,7 @@ import { createErrorResponse, handleToolError } from '@/utils/errorHandler';
 // Import tool definitions (assuming default or named exports matching the variable names)
 import { fsDirectoryTool } from './fs/directory.tool'; // Exports McpResource[]
 import { fsFileTool } from './fs/file.tool'; // Exports McpResource[]
+import { registerArchiveTools } from './fs/archive.tool'; // Import the new archive tool registration function
 import { wordStylesTool } from './word/styles.tool'; // Exports McpResource[]
 import { wordMarkdownTool } from './word/markdown.tool'; // Exports McpResource[]
 import { wordMergeTool } from './word/merge.tool'; // Exports McpResource (single object)
@@ -84,6 +85,7 @@ const analyzeMcpResource: McpResource = {
 const allImplementedTools: McpResource[] = [
     ...fsDirectoryTool, // Array
     ...fsFileTool,      // Array
+    // Archive tools are registered via registerArchiveTools function call in server.ts
     ...wordStylesTool,  // Array
     ...wordMarkdownTool,// Array
     ...wordTemplateTool,// Array
@@ -142,5 +144,5 @@ const placeholderTools: McpResource[] = [
  */
 const allRegisteredTools = [...allImplementedTools, ...placeholderTools];
 
-// Export the list used by server.ts and the resource
-export { allRegisteredTools, aiAssistantGuideResource, registerWordCodeFormatTool };
+// Export the list used by server.ts and the resources/tool registration functions
+export { allRegisteredTools, aiAssistantGuideResource, registerWordCodeFormatTool, registerArchiveTools };

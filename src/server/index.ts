@@ -9,7 +9,7 @@
 import { FastMCP, UserError, UnexpectedStateError, Context as FastMCPContext, ContentResult, TextContent, ToolParameters, audioContent, imageContent, SerializableValue } from 'fastmcp';
 import { StandardSchemaV1 } from '@standard-schema/spec';
 import { IncomingMessage } from 'http';
-import { allRegisteredTools, aiAssistantGuideResource } from '@/tools';
+import { allRegisteredTools, aiAssistantGuideResource, registerWordCodeFormatTool, registerArchiveTools } from '@/tools'; // Import registerArchiveTools
 import logger from '@/utils/logger';
 import { handleToolError, createErrorResponse } from '@/utils/errorHandler';
 import { validateFilePath, isFsAccessAllowed } from '@/utils/security';
@@ -246,6 +246,16 @@ for (let i = 0; i < allRegisteredTools.length; i++) {
     }
 }
 
+// Register the new archive tools
+logger.info("Registering archive tools...");
+try {
+    registerArchiveTools(mcpServer);
+    logger.info("Archive tool registration complete.");
+} catch (error) {
+    logger.error("[Tool Registration] Failed to register archive tools", { error });
+}
+
+
 // --- Register Prompts ---
 
 /**
@@ -342,12 +352,6 @@ try {
 }
 
 // --- Register Resource Templates ---
-
-/**
- * Registers resource templates with the FastMCP server instance.
- * Resource templates define dynamic URIs for accessing data based on parameters.
- */
-logger.info("Registering resource templates...");
 
 /**
  * Loads content for an Office document element resource template.

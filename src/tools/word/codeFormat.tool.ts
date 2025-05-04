@@ -11,7 +11,13 @@ import hljs from 'highlight.js';
 // Import highlight.js and guesslang if available
 // import { GuessLang } from 'guesslang';
 
+// Import the language detection module and the ModelOperations class
+import { ModelOperations } from '@vscode/vscode-languagedetection';
+
 // const guesslang = new GuessLang();
+
+// Instantiate ModelOperations for language detection
+const modelOperations = new ModelOperations();
 
 /** Schema for the input parameters of the 'word/code-format' tool. */
 const codeFormatInputSchema = z.object({
@@ -74,12 +80,12 @@ const handler = async (input: CodeFormatInput, context: any) => {
         break;
       case 'apply':
         // Allow applying formatting without detecting if language and code are provided
-        if (!range || !code || !language) {
-           if (!range || !code || !language) {
-             throw new Error('The range, code, and language are required for the apply operation.');
-           }
+        if (!range || !code) {
+           throw new Error('The range and code are required for the apply operation.');
         }
-        result = applyCodeFormatting(doc, range, code, language);
+        // If language is not provided, attempt detection
+        const detectedLanguage = language || await detectLanguage(doc, range);
+        result = applyCodeFormatting(doc, range, code, detectedLanguage);
         break;
       default:
         throw new Error(`Unsupported operation: ${operation}`);
@@ -145,34 +151,30 @@ function identifyCodeBlocks(doc: any, style?: string): { start: number, end: num
 }
 
 /**
- * Detects the programming language of a text block using highlight.js.
- * If no language is specified, it attempts automatic detection.
- * Note: Automatic detection may not always be accurate.
+ * Detects the programming language of a text block using @vscode/vscode-languagedetection.
  * @param doc - The Word document COM object.
  * @param range - The text range containing the code.
- * @returns The detected language string (e.g., 'javascript', 'python', 'plaintext').
+ * @returns A promise resolving to the detected language string (e.g., 'javascript', 'python', 'plaintext').
  */
 async function detectLanguage(doc: any, range: { start: number, end: number }): Promise<string> {
   const textRange = doc.Range(range.start, range.end);
   const codeText = textRange.Text;
 
-  // if (guesslang) {
-  //   try {
-  //     const lang = await guesslang.detectLang(codeText);
-  //     return lang;
-  //   } catch (e) {
-  //     console.error("Error detecting language with guesslang:", e);
-  //   }
-  // }
+  // Use @vscode/vscode-languagedetection for more accurate detection
+  try {
+    // Use the instantiated modelOperations object and call runModel
+    const languages = await modelOperations.runModel(codeText);
+    if (languages && languages.length > 0) {
+      // Return the language with the highest confidence
+      return languages[0].languageId;
+    }
+  } catch (e) {
+    console.error("Error detecting language with @vscode/vscode-languagedetection:", e);
+  }
 
-  // Simple heuristic if guesslang is not available or fails
-  if (codeText.includes('function') || codeText.includes('const') || codeText.includes('let')) return 'javascript';
-  if (codeText.includes('def ') || codeText.includes('import ') || codeText.includes('print(')) return 'python';
-  if (codeText.includes('<html') || codeText.includes('<div')) return 'html';
-  if (codeText.includes('{') && codeText.includes('}')) return 'css';
-
-
-  return 'plaintext'; // Default language if nothing is detected
+  // Fallback to highlight.js auto-detection if @vscode/vscode-languagedetection is not used or fails
+  const autoDetected = hljs.highlightAuto(codeText);
+  return autoDetected.language || 'plaintext';
 }
 
 /**

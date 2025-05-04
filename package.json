@@ -26,11 +26,14 @@
   "license": "MIT",
   "dependencies": {
     "@microsoft/office-js": "^1.1.84",
+    "@vscode/vscode-languagedetection": "^1.0.22",
+    "adm-zip": "^0.5.16",
     "fastmcp": "latest",
     "fs-extra": "^11.2.0",
     "highlight.js": "^11.9.0",
     "markdown-it": "^14.1.0",
     "mermaid": "^10.9.0",
+    "node-7z": "^3.0.0",
     "node-cache": "^5.1.2",
     "pdf-parse": "^1.1.1",
     "winax": "latest",
@@ -38,10 +41,12 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
     "@types/fs-extra": "^11.0.4",
     "@types/jest": "^29.5.12",
     "@types/markdown-it": "^14.1.1",
     "@types/node": "^20.12.12",
+    "@types/node-7z": "^2.1.10",
     "@types/node-fetch": "^2.6.12",
     "@types/pdf-parse": "^1.1.4",
     "@typescript-eslint/eslint-plugin": "^7.9.0",
