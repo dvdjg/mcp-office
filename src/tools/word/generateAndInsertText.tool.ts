@@ -55,9 +55,13 @@ async function generateAndInsertText(
     context?: ToolContextType // Use the defined context type
 ): Promise<ApiResponse<{}>> {
     // Ensure context and session are available, as requestSampling requires it
-    if (!context || !context.session) { // Check for context.session as well
-        logger.error('[word/generate-and-insert-text] Context or session is unavailable for sampling.');
-        return createErrorResponse('Context and session are required for requesting sampling.', 'CONTEXT_UNAVAILABLE');
+    if (!context || !context.session || typeof context.session.requestSampling !== 'function') {
+        logger.error('[word/generate-and-insert-text] FastMCP session or sampling function is unavailable.');
+        return createErrorResponse(
+            'LLM sampling is required for this tool but the FastMCP session or sampling function is not available. ' +
+            'Please ensure the Office MCP server is configured with a valid LLM API key.',
+            'LLM_SAMPLING_UNAVAILABLE'
+        );
     }
 
     let officeAppInstance: any = null;

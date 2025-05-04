@@ -41,7 +41,16 @@ export const aiSuggestTool: McpResource = { // Use McpResource
       const input = AiSuggestInputSchema.parse(params);
 
       if (!requestSampling) {
-          throw new Error('The requestSampling function is not available in the session context.');
+          // Modified error handling for missing sampling function
+          console.error('[office/ai-suggest] FastMCP session or sampling function is unavailable.');
+          return {
+              success: false,
+              error: {
+                  code: 'LLM_SAMPLING_UNAVAILABLE',
+                  message: 'LLM sampling is required for this tool but the FastMCP session or sampling function is not available. ' +
+                           'Please ensure the Office MCP server is configured with a valid LLM API key.'
+              }
+          };
       }
 
       const { application, operation, contextRange, filePath } = input;
