@@ -71,21 +71,16 @@ npx fastmcp dev dist/server/index.js
 npx fastmcp inspect src/tools/index.ts
 ```
 
-## LLM API Key Configuration
+## LLM Context and API Key Configuration
 
-Some Office MCP tools, particularly those involving AI-powered features like text generation or suggestions, require access to a Language Model (LLM) via the FastMCP session. To enable this, you need to configure an LLM API key.
+Office MCP tools that utilize AI-powered features, such as text generation or suggestions, access Language Model (LLM) capabilities through the FastMCP environment running the server. This access is provided via the `context.session.requestSampling` function available to the tool handlers.
 
-The specific method for configuring the API key depends on your FastMCP setup. Typically, this involves setting an environment variable or configuring a `.env` file that your FastMCP instance reads. Consult the documentation for your FastMCP server or the specific LLM provider you are using for detailed instructions.
+This means that the LLM configuration (including API keys and model names) is managed by the FastMCP environment itself, not directly by the Office MCP server.
 
-For example, if you are using a FastMCP setup that supports `dotenv`, you might create a `.env` file in the server's root directory with an entry like:
+If the FastMCP environment is not configured for LLM access for a particular session, the `context.session.requestSampling` function will not be available. In such cases, tools that require LLM sampling will return an error indicating that LLM sampling is unavailable.
 
-```dotenv
-LLM_API_KEY=your_api_key_here
-```
+To enable LLM-dependent tools, ensure that the FastMCP environment you are using to run the Office MCP server is properly configured for LLM access. Consult the documentation for your specific FastMCP setup for details on how to configure LLM providers and API keys.
 
-Replace `your_api_key_here` with your actual API key obtained from your LLM provider.
-
-If the LLM sampling function is not available (e.g., due to a missing or invalid API key), tools that depend on it will return an error indicating that LLM sampling is unavailable.
 ## API Overview
 The API uses **FastMCP**, offering type-safe endpoints with `zod` validation. Structure: `/{module}/{tool}/{operation}` (e.g., `/word/styles/apply`). Responses are JSON with `success`, `data`, or `error`. Resources use `office://<document_path>?range=<range_specifier>`.
 

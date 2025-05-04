@@ -44,11 +44,11 @@ Office MCP tools leverage various forms of context to perform intelligent and fl
 
 Here are the main types of context utilized:
 
-*   **LLM Context:** Tools like `word/generate-and-insert-text` interact with a Language Model (LLM) via the FastMCP session to perform AI-driven tasks such as text generation, content summarization, or style suggestions. This context allows the tools to incorporate external AI capabilities.
+*   **LLM Context:** Tools like `word/generate-and-insert-text` interact with a Language Model (LLM) via the FastMCP session provided by the *FastMCP environment running the server*. This context allows the tools to perform AI-driven tasks such as text generation, content summarization, or style suggestions, leveraging the capabilities of the parent AI.
 *   **File Content Context:** Many tools operate directly on the content of Office files. This includes reading text from a Word document (`word/text/get`), writing data to an Excel sheet (`excel/range/write`), or extracting images from a PowerPoint presentation (`powerpoint/shapes/list`). The tools access and manipulate the file content based on the specific operation.
 *   **User Data/Input Context:** The parameters provided in tool requests (e.g., `filePath`, `position`, `prompt`, `rangeAddress`) constitute user data or input context. These parameters guide the tool's execution and determine the specific target and nature of the operation.
 *   **System/Environment Context:** Tools interact with the underlying system and environment, including the file system (reading/writing files), the operating system (running COM Interop for Office applications), and the availability of installed Office applications. This context is essential for the tools to function correctly within the user's environment.
-*   **Session Context:** The `FastMCPContext` provided to each tool handler includes a `session` property. This session object is crucial for interacting with the FastMCP framework, particularly for requesting LLM sampling (`context.session.requestSampling`) and potentially accessing other session-specific information or resources.
+*   **Session Context:** The `FastMCPContext` provided to each tool handler includes a `session` property. This session object is crucial for interacting with the FastMCP framework, particularly for requesting LLM sampling (`context.session.requestSampling`) and potentially accessing other session-specific information or resources provided by the FastMCP environment.
 
 By combining these different types of context, Office MCP tools can perform complex tasks that go beyond simple automation, enabling more intelligent and responsive interactions with Microsoft Office applications.
 ## Explore Office MCP
