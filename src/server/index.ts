@@ -6,7 +6,7 @@
  * @copyright Copyright (c) 2025 David Jurado
  * @license MIT
  */
-import { FastMCP, UserError, UnexpectedStateError, Context as FastMCPContext, ContentResult, TextContent, ToolParameters, audioContent, imageContent, SerializableValue } from 'fastmcp';
+import { FastMCP, UserError, UnexpectedStateError, Context as FastMCPContext, ContentResult, TextContent, ToolParameters, audioContent, imageContent, SerializableValue, ResourceResult } from 'fastmcp';
 import { StandardSchemaV1 } from '@standard-schema/spec';
 import { IncomingMessage } from 'http';
 import { allRegisteredTools, aiAssistantGuideResource, registerWordCodeFormatTool, registerArchiveTools } from '@/tools'; // Import registerArchiveTools
@@ -17,6 +17,8 @@ import { getWordElementContent as getOfficeElementContentInterop } from '@/utils
 import { McpResource, ToolRequestParams, ApiResponse } from '@/types/common.types';
 import { version as packageVersion, name as packageName } from '../../package.json';
 import { z } from 'zod';
+import * as fs from 'fs/promises'; // Import fs.promises for async file operations
+import * as path from 'path'; // Import path module
 
 // --- Authentication ---
 
@@ -345,6 +347,24 @@ try {
     });
     logger.debug(`[Resource Registration] Registered resource: ${aiAssistantGuideResource[0].path}`); // Access first element
     logger.info("Resource registration complete.");
+    logger.debug(`[Resource Registration] Attempting to register resource: memory://office_api_doc`);
+    mcpServer.addResource({
+        uri: 'memory://office_api_doc',
+        name: 'Office API Documentation',
+        mimeType: 'text/markdown',
+        load: async () => {
+            // Use the fs/file/read tool via FastMCP context or directly if available
+            // Since this is server-side, we can use fs.promises.readFile directly
+            try {
+                const content = await fs.readFile(path.join(__dirname, '../docs/office_api_doc.md'), 'utf-8');
+                return { text: content };
+            } catch (error) {
+                logger.error(`[Resource Registration] Failed to load resource: memory://office_api_doc`, { error });
+                throw new UnexpectedStateError(`Failed to load resource: memory://office_api_doc`);
+            }
+        },
+    });
+    logger.debug(`[Resource Registration] Registered resource: memory://office_api_doc`);
 } catch (error) {
     // Log the error, attempting to access path safely
     const resourcePath = aiAssistantGuideResource && aiAssistantGuideResource[0] ? aiAssistantGuideResource[0].path : 'unknown resource';

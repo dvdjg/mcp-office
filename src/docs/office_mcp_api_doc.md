@@ -4,7 +4,7 @@
 
 **Target Audience**: Developers integrating with the Office MCP Server and AI agents processing user requests.
 
-**Date**: May 01, 2025
+**Date**: May 04, 2025
 
 ---
 
@@ -17,6 +17,7 @@
    - [fs/directory](#fsdirectory)
    - [fs/file](#fsfile)
    - [fs/blob](#fsblob)
+   - [fs/archive](#fsarchive)
 3. [Word Tools](#word-tools)
    - [word/styles](#wordstyles)
    - [word/text](#wordtext)
@@ -37,6 +38,8 @@
    - [word/reformat](#wordreformat)
    - [word/analyze](#wordanalyze)
    - [word/code-format](#wordcode-format)
+   - [word/image](#wordimage)
+   - [word/generate-and-insert-text](#wordgenerate-and-insert-text)
 4. [Excel Tools](#excel-tools)
    - [excel/worksheets](#excelworksheets)
    - [excel/range](#excelrange)
@@ -241,6 +244,47 @@ The Office MCP Server integrates with AI agents (e.g., Claude) via FastMCP's pro
   - AI Infers: `GET /fs/blob/read?path=/docs/doc1.docx`.
 
 **Completions**: File paths, file types (e.g., `docx`, `pdf`).
+
+### fs/archive
+**Description**: Implements tools for handling archive files (ZIP, 7z, etc.).
+
+**Operations**:
+- **list**: Lists the contents of an archive file.
+  - **Input**: `filePath` (string, The path to the archive file.)
+  - **Output**: `{ success: boolean, contents?: string[], error?: string }`.
+  - **Example**:
+    ```bash
+    curl -X GET "http://localhost:3000/fs/archive/list?filePath=/docs/archive.zip"
+    ```
+    **Response**:
+    ```json
+    { "success": true, "contents": ["file1.txt", "folder/file2.docx"] }
+    ```
+- **extract**: Extracts contents from an archive file.
+  - **Input**: `filePath` (string, The path to the archive file.), `target` (string, optional, The target file or directory within the archive to extract.), `outputDirectory` (string, The directory to extract the contents to.)
+  - **Output**: `{ success: boolean, error?: string }`.
+  - **Example**:
+    ```bash
+    curl -X POST "http://localhost:3000/fs/archive/extract?filePath=/docs/archive.zip&outputDirectory=/docs/extracted"
+    ```
+- **create**: Creates an archive file from a list of source paths.
+  - **Input**: `outputFilePath` (string, The path for the output archive file.), `sourcePaths` (string[], A list of file or directory paths to include in the archive.), `format` (string, 'zip' or '7z', Defaults to 'zip')
+  - **Output**: `{ success: boolean, error?: string }`.
+  - **Example**:
+    ```bash
+    curl -X POST "http://localhost:3000/fs/archive/create?outputFilePath=/docs/new_archive.zip" \
+      -d '{"sourcePaths":["/docs/file1.txt", "/docs/folder"]}'
+    ```
+
+**AI Request Examples**:
+- User: “List the contents of archive.zip in /docs.”
+  - AI Infers: `GET /fs/archive/list?filePath=/docs/archive.zip`.
+- User: “Extract archive.zip to /docs/extracted.”
+  - AI Infers: `POST /fs/archive/extract?filePath=/docs/archive.zip&outputDirectory=/docs/extracted`.
+- User: “Create a zip archive named new_archive.zip in /docs containing file1.txt and the folder /docs/folder.”
+  - AI Infers: `POST /fs/archive/create?outputFilePath=/docs/new_archive.zip` with `sourcePaths`.
+
+**Completions**: File paths, archive formats (`zip`, `7z`).
 
 ---
 

@@ -96,6 +96,7 @@ npm run docs:api
 - **fs/file**: `read`, `write`, `delete`
   - Example: `GET /fs/file/read?path=/docs/sample.docx`
 - **fs/blob**: `save`, `read`
+- **fs/archive**: `list`, `extract`, `create`
 
 ## Word Tools
 - **word/styles**: `list`, `apply`, `create`, `modify`, `delete`
@@ -111,21 +112,30 @@ npm run docs:api
 - **word/code-format**: Format code snippets
 
 ## Excel Tools
+- **excel/worksheets**: `add`, `delete`, `set`
 - **excel/range**: `read`, `write`, `format`, `apply`
   - Example: `POST /excel/range/write?document=/docs/data.xlsx&range=A1:B2&values=[[1,2],[3,4]]`
 - **excel/data-analysis**: Filter or analyze data
+- **excel/tables**: `insert`, `modify`, `delete`
+- **excel/charts**: Insert charts
 
 ## PowerPoint Tools
 - **powerpoint/slides**: `add`, `delete`, `set`
   - Example: `POST /powerpoint/slides/add?document=/docs/presentation.pptx&layout=TitleSlide`
 - **powerpoint/shapes**: Add shapes or images
 - **powerpoint/charts**: Insert charts
+- **powerpoint/properties**: Manage presentation settings
+- **powerpoint/animations**: Manage animations and transitions
 
 ## Cross-Application Tools
 - **office/pdf/export**: Convert to PDF
 - **office/combine**: Combine documents
 - **office/transfer**: Move or link data across apps
   - Example: `POST /office/transfer?source=excel:./data.xlsx:Sheet1:A1&target=word:./report.docx:end`
+- **office/pdf/parse**: Extract content from PDFs
+- **office/word-to-powerpoint**: Convert Word to PowerPoint
+- **office/ai-suggest**: Provide AI-driven suggestions
+- **office/workflow**: Execute multi-step automation workflows
 
 ## Static and Dynamic Resources
 - **memory/ai_assistant_guide**: `read`, `list`
