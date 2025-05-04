@@ -15,7 +15,7 @@ Why Office MCP? Forget the soul-crushing grind of manual Office tasks or wrestli
 - **Developer Love**: Type-safe, modular, and documented to make your coding sessions feel like a sunny day at the beach. Includes features like `addResourceTemplate` for easy extension.
 - **Rock-Solid**: >90% test coverage means it’s ready for your wildest automation adventures. Includes basic `authenticate` support.
 
-This README is your map to Office MCP mastery. Hit the **Quick Start** for instant action, then explore the **API Documentation**, **Word Use Cases** (with a side of humor), and **AI Interaction** for the full scoop. Let’s make Office automation fun again! 🎉
+This README is your map to Office MCP mastery. Hit the **Quick Start** for instant action, then explore the **API Documentation**, **Word Use Cases** (with a side of humor), **Excel Use Cases**, **PowerPoint Use Cases**, **Cross-Application Use Cases**, and **AI Interaction** for the full scoop. Let’s make Office automation fun again! 🎉
 
 ---
 
@@ -44,23 +44,39 @@ This README is your map to Office MCP mastery. Hit the **Quick Start** for insta
    - [Use Case 8: Embedded Object Modification Magic](#use-case-8-embedded-object-modification-magic)
    - [Use Case 9: Embedded Object Deletion Duty](#use-case-9-embedded-object-deletion-duty)
    - [Use Case 10: Mermaid Import Marvel](#use-case-10-mermaid-import-marvel)
-   - [Use Case 8: Mermaid Export Escapade](#use-case-8-mermaid-export-escapade)
-   - [Use Case 9: Analysis Antics](#use-case-9-analysis-antics)
-   - [Use Case 10: Code Formatting Fiesta](#use-case-10-code-formatting-fiesta)
-   - [Use Case 11: Instant Image Injection](#use-case-11-instant-image-injection)
-   - [Use Case 12: AI Ghostwriter for the Win](#use-case-12-ai-ghostwriter-for-the-win)
-   - [Use Case 13: Surgical Strike Styling with URIs](#use-case-13-surgical-strike-styling-with-uris)
-5. [Interacting with an AI Using Office MCP](#interacting-with-an-ai-using-mcp)
+   - [Use Case 11: Mermaid Export Escapade](#use-case-11-mermaid-export-escapade)
+   - [Use Case 12: Analysis Antics](#use-case-12-analysis-antics)
+   - [Use Case 13: Code Formatting Fiesta](#use-case-13-code-formatting-fiesta)
+   - [Use Case 14: Instant Image Injection](#use-case-14-instant-image-injection)
+   - [Use Case 15: AI Ghostwriter for the Win](#use-case-15-ai-ghostwriter-for-the-win)
+   - [Use Case 16: Surgical Strike Styling with URIs](#use-case-16-surgical-strike-styling-with-uris)
+   - [Use Case 17: The AI Word Analyst (Goodbye, Manual Reviews!)](#the-ai-word-analyst-goodbye-manual-reviews)
+   - [Use Case 18: The Code Stylist in Word](#the-code-stylist-in-word)
+   - [Use Case 19: The Multimodal Illustrator](#the-multimodal-illustrator)
+5. [Excel Use Cases (with a Smile)](#excel-use-cases-with-a-smile)
+   - [The Excel Accountant with Judgment](#the-excel-accountant-with-judgment)
+   - [The Express Excel Exporter](#the-express-excel-exporter)
+6. [PowerPoint Use Cases (with Festive Cheer)](#powerpoint-use-cases-with-festive-cheer)
+   - [The Christmas PowerPoint Decorator (Ho ho ho!)](#the-christmas-powerpoint-decorator-ho-ho-ho)
+7. [Cross-Application Use Cases](#cross-application-use-cases)
+   - [The Document Multitasker](#the-document-multitasker)
+   - [The Magical Office Linker](#the-magical-office-linker)
+   - [The PowerPoint Embedder](#the-powerpoint-embedder)
+   - [The AI Document Creator](#the-ai-document-creator)
+   - [The Universal Office Translator](#the-universal-office-translator)
+8. [Interacting with an AI Using Office MCP](#interacting-with-an-ai-using-mcp)
    - [Example 1: Merging Documents](#example-1-merging-documents)
    - [Example 2: Formatting Code](#example-2-formatting-code)
-6. [Implementation Details](#implementation-details)
+9. [Implementation Details](#implementation-details)
    - [Why TypeScript and FastMCP?](#why-typescript-and-fastmcp)
    - [Dependency Choices](#dependency-choices)
    - [Security and Performance](#security-and-performance)
-7. [Testing and Reliability](#testing-and-reliability)
-8. [Future Improvements](#future-improvements)
-9. [Useful Links](#useful-links)
-10. [License](#license)
+     - [The Credential Guardian](#the-credential-guardian)
+10. [Testing and Reliability](#testing-and-reliability)
+11. [Future Improvements](#future-improvements)
+    - [The Compressed File Manager (ZIP)](#the-compressed-file-manager-zip)
+12. [Useful Links](#useful-links)
+13. [License](#license)
 
 ---
 
@@ -522,7 +538,7 @@ classDiagram
 
 ## Word Use Cases (with a Chuckle)
 
-Office MCP’s Word tools are like a Swiss Army knife for documents—versatile, sharp, and ready for anything. Below are the 10 Word-specific use cases from the implementation plan, served with humor to show how Office MCP saves the day. Each includes an API call and a glimpse of the chaos it resolves.
+Office MCP’s Word tools are like a Swiss Army knife for documents—versatile, sharp, and ready for anything. Below are the Word-specific use cases, served with humor to show how Office MCP saves the day. Each includes an API call and a glimpse of the chaos it resolves.
 
 ### Use Case 1: Markdown Magic
 **Scenario**: Your boss drops a Word CV (`CV.docx`) and demands a Markdown version for the company wiki, with comments preserved. Manually copying comments? That’s a one-way ticket to Snoozeville! 😴
@@ -616,7 +632,7 @@ curl -X POST "http://localhost:3000/word/mermaid/import?syntax=graph TD; A-->B&f
 ```
 Office MCP renders the Mermaid diagram as SVG and inserts it into your doc. Your flowchart is now the star of the show, and you didn’t touch a single pixel.
 
-### Use Case 8: Mermaid Export Escapade
+### Use Case 11: Mermaid Export Escapade
 **Scenario**: Your Word doc has a Mermaid diagram buried inside, and you need it as a PNG for a presentation. Finding it manually? That’s a scavenger hunt gone wrong.
 
 **Solution**:
@@ -625,7 +641,7 @@ curl -X POST "http://localhost:3000/word/mermaid/export?diagram=1&format=png&out
 ```
 Office MCP extracts the diagram, renders it as a PNG, and saves it. Your slide deck just got a visual upgrade, and you’re ready to dazzle the boardroom.
 
-### Use Case 9: Analysis Antics
+### Use Case 12: Analysis Antics
 **Scenario**: `PropuestaTécnica.docx` is a technical proposal, but it’s riddled with jargon and unclear bits. Reviewing it feels like decoding an alien transmission. 👽
 
 **Solution**:
@@ -634,7 +650,7 @@ curl -X POST "http://localhost:3000/word/analyze?document=/docs/PropuestaTécnic
 ```
 Office MCP’s AI analyzes the text, adds comments on problematic sections, and generates a summary. Your proposal is now clearer than a sunny day, and you’re the team’s new tech whisperer.
 
-### Use Case 10: Code Formatting Fiesta
+### Use Case 13: Code Formatting Fiesta
 **Scenario**: `BuenasPrácticas.docx` has code snippets that look like they were typed by a monkey on a keyboard. Formatting them manually? No fiesta for you!
 
 **Solution**:
@@ -643,7 +659,7 @@ curl -X POST "http://localhost:3000/word/code-format?document=/docs/BuenasPráct
 ```
 Office MCP detects languages (XML, JS, JSON, Java), applies syntax highlighting with `highlight.js`, and styles code in Consolas. Your doc is now a coder’s dream, ready for the tech conference spotlight! 🎉
 
-### Use Case 11: Instant Image Injection
+### Use Case 14: Instant Image Injection
 **Scenario**: Your quarterly report (`ReporteTrimestral.docx`) is drier than the Sahara desert. It desperately needs some visual flair, maybe the company logo... or perhaps a strategically placed cat meme? 😹
 
 **Solution**:
@@ -652,7 +668,7 @@ curl -X POST "http://localhost:3000/word/image/insert?document=/docs/ReporteTrim
 ```
 Office MCP uses `word/image/insert` to inject your chosen image right after paragraph 3. Suddenly, the report isn't just informative; it's *art*. Your boss might raise an eyebrow, but hey, engagement is engagement!
 
-### Use Case 12: AI Ghostwriter for the Win
+### Use Case 15: AI Ghostwriter for the Win
 **Scenario**: You've written a masterpiece (`MiNovela.docx`), but the conclusion feels... flat. Staring at the blinking cursor is giving you existential dread. Writer's block is real! 😩
 
 **Solution**:
@@ -662,7 +678,7 @@ curl -X POST "http://localhost:3000/word/generate-and-insert-text?document=/docs
 ```
 With `word/generate-and-insert-text` and a suitable prompt, Office MCP’s AI crafts a stunning conclusion and appends it to your document. You just beat writer’s block with the power of silicon! Take that, blank page!
 
-### Use Case 13: Surgical Strike Styling with URIs
+### Use Case 16: Surgical Strike Styling with URIs
 **Scenario**: You need to apply the “Emphasis” style *only* to the fifth paragraph of `DiscursoMotivador.docx`. Manually finding it is tedious, and applying it document-wide is overkill. You need precision! 🎯
 
 **Solution**:
@@ -670,6 +686,46 @@ With `word/generate-and-insert-text` and a suitable prompt, Office MCP’s AI cr
 curl -X POST "http://localhost:3000/word/styles/apply?document=office://docs/DiscursoMotivador.docx?range=paragraph:5&style=Emphasis"
 ```
 Using the `office://` URI scheme, `word/styles/apply` targets *exactly* paragraph 5. It’s like performing microsurgery on your document, but without the tiny scalpels. Perfect emphasis, zero collateral damage.
+
+### Use Case 17: The AI Word Analyst (Goodbye, Manual Reviews!)
+**Scenario**: Open that endless Word report sent via Teams or Sharepoint (yes, even from links!). The AI analyzes it, detects key points, potential errors, or sections needing more detail, and adds notes or comments directly in the document so the original author knows exactly what to revise. And all this using your Office credentials securely, no matter if the MCP is on your PC or a remote server! 🕵️‍♀️📝
+
+**Solution**:
+Use the `word/analyze` tool with the `analyze` and `add` operations. Provide the path to the document (which can be a URL if the MCP server has access) and the analysis criteria. The AI will process the document and use the `add` operation to insert comments in the relevant locations.
+```bash
+# Hypothetical example to analyze a document and add comments
+curl -X POST "http://localhost:3000/word/analyze?filePath=./InformeLargo.docx&operation=analyze&criteria=key points,errors,sections needing detail"
+# Then, additional calls to add comments based on the analysis
+# curl -X POST "http://localhost:3000/word/analyze?filePath=./InformeLargo.docx&operation=add&range=paragraph:10&commentText=This paragraph needs more detail."
+```
+Manual reviews are a thing of the past! AI helps you pinpoint exactly what matters.
+
+### Use Case 18: The Code Stylist in Word
+**Scenario**: Did someone paste code into a Word document (`DocumentoConCodigo.docx`) without formatting? Horror! Indentations are wrong, no colors... it's unreadable! 😱💻✨
+
+**Solution**:
+Use the `word/code-format` tool. Office MCP will automatically detect code blocks (using `@vscode/vscode-languagedetection`), identify the language, and apply professional formatting and coloring using `highlight.js` and a monospace font like Consolas.
+```bash
+# Example to format code in a Word document
+curl -X POST "http://localhost:3000/word/code-format?filePath=./DocumentoConCodigo.docx&style=Código&font=Consolas"
+```
+Make that code look as good as it works (or at least, make it understandable)! Your technical specification document is now a readable work of art.
+
+### Use Case 19: The Multimodal Illustrator
+**Scenario**: You have a document (`ReporteCreativo.docx`) and want to spice it up with relevant images generated by a multimodal AI, perhaps even comic strips illustrating key concepts in the style of Mafalda. Manually finding or creating these images is a huge effort! 🎨🤖
+
+**Solution**:
+This use case leverages the AI's multimodal capabilities (if available) to generate images based on the document's content or specific prompts. The `word/image/insert` tool can then be used to insert these generated images into the document at specified positions. This would likely involve a workflow where the AI reads a section, generates an image based on that section's content and a style prompt ("comic strip style like Mafalda"), and then uses `word/image/insert` with the image data (likely base64 encoded) to place it in the document.
+```bash
+# This is a conceptual example, as direct AI image generation via Office MCP is a future integration.
+# It would likely involve:
+# 1. AI reading document content (e.g., using word/text/get)
+# 2. AI generating image based on content and prompt (using its own capabilities or another tool)
+# 3. AI using word/image/insert with the generated image data
+# Example of the final insertion step:
+# curl -X POST "http://localhost:3000/word/image/insert?filePath=./ReporteCreativo.docx&imageDataBase64=...&position=paragraph:5&altText=Comic strip illustrating the concept"
+```
+Turn your dry reports into visually engaging masterpieces with AI-generated illustrations! If the AI cannot directly generate the image, it could potentially use other available tools to search for relevant images or inform the user of the limitation.
 
 **Visual Summary**:
 ```mermaid
@@ -690,75 +746,613 @@ graph TD
   A --> O[Image Insert]
   A --> P[AI Text Gen]
   A --> Q[URI Styling]
-  O -->|Meme magic!| R[ReportWithCat.docx]
-  P -->|Beat writer's block!| S[NovelFinished.docx]
-  Q -->|Precision styling!| T[StyledParagraph5.docx]
+  A --> R[AI Analysis]
+  A --> S[Code Styling]
+  A --> T[Multimodal Illustration]
+  O -->|Meme magic!| U[ReportWithCat.docx]
+  P -->|Beat writer's block!| V[NovelFinished.docx]
+  Q -->|Precision styling!| W[StyledParagraph5.docx]
+  R -->|Smart comments!| X[CommentedDoc.docx]
+  S -->|Pretty code!| Y[StyledCodeDoc.docx]
+  T -->|Visual flair!| Z[IllustratedReport.docx]
+```
+
+## Excel Use Cases (with a Smile)
+
+No more tears over spreadsheets! Office MCP brings joy (and efficiency) to your life with Excel.
+
+### The Excel Accountant with Judgment
+**Scenario**: You have a giant sales sheet (`Ventas2024.xlsx`) and need to quickly identify all transactions over €1000 for the audit (or to see who deserves a bonus... or a scolding!). Reviewing thousands of rows manually is a job for a superhero accountant (or lots of coffee). ☕🦸
+
+**Solution**:
+Use the `excel/data-analysis` tool with the `filter` or `apply` operation (to add comments). Define the data range and the criteria ("value > 1000"). Office MCP will mark or filter the relevant cells.
+```bash
+# Hypothetical example to filter (specific implementation may vary)
+curl -X POST "http://localhost:3000/excel/data-analysis?filePath=/docs/Ventas2024.xlsx&sheetName=Sheet1&rangeAddress=A1:Z10000&operation=filter&filterCriteria=[{\"column\":\"MontoVenta\",\"criteria1\":1000,\"operator\":\"xlGreater\"}]"
+```
+Voilà! The important cells stand out. Your audit (or bonus assignment) will be a piece of cake.
+
+### The Express Excel Exporter
+**Scenario**: Your Excel file (`DatosComplejos.xlsx`) has multiple tabs, each with data you need as separate CSV files for importing into another tool. Saving each tab manually is as exciting as watching paint dry. 😴
+
+**Solution**:
+Use a combination of `excel/worksheets` (to list sheets) and `excel/range` (to read data) tools along with `fs/file` (to write CSV). Office MCP can automate reading each sheet and exporting its content to a CSV file.
+```bash
+# Hypothetical workflow example (would require multiple calls or a workflow tool)
+# 1. List sheets
+curl -X GET "http://localhost:3000/excel/worksheets?filePath=/docs/DatosComplejos.xlsx&operation=list"
+# 2. For each sheet, read range and write CSV
+# curl -X GET "http://localhost:3000/excel/range?filePath=/docs/DatosComplejos.xlsx&sheetName=SheetName&rangeAddress=A1:Z10000&operation=read"
+# curl -X POST "http://localhost:3000/fs/file/write?path=/docs/SheetName.csv&content=..."
+```
+In the blink of an eye, you have your clean data ready for import. Goodbye, copy-pasting!
+
+## PowerPoint Use Cases (with Festive Cheer)
+
+Make your presentations shine brighter than a Christmas tree! 🎄 Office MCP helps you create captivating slides.
+
+### The Christmas PowerPoint Decorator (Ho ho ho!)
+**Scenario**: You have a boring corporate presentation (`InformeAnual.pptx`) and the holiday season is approaching. You want to give it a festive touch without spending hours searching for images and adjusting layouts. You need Christmas magic! ✨🎅
+
+**Solution**:
+Use the `powerpoint/shapes` tool to insert images or shapes, and `powerpoint/animations` to add festive transitions. Office MCP could even integrate with an external resource (perhaps another MCP!) to download free Christmas images.
+```bash
+# Hypothetical example to add an image and a transition (would require integration with image download)
+# curl -X POST "http://localhost:3000/powerpoint/shapes?filePath=/docs/InformeAnual.pptx&slideIndex=1&operation=insert&shapeType=msoShapeRectangle&position=...&size=...&imagePath=/dynamic_storage/christmas_tree.png"
+# curl -X POST "http://localhost:3000/powerpoint/animations?filePath=/docs/InformeAnual.pptx&slideIndex=1&operation=configure&transitionType=ppTransBlinds"
+```
+Your presentation now has more holiday spirit than a reindeer with glitter!
+
+## Cross-Application Use Cases
+
+The real magic happens when Office MCP makes Word, Excel, and PowerPoint dance together! 💃🕺
+
+### The Document Multitasker
+**Scenario**: You're comparing data in two Excels (`Datos1.xlsx`, `Datos2.xlsx`), drafting a report in Word (`Informe.docx`), and preparing slides in PowerPoint (`Presentacion.pptx`). Switching between windows is chaos. You need to be a digital octopus! 🐙💻
+
+**Solution**:
+Office MCP allows you to interact with multiple open documents simultaneously through its tools. You can read data from one Excel, insert it into Word, and then use that data to create a chart in PowerPoint, all with separate but coordinated API calls.
+```bash
+# Hypothetical workflow example (would require multiple calls)
+# 1. Read data from Excel 1
+# curl -X GET "http://localhost:3000/excel/range?filePath=/docs/Datos1.xlsx&sheetName=Sheet1&rangeAddress=A1:B10&operation=read"
+# 2. Read data from Excel 2
+# curl -X GET "http://localhost:3000/excel/range?filePath=/docs/Datos2.xlsx&sheetName=Sheet1&rangeAddress=C1:D10&operation=read"
+# 3. Insert combined data into Word
+# curl -X POST "http://localhost:3000/word/text/insert?filePath=/docs/Informe.docx&position=end&text=..."
+# 4. Create chart in PowerPoint with data
+# curl -X POST "http://localhost:3000/powerpoint/charts?filePath=/docs/Presentacion.pptx&slideIndex=3&operation=insert&chartType=xlColumnClustered&rangeAddress=..."
+```
+Control your Office suite like a digital orchestra conductor!
+
+### The Magical Office Linker
+**Scenario**: You have a key data table in Excel (`ReporteFinanciero.xlsx`) that needs to appear in your Word report (`InformeMensual.docx`). Every time the Excel data changes, you have to manually update the table in Word. How tedious! 😩🔗
+
+**Solution**:
+Use the `office/transfer` tool with the `insert` operation and specify the source in Excel and the target in Word. By using the linking option (if available in the underlying COM Interop implementation), changes in the source Excel file will automatically be reflected in the linked Word document.
+```bash
+# Hypothetical example to link an Excel range to Word
+curl -X POST "http://localhost:3000/office/transfer?source=excel:./ReporteFinanciero.xlsx:Sheet1:A1:F20&target=word:./InformeMensual.docx:end&operation=insert&link=true"
+```
+Your Word report data updates itself! It's like having an invisible assistant who copies and pastes for you.
+
+### The PowerPoint Embedder
+**Scenario**: You need to include a detailed Word report (`InformeCompleto.docx`) within a PowerPoint slide (`PresentacionFinal.pptx`) so viewers can access it without leaving the presentation. Copying and pasting the text breaks the formatting, and attaching it as a separate file is less elegant. 📄➡️ slides
+
+**Solution**:
+Use the `office/transfer` tool with the `embed` operation. Specify the Word file as the source and the PowerPoint slide as the target. Office MCP will embed the Word document as an OLE object within the slide.
+```bash
+# Hypothetical example to embed a Word document in a PowerPoint slide
+curl -X POST "http://localhost:3000/office/transfer?source=word:./InformeCompleto.docx&target=powerpoint:./PresentacionFinal.pptx:slide:5&operation=embed"
+```
+Your presentation now contains a full report, ready to be opened with a double-click!
+
+### The AI Document Creator
+**Scenario**: You need a formal letter, a structured data table, or a summary of a topic, but you don't want to start from scratch. Let the AI handle the initial draft! 🤖✍️
+
+**Solution**:
+Use the `word/generate-and-insert-text` tool or a combination of Excel/Word tools with an appropriate prompt. Describe the type of document or data you need, and the AI will generate the content and insert it into a new or existing document.
+```bash
+# Example to generate a formal letter in Word
+curl -X POST "http://localhost:3000/word/generate-and-insert-text?filePath=/docs/CartaFormal.docx&position=start&prompt=Generate a formal letter requesting information addressed to company X about product Y."
+# Hypothetical example to create a data table in Excel
+# curl -X POST "http://localhost:3000/excel/data-analysis?filePath=/docs/NuevaTabla.xlsx&sheetName=Sheet1&rangeAddress=A1&operation=calculate&prompt=Create a table with 5 rows and 3 columns with example data about products (Name, Price, Stock)."
+```
+Your document is ready to be perfected in seconds, not hours!
+
+### The Universal Office Translator
+**Scenario**: You work with colleagues who use Office 365 on the web and you prefer the desktop version, or vice versa. Formatting and compatibility issues are a constant headache. 🌐↔️🖥️
+
+**Solution**:
+Office MCP is designed to interact with both Office 365 JavaScript APIs and desktop COM Interop APIs. This means it can open, modify, and save documents regardless of whether they come from the cloud or your hard drive, handling necessary conversions internally.
+```bash
+# There is no specific API call for this, it's an inherent capability of the server.
+# You simply use the normal tools with file paths or SharePoint/OneDrive URLs.
+# Example (hypothetical, the actual URL would depend on O365 access implementation):
+# curl -X GET "http://localhost:3000/word/styles/list?document=https://contoso.sharepoint.com/sites/docs/ReporteCloud.docx"
+```
+Compatibility is no longer your problem! Office MCP speaks the language of all Office versions.
+
+### Static and Dynamic Resources
+
+Manage guides and user content.
+
+#### `memory/ai_assistant_guide`
+- **Description**: Static guide for Office MCP API usage.
+- **Operations**:
+  - `read`: Retrieve guide/section
+  - `list`: List sections
+- **Example**:
+  ```bash
+  curl -X GET "http://localhost:3000/memory/ai_assistant_guide?section=tool_usage"
+  ```
+
+#### Dynamic Resource Management System
+Office MCP includes a dynamic resource management system to automatically store files generated or used by the Office tools. This system helps organize and manage output files, logs, and other relevant resources.
+
+**Storage Location:**
+Resources are stored in the `/dynamic_storage` directory within the workspace.
+
+**Directory Structure:**
+Files are organized within `/dynamic_storage` using the following virtual directory structure:
+`/dynamic_storage/<tool_name>/<YYYY-MM-DD>/<filename>`
+This structure allows for easy identification of which tool generated a file and when.
+
+**`dynamic/resources` Tool:**
+The `dynamic/resources` tool provides operations to interact with this system:
+- `list`: List available resources, with optional filtering by type.
+- `read`: Retrieve the content of a specific resource by its relative path within `/dynamic_storage`.
+- `write`: Manually save content as a resource (primarily used internally by other tools).
+- `delete`: Remove a specific resource by its relative path.
+- `metadata`: Get metadata (size, dates, etc.) for a resource.
+- `search`: Search for resources by filename or (basic) content.
+
+**Configuration:**
+The behavior of the dynamic resource system can be configured using environment variables:
+- `RESOURCE_SYSTEM_ENABLED`: Set to `false` to disable the resource system entirely. Defaults to `true`.
+- `RESOURCE_LIMIT_PER_TYPE`: Set a positive integer to limit the number of resources stored *per tool*. When the limit is reached for a tool, the oldest resources for that tool will be automatically deleted. (Note: This feature is planned but may not be fully implemented in the current version).
+- `RESOURCE_LIMIT_TOTAL`: Set a positive integer to limit the total number of resources stored across all tools. When the total limit is reached, the oldest resources overall will be automatically deleted. (Note: This feature is planned but may not be fully implemented in the current version).
+
+**Integration:**
+Office MCP tools that generate or modify files (e.g., Word export/import, Excel table operations, PDF export) are integrated to automatically save relevant output files into the dynamic resource system using the structured directory format.
+
+**Visual Overview**:
+```mermaid
+classDiagram
+  class MCP_Server {
+    +FastMCP API
+    +word/styles
+    +excel/range
+    +powerpoint/slides
+    +office/pdf/export
+    +dynamic/resources
+    +memory/ai_assistant_guide
+  }
+  class Dynamic_Resources {
+    +list()
+    +read()
+    +write()
+    +delete()
+    +metadata()
+    +search()
+  }
+  class Static_Resources {
+    +read()
+    +list()
+  }
+  MCP_Server --> Dynamic_Resources
+  MCP_Server --> Static_Resources
 ```
 
 ---
 
-## Interacting with an AI Using Office MCP
+## Word Use Cases (with a Chuckle)
 
-Office MCP isn’t just for developers—it’s a playground for AI agents like Claude, ready to handle user requests with wit and precision. The standard `memory://ai_assistant_guide` resource provides a static guide for AI to navigate the API, while `dynamic/resources` manages user content. Below are two example interactions showing how an AI leverages Office MCP to fulfill user requests, complete with API calls and a conversational tone.
+Office MCP’s Word tools are like a Swiss Army knife for documents—versatile, sharp, and ready for anything. Below are the Word-specific use cases, served with humor to show how Office MCP saves the day. Each includes an API call and a glimpse of the chaos it resolves.
 
-### Example 1: Merging Documents
-**User**: “Hey, Claude, I’ve got two Word docs, `draft1.docx` and `draft2.docx`, and they’re a mess. Can you merge them into one without losing anything?”
+### Use Case 1: Markdown Magic
+**Scenario**: Your boss drops a Word CV (`CV.docx`) and demands a Markdown version for the company wiki, with comments preserved. Manually copying comments? That’s a one-way ticket to Snoozeville! 😴
 
-**Claude**: No problem, I’ll use the Office MCP Server to merge those docs faster than you can say “version control nightmare”! Let me check the files...
-
-*Claude queries Office MCP:*
+**Solution**:
 ```bash
-curl -X GET "http://localhost:3000/dynamic/resources/list?type=docx"
+curl -X POST "http://localhost:3000/word/markdown/export?document=/docs/CV.docx&output=/docs/CV.md&comments=append"
 ```
-**Response**:
-```json
-[
-  { "id": "123", "path": "/docs/draft1.docx", "type": "docx" },
-  { "id": "124", "path": "/docs/draft2.docx", "type": "docx" }
-]
-```
+Office MCP extracts the content, converts it to VS Code-compatible Markdown, and appends comments as a tidy `## Comments` section. Your wiki is now the envy of the tech team, and you’re sipping coffee like a champ.
 
-**Claude**: Found them! I’ll merge them with AI-driven conflict resolution to keep the best bits. Hold tight...
+### Use Case 2: Merge Mayhem
+**Scenario**: Two teammates sent conflicting drafts of `cuentoAladdin.docx`. Merging them manually is like mediating a toddler tantrum. Office MCP’s AI steps in to save your sanity! 🦁
 
-*Claude calls Office MCP:*
+**Solution**:
 ```bash
-curl -X POST "http://localhost:3000/word/merge?docs=/docs/draft1.docx,/docs/draft2.docx&output=/docs/merged.docx"
+curl -X POST "http://localhost:3000/word/merge?docs=/docs/cuentoAladdin.docx,/docs/Cuentos/cuentoAladdin.docx&output=/docs/merged.docx"
 ```
-**Response**:
-```json
-{ "success": true, "output": "/docs/merged.docx" }
-```
+Office MCP compares, merges, and uses AI to resolve conflicts (e.g., picking the best paragraph). The result? A single, harmonious fairy tale ready for storytime.
 
-**Claude**: Done! Your merged masterpiece is at `/docs/merged.docx`. Want me to email it to your boss or add some fancy formatting? 😎
+### Use Case 3: Template Trickery
+**Scenario**: Your startup’s budget doc (`PresupuestosEvolutio.docx`) is full of client names. Sharing it risks a data leak bigger than a reality TV scandal! 😱
 
-### Example 2: Formatting Code
-**User**: “Grok, my Word doc `code.docx` has JavaScript snippets that look like a toddler wrote them. Can you make them pretty?”
-
-**Claude**: Ugly code? Not on my watch! I’ll use Office MCP to format those snippets with syntax highlighting and a snazzy Consolas font. Let’s do this...
-
-*Claude checks the doc:*
+**Solution**:
 ```bash
-curl -X GET "http://localhost:3000/dynamic/resources/read?id=125"
+curl -X POST "http://localhost:3000/word/template?document=/docs/PresupuestosEvolutio.docx&output=/docs/Template.docx"
 ```
-**Response**:
-```json
-{ "path": "/docs/code.docx", "data": "...", "metadata": { "author": "User" } }
-```
+Office MCP’s AI swaps sensitive text for placeholders like `[CompanyName]`. Your intern can now churn out budgets without accidentally emailing secrets to the competition.
 
-**Claude**: Got it! I’ll apply the “Código” style and highlight the JavaScript. Prepare for a glow-up...
+### Use Case 4: Markdown Import Mania
+**Scenario**: You’ve got a Markdown file (`input.md`) that needs to become a polished Word doc using your company’s template (`PlantillaEvolutio.docx`). Copy-pasting? That’s so 2010.
 
-*Claude formats the code:*
+**Solution**:
 ```bash
-curl -X POST "http://localhost:3000/word/code-format?document=/docs/code.docx&style=Código&font=Consolas&output=/docs/code_formatted.docx"
+curl -X POST "http://localhost:3000/word/markdown/import?path=/docs/input.md&template=/docs/PlantillaEvolutio.docx&output=/docs/output.docx"
 ```
-**Response**:
-```json
-{ "success": true, "output": "/docs/code_formatted.docx" }
+Office MCP parses the Markdown, maps headers to template styles, and delivers a Word doc that screams “professional.” Your boss thinks you spent hours on it—shh, let’s keep Office MCP our little secret! 😉
+
+### Use Case 5: Reformatting Rescue
+**Scenario**: A client sent `PropuestasRandom.docx`, a formatting disaster that looks like it was styled by a caffeinated squirrel. Fixing it manually? Pass the aspirin!
+
+**Solution**:
+```bash
+curl -X POST "http://localhost:3000/word/reformat?document=/docs/PropuestasRandom.docx&styleSet=Professional&output=/docs/PropuestasFormatted.docx"
+```
+Office MCP analyzes the structure, applies professional styles, and adds page breaks. The result is a document so sleek, it could star in a corporate photoshoot.
+
+### Use Case 6: Embedded Object Extraction Extravaganza
+**Scenario**: `Composición.docx` is stuffed with embedded PDFs and Excel files, and you need them extracted. Digging through Word’s UI feels like an archaeological expedition. 🦴
+
+**Solution**:
+```bash
+curl -X POST "http://localhost:3000/word/embedded-objects/extractAll?document=/docs/Composición.docx&outputDir=/docs/"
+```
+Office MCP pulls out every embedded file (e.g., `embedded_1.pdf`) and saves them neatly. You’re now the hero of the project audit, no shovel required!
+
+### Use Case 7: Embedded Object Insertion Innovation
+**Scenario**: You need to add a spreadsheet (`data.xlsx`) as an embedded object into your report (`Reporte.docx`). Copy-pasting can mess up formatting, and linking might break if the source file moves. You need a clean, embedded solution! 📊
+
+**Solution**:
+```bash
+curl -X POST "http://localhost:3000/word/embedded-objects/insert?filePath=/docs/Reporte.docx&objectPath=/docs/data.xlsx"
+```
+Office MCP uses `word/embedded-objects/insert` to cleanly embed the Excel file into your Word document. The data is now self-contained, and your report is ready to impress!
+
+### Use Case 8: Embedded Object Modification Magic
+**Scenario**: The embedded chart in your presentation (`Presentacion.docx`) needs updating with the latest data from a new Excel file (`updated_data.xlsx`). Manually replacing it is a fiddly process. ✨
+
+**Solution**:
+```bash
+# Assuming the chart is the first embedded object (index 1)
+curl -X POST "http://localhost:3000/word/embedded-objects/modify?filePath=/docs/Presentacion.docx&objectIndex=1&newObjectPath=/docs/updated_data.xlsx"
+```
+Office MCP uses `word/embedded-objects/modify` to replace the existing embedded object with the new file. Your presentation is now up-to-date with minimal effort!
+
+### Use Case 9: Embedded Object Deletion Duty
+**Scenario**: Your document (`DocumentoLargo.docx`) has an old, unnecessary embedded file that's making the file size huge. You need to remove it without breaking anything. 🗑️
+
+**Solution**:
+```bash
+# Assuming the object to delete is the third embedded object (index 3)
+curl -X POST "http://localhost:3000/word/embedded-objects/delete?filePath=/docs/DocumentoLargo.docx&objectIndex=3"
+```
+Office MCP uses `word/embedded-objects/delete` to precisely remove the embedded object at the specified index. Your document is now leaner and cleaner!
+
+### Use Case 10: Mermaid Import Marvel
+**Scenario**: Your tech doc needs a flowchart, but typing Mermaid syntax in Word is like teaching a cat to code. Office MCP makes it purr-fect! 🐱
+
+**Solution**:
+```bash
+curl -X POST "http://localhost:3000/word/mermaid/import?syntax=graph TD; A-->B&format=svg&position=paragraph:5&document=/docs/tech.docx"
+```
+Office MCP renders the Mermaid diagram as SVG and inserts it into your doc. Your flowchart is now the star of the show, and you didn’t touch a single pixel.
+
+### Use Case 11: Mermaid Export Escapade
+**Scenario**: Your Word doc has a Mermaid diagram buried inside, and you need it as a PNG for a presentation. Finding it manually? That’s a scavenger hunt gone wrong.
+
+**Solution**:
+```bash
+curl -X POST "http://localhost:3000/word/mermaid/export?diagram=1&format=png&output=/docs/diagram.png&document=/docs/tech.docx"
+```
+Office MCP extracts the diagram, renders it as a PNG, and saves it. Your slide deck just got a visual upgrade, and you’re ready to dazzle the boardroom.
+
+### Use Case 12: Analysis Antics
+**Scenario**: `PropuestaTécnica.docx` is a technical proposal, but it’s riddled with jargon and unclear bits. Reviewing it feels like decoding an alien transmission. 👽
+
+**Solution**:
+```bash
+curl -X POST "http://localhost:3000/word/analyze?document=/docs/PropuestaTécnica.docx&criteria=technical&output=/docs/PropuestaTécnica_Commented.docx"
+```
+Office MCP’s AI analyzes the text, adds comments on problematic sections, and generates a summary. Your proposal is now clearer than a sunny day, and you’re the team’s new tech whisperer.
+
+### Use Case 13: Code Formatting Fiesta
+**Scenario**: `BuenasPrácticas.docx` has code snippets that look like they were typed by a monkey on a keyboard. Formatting them manually? No fiesta for you!
+
+**Solution**:
+```bash
+curl -X POST "http://localhost:3000/word/code-format?document=/docs/BuenasPrácticas.docx&style=Código&font=Consolas&output=/docs/BuenasPrácticas_Formatted.docx"
+```
+Office MCP detects languages (XML, JS, JSON, Java), applies syntax highlighting with `highlight.js`, and styles code in Consolas. Your doc is now a coder’s dream, ready for the tech conference spotlight! 🎉
+
+### Use Case 14: Instant Image Injection
+**Scenario**: Your quarterly report (`ReporteTrimestral.docx`) is drier than the Sahara desert. It desperately needs some visual flair, maybe the company logo... or perhaps a strategically placed cat meme? 😹
+
+**Solution**:
+```bash
+curl -X POST "http://localhost:3000/word/image/insert?document=/docs/ReporteTrimestral.docx&imagePath=/memes/cat_typing.png&position=paragraph:3"
+```
+Office MCP uses `word/image/insert` to inject your chosen image right after paragraph 3. Suddenly, the report isn't just informative; it's *art*. Your boss might raise an eyebrow, but hey, engagement is engagement!
+
+### Use Case 15: AI Ghostwriter for the Win
+**Scenario**: You've written a masterpiece (`MiNovela.docx`), but the conclusion feels... flat. Staring at the blinking cursor is giving you existential dread. Writer's block is real! 😩
+
+**Solution**:
+```bash
+# Assuming a prompt 'write-conclusion' is defined
+curl -X POST "http://localhost:3000/word/generate-and-insert-text?document=/docs/MiNovela.docx&prompt=write-conclusion&position=end"
+```
+With `word/generate-and-insert-text` and a suitable prompt, Office MCP’s AI crafts a stunning conclusion and appends it to your document. You just beat writer’s block with the power of silicon! Take that, blank page!
+
+### Use Case 16: Surgical Strike Styling with URIs
+**Scenario**: You need to apply the “Emphasis” style *only* to the fifth paragraph of `DiscursoMotivador.docx`. Manually finding it is tedious, and applying it document-wide is overkill. You need precision! 🎯
+
+**Solution**:
+```bash
+curl -X POST "http://localhost:3000/word/styles/apply?document=office://docs/DiscursoMotivador.docx?range=paragraph:5&style=Emphasis"
+```
+Using the `office://` URI scheme, `word/styles/apply` targets *exactly* paragraph 5. It’s like performing microsurgery on your document, but without the tiny scalpels. Perfect emphasis, zero collateral damage.
+
+### Use Case 17: The AI Word Analyst (Goodbye, Manual Reviews!)
+**Scenario**: Open that endless Word report sent via Teams or Sharepoint (yes, even from links!). The AI analyzes it, detects key points, potential errors, or sections needing more detail, and adds notes or comments directly in the document so the original author knows exactly what to revise. And all this using your Office credentials securely, no matter if the MCP is on your PC or a remote server! 🕵️‍♀️📝
+
+**Solution**:
+Use the `word/analyze` tool with the `analyze` and `add` operations. Provide the path to the document (which can be a URL if the MCP server has access) and the analysis criteria. The AI will process the document and use the `add` operation to insert comments in the relevant locations.
+```bash
+# Hypothetical example to analyze a document and add comments
+curl -X POST "http://localhost:3000/word/analyze?filePath=./InformeLargo.docx&operation=analyze&criteria=key points,errors,sections needing detail"
+# Then, additional calls to add comments based on the analysis
+# curl -X POST "http://localhost:3000/word/analyze?filePath=./InformeLargo.docx&operation=add&range=paragraph:10&commentText=This paragraph needs more detail."
+```
+Manual reviews are a thing of the past! AI helps you pinpoint exactly what matters.
+
+### Use Case 18: The Code Stylist in Word
+**Scenario**: Did someone paste code into a Word document (`DocumentoConCodigo.docx`) without formatting? Horror! Indentations are wrong, no colors... it's unreadable! 😱💻✨
+
+**Solution**:
+Use the `word/code-format` tool. Office MCP will automatically detect code blocks (using `@vscode/vscode-languagedetection`), identify the language, and apply professional formatting and coloring using `highlight.js` and a monospace font like Consolas.
+```bash
+# Example to format code in a Word document
+curl -X POST "http://localhost:3000/word/code-format?filePath=./DocumentoConCodigo.docx&style=Código&font=Consolas"
+```
+Make that code look as good as it works (or at least, make it understandable)! Your technical specification document is now a readable work of art.
+
+### Use Case 19: The Multimodal Illustrator
+**Scenario**: You have a document (`ReporteCreativo.docx`) and want to spice it up with relevant images generated by a multimodal AI, perhaps even comic strips illustrating key concepts in the style of Mafalda. Manually finding or creating these images is a huge effort! 🎨🤖
+
+**Solution**:
+This use case leverages the AI's multimodal capabilities (if available) to generate images based on the document's content or specific prompts. The `word/image/insert` tool can then be used to insert these generated images into the document at specified positions. This would likely involve a workflow where the AI reads a section, generates an image based on that section's content and a style prompt ("comic strip style like Mafalda"), and then uses `word/image/insert` with the image data (likely base64 encoded) to place it in the document.
+```bash
+# This is a conceptual example, as direct AI image generation via Office MCP is a future integration.
+# It would likely involve:
+# 1. AI reading document content (e.g., using word/text/get)
+# 2. AI generating image based on content and prompt (using its own capabilities or another tool)
+# 3. AI using word/image/insert with the generated image data
+# Example of the final insertion step:
+# curl -X POST "http://localhost:3000/word/image/insert?filePath=./ReporteCreativo.docx&imageDataBase64=...&position=paragraph:5&altText=Comic strip illustrating the concept"
+```
+Turn your dry reports into visually engaging masterpieces with AI-generated illustrations! If the AI cannot directly generate the image, it could potentially use other available tools to search for relevant images or inform the user of the limitation.
+
+**Visual Summary**:
+```mermaid
+graph TD
+  A[Word Use Cases] --> B[Markdown Export]
+  A --> C[Merge Documents]
+  A --> D[Create Template]
+  A --> E[Markdown Import]
+  A --> F[Reformat]
+  A --> G[Extract Embedded]
+  A --> H[Mermaid Import]
+  A --> I[Mermaid Export]
+  A --> J[Analyze]
+  A --> K[Code Format]
+  B -->|Save the wiki!| L[CV.md]
+  C -->|End the chaos!| M[merged.docx]
+  K -->|Code party!| N[Formatted.docx]
+  A --> O[Image Insert]
+  A --> P[AI Text Gen]
+  A --> Q[URI Styling]
+  A --> R[AI Analysis]
+  A --> S[Code Styling]
+  A --> T[Multimodal Illustration]
+  O -->|Meme magic!| U[ReportWithCat.docx]
+  P -->|Beat writer's block!| V[NovelFinished.docx]
+  Q -->|Precision styling!| W[StyledParagraph5.docx]
+  R -->|Smart comments!| X[CommentedDoc.docx]
+  S -->|Pretty code!| Y[StyledCodeDoc.docx]
+  T -->|Visual flair!| Z[IllustratedReport.docx]
 ```
 
-**Claude**: Ta-da! Your code is now dazzling in `/docs/code_formatted.docx`. It’s so pretty, it might get its own fan club. Want me to export it to PDF for sharing? 🎉
+## Excel Use Cases (with a Smile)
 
-**Why It Works**: Office MCP’s prompt templates (e.g., “format code in {document} with {style}”) and completions (e.g., suggesting “Consolas” or “Código”) make it easy for AI to interpret user requests and execute precise API calls. The `memory://ai_assistant_guide` ensures the AI knows every tool’s capabilities, turning vague user asks into polished results.
+No more tears over spreadsheets! Office MCP brings joy (and efficiency) to your life with Excel.
+
+### The Excel Accountant with Judgment
+**Scenario**: You have a giant sales sheet (`Ventas2024.xlsx`) and need to quickly identify all transactions over €1000 for the audit (or to see who deserves a bonus... or a scolding!). Reviewing thousands of rows manually is a job for a superhero accountant (or lots of coffee). ☕🦸
+
+**Solution**:
+Use the `excel/data-analysis` tool with the `filter` or `apply` operation (to add comments). Define the data range and the criteria ("value > 1000"). Office MCP will mark or filter the relevant cells.
+```bash
+# Hypothetical example to filter (specific implementation may vary)
+curl -X POST "http://localhost:3000/excel/data-analysis?filePath=/docs/Ventas2024.xlsx&sheetName=Sheet1&rangeAddress=A1:Z10000&operation=filter&filterCriteria=[{\"column\":\"MontoVenta\",\"criteria1\":1000,\"operator\":\"xlGreater\"}]"
+```
+Voilà! The important cells stand out. Your audit (or bonus assignment) will be a piece of cake.
+
+### The Express Excel Exporter
+**Scenario**: Your Excel file (`DatosComplejos.xlsx`) has multiple tabs, each with data you need as separate CSV files for importing into another tool. Saving each tab manually is as exciting as watching paint dry. 😴
+
+**Solution**:
+Use a combination of `excel/worksheets` (to list sheets) and `excel/range` (to read data) tools along with `fs/file` (to write CSV). Office MCP can automate reading each sheet and exporting its content to a CSV file.
+```bash
+# Hypothetical workflow example (would require multiple calls or a workflow tool)
+# 1. List sheets
+curl -X GET "http://localhost:3000/excel/worksheets?filePath=/docs/DatosComplejos.xlsx&operation=list"
+# 2. For each sheet, read range and write CSV
+# curl -X GET "http://localhost:3000/excel/range?filePath=/docs/DatosComplejos.xlsx&sheetName=SheetName&rangeAddress=A1:Z10000&operation=read"
+# curl -X POST "http://localhost:3000/fs/file/write?path=/docs/SheetName.csv&content=..."
+```
+In the blink of an eye, you have your clean data ready for import. Goodbye, copy-pasting!
+
+## PowerPoint Use Cases (with Festive Cheer)
+
+Make your presentations shine brighter than a Christmas tree! 🎄 Office MCP helps you create captivating slides.
+
+### The Christmas PowerPoint Decorator (Ho ho ho!)
+**Scenario**: You have a boring corporate presentation (`InformeAnual.pptx`) and the holiday season is approaching. You want to give it a festive touch without spending hours searching for images and adjusting layouts. You need Christmas magic! ✨🎅
+
+**Solution**:
+Use the `powerpoint/shapes` tool to insert images or shapes, and `powerpoint/animations` to add festive transitions. Office MCP could even integrate with an external resource (perhaps another MCP!) to download free Christmas images.
+```bash
+# Hypothetical example to add an image and a transition (would require integration with image download)
+# curl -X POST "http://localhost:3000/powerpoint/shapes?filePath=/docs/InformeAnual.pptx&slideIndex=1&operation=insert&shapeType=msoShapeRectangle&position=...&size=...&imagePath=/dynamic_storage/christmas_tree.png"
+# curl -X POST "http://localhost:3000/powerpoint/animations?filePath=/docs/InformeAnual.pptx&slideIndex=1&operation=configure&transitionType=ppTransBlinds"
+```
+Your presentation now has more holiday spirit than a reindeer with glitter!
+
+## Cross-Application Use Cases
+
+The real magic happens when Office MCP makes Word, Excel, and PowerPoint dance together! 💃🕺
+
+### The Document Multitasker
+**Scenario**: You're comparing data in two Excels (`Datos1.xlsx`, `Datos2.xlsx`), drafting a report in Word (`Informe.docx`), and preparing slides in PowerPoint (`Presentacion.pptx`). Switching between windows is chaos. You need to be a digital octopus! 🐙💻
+
+**Solution**:
+Office MCP allows you to interact with multiple open documents simultaneously through its tools. You can read data from one Excel, insert it into Word, and then use that data to create a chart in PowerPoint, all with separate but coordinated API calls.
+```bash
+# Hypothetical workflow example (would require multiple calls)
+# 1. Read data from Excel 1
+# curl -X GET "http://localhost:3000/excel/range?filePath=/docs/Datos1.xlsx&sheetName=Sheet1&rangeAddress=A1:B10&operation=read"
+# 2. Read data from Excel 2
+# curl -X GET "http://localhost:3000/excel/range?filePath=/docs/Datos2.xlsx&sheetName=Sheet1&rangeAddress=C1:D10&operation=read"
+# 3. Insert combined data into Word
+# curl -X POST "http://localhost:3000/word/text/insert?filePath=/docs/Informe.docx&position=end&text=..."
+# 4. Create chart in PowerPoint with data
+# curl -X POST "http://localhost:3000/powerpoint/charts?filePath=/docs/Presentacion.pptx&slideIndex=3&operation=insert&chartType=xlColumnClustered&rangeAddress=..."
+```
+Control your Office suite like a digital orchestra conductor!
+
+### The Magical Office Linker
+**Scenario**: You have a key data table in Excel (`ReporteFinanciero.xlsx`) that needs to appear in your Word report (`InformeMensual.docx`). Every time the Excel data changes, you have to manually update the table in Word. How tedious! 😩🔗
+
+**Solution**:
+Use the `office/transfer` tool with the `insert` operation and specify the source in Excel and the target in Word. By using the linking option (if available in the underlying COM Interop implementation), changes in the source Excel file will automatically be reflected in the linked Word document.
+```bash
+# Hypothetical example to link an Excel range to Word
+curl -X POST "http://localhost:3000/office/transfer?source=excel:./ReporteFinanciero.xlsx:Sheet1:A1:F20&target=word:./InformeMensual.docx:end&operation=insert&link=true"
+```
+Your Word report data updates itself! It's like having an invisible assistant who copies and pastes for you.
+
+### The PowerPoint Embedder
+**Scenario**: You need to include a detailed Word report (`InformeCompleto.docx`) within a PowerPoint slide (`PresentacionFinal.pptx`) so viewers can access it without leaving the presentation. Copying and pasting the text breaks the formatting, and attaching it as a separate file is less elegant. 📄➡️ slides
+
+**Solution**:
+Use the `office/transfer` tool with the `embed` operation. Specify the Word file as the source and the PowerPoint slide as the target. Office MCP will embed the Word document as an OLE object within the slide.
+```bash
+# Hypothetical example to embed a Word document in a PowerPoint slide
+curl -X POST "http://localhost:3000/office/transfer?source=word:./InformeCompleto.docx&target=powerpoint:./PresentacionFinal.pptx:slide:5&operation=embed"
+```
+Your presentation now contains a full report, ready to be opened with a double-click!
+
+### The AI Document Creator
+**Scenario**: You need a formal letter, a structured data table, or a summary of a topic, but you don't want to start from scratch. Let the AI handle the initial draft! 🤖✍️
+
+**Solution**:
+Use the `word/generate-and-insert-text` tool or a combination of Excel/Word tools with an appropriate prompt. Describe the type of document or data you need, and the AI will generate the content and insert it into a new or existing document.
+```bash
+# Example to generate a formal letter in Word
+curl -X POST "http://localhost:3000/word/generate-and-insert-text?filePath=/docs/CartaFormal.docx&position=start&prompt=Generate a formal letter requesting information addressed to company X about product Y."
+# Hypothetical example to create a data table in Excel
+# curl -X POST "http://localhost:3000/excel/data-analysis?filePath=/docs/NuevaTabla.xlsx&sheetName=Sheet1&rangeAddress=A1&operation=calculate&prompt=Create a table with 5 rows and 3 columns with example data about products (Name, Price, Stock)."
+```
+Your document is ready to be perfected in seconds, not hours!
+
+### The Universal Office Translator
+**Scenario**: You work with colleagues who use Office 365 on the web and you prefer the desktop version, or vice versa. Formatting and compatibility issues are a constant headache. 🌐↔️🖥️
+
+**Solution**:
+Office MCP is designed to interact with both Office 365 JavaScript APIs and desktop COM Interop APIs. This means it can open, modify, and save documents regardless of whether they come from the cloud or your hard drive, handling necessary conversions internally.
+```bash
+# There is no specific API call for this, it's an inherent capability of the server.
+# You simply use the normal tools with file paths or SharePoint/OneDrive URLs.
+# Example (hypothetical, the actual URL would depend on O365 access implementation):
+# curl -X GET "http://localhost:3000/word/styles/list?document=https://contoso.sharepoint.com/sites/docs/ReporteCloud.docx"
+```
+Compatibility is no longer your problem! Office MCP speaks the language of all Office versions.
+
+### Static and Dynamic Resources
+
+Manage guides and user content.
+
+#### `memory/ai_assistant_guide`
+- **Description**: Static guide for Office MCP API usage.
+- **Operations**:
+  - `read`: Retrieve guide/section
+  - `list`: List sections
+- **Example**:
+  ```bash
+  curl -X GET "http://localhost:3000/memory/ai_assistant_guide?section=tool_usage"
+  ```
+
+#### Dynamic Resource Management System
+Office MCP includes a dynamic resource management system to automatically store files generated or used by the Office tools. This system helps organize and manage output files, logs, and other relevant resources.
+
+**Storage Location:**
+Resources are stored in the `/dynamic_storage` directory within the workspace.
+
+**Directory Structure:**
+Files are organized within `/dynamic_storage` using the following virtual directory structure:
+`/dynamic_storage/<tool_name>/<YYYY-MM-DD>/<filename>`
+This structure allows for easy identification of which tool generated a file and when.
+
+**`dynamic/resources` Tool:**
+The `dynamic/resources` tool provides operations to interact with this system:
+- `list`: List available resources, with optional filtering by type.
+- `read`: Retrieve the content of a specific resource by its relative path within `/dynamic_storage`.
+- `write`: Manually save content as a resource (primarily used internally by other tools).
+- `delete`: Remove a specific resource by its relative path.
+- `metadata`: Get metadata (size, dates, etc.) for a resource.
+- `search`: Search for resources by filename or (basic) content.
+
+**Configuration:**
+The behavior of the dynamic resource system can be configured using environment variables:
+- `RESOURCE_SYSTEM_ENABLED`: Set to `false` to disable the resource system entirely. Defaults to `true`.
+- `RESOURCE_LIMIT_PER_TYPE`: Set a positive integer to limit the number of resources stored *per tool*. When the limit is reached for a tool, the oldest resources for that tool will be automatically deleted. (Note: This feature is planned but may not be fully implemented in the current version).
+- `RESOURCE_LIMIT_TOTAL`: Set a positive integer to limit the total number of resources stored across all tools. When the total limit is reached, the oldest resources overall will be automatically deleted. (Note: This feature is planned but may not be fully implemented in the current version).
+
+**Integration:**
+Office MCP tools that generate or modify files (e.g., Word export/import, Excel table operations, PDF export) are integrated to automatically save relevant output files into the dynamic resource system using the structured directory format.
+
+**Visual Overview**:
+```mermaid
+classDiagram
+  class MCP_Server {
+    +FastMCP API
+    +word/styles
+    +excel/range
+    +powerpoint/slides
+    +office/pdf/export
+    +dynamic/resources
+    +memory/ai_assistant_guide
+  }
+  class Dynamic_Resources {
+    +list()
+    +read()
+    +write()
+    +delete()
+    +metadata()
+    +search()
+  }
+  class Static_Resources {
+    +read()
+    +list()
+  }
+  MCP_Server --> Dynamic_Resources
+  MCP_Server --> Static_Resources
+```
 
 ---
 
@@ -806,6 +1400,8 @@ We picked dependencies like choosing toppings for the perfect pizza:
   - `zod` schemas enforce input sanity.
   - Role-based access controls protect sensitive ops (implementation may vary).
   - Basic token authentication via FastMCP's `authenticate`.
+  - **The Credential Guardian**: Securely handles your Office credentials, whether you're using the MCP locally or in the cloud. Forget typing passwords over and over again. 🛡️🔑
+
 - **Performance**:
   - `node-cache` speeds up metadata queries.
   - Batch ops (`word/batch`) minimize API calls.
@@ -837,7 +1433,7 @@ Office MCP is tougher than a double-sided spreadsheet. Our testing strategy incl
 
 ### End-to-End Use Case Tests
 
-The 10 use cases detailed in the implementation plan (`office-mcp-plan copy.md`, Section 5.2) have been implemented as automated end-to-end tests. These tests are located in the `tests/e2e/` directory and validate the functionality of the implemented MCP tools by interacting with a running instance of the Office MCP server.
+The use cases detailed in the implementation plan (`office-mcp-plan copy.md`, Section 5.2) have been implemented as automated end-to-end tests. These tests are located in the `tests/e2e/` directory and validate the functionality of the implemented MCP tools by interacting with a running instance of the Office MCP server.
 
 To run these end-to-end tests, first ensure the Office MCP server is running (see [Running the Server](#running-the-server)). Then, execute the following command:
 
@@ -867,6 +1463,7 @@ Office MCP is just warming up. Future ideas:
 - **Deeper AI**: NLP for summarization or style suggestions.
 - **New Formats**: Support .odt or Google Docs.
 - **Plugins**: Let devs add custom tools.
+- **The Compressed File Manager (ZIP)**: Did you get a ZIP with a thousand documents and only need one? Tell the MCP what to look for, and it will find it inside the ZIP. Need to send multiple documents? Ask it to compress them into a ZIP for easy sending. Ideal for organizing and sharing files related to your Office documents! 📦🔍
 
 Got a wild idea? Open an issue on GitHub!
 
