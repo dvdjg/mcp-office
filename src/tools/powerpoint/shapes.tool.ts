@@ -1,78 +1,87 @@
+/**
+ * @file Tool for managing shapes in PowerPoint presentations.
+ * Allows inserting, modifying, formatting, deleting, and listing shapes.
+ * Uses COM Interop via winax.
+ * @author David Jurado
+ * @date 2025-05-04
+ * @copyright Copyright (c) 2025 David Jurado
+ * @license MIT
+ */
 // src/tools/powerpoint/shapes.tool.ts
 
 import { z } from 'zod';
 import { McpResource, ToolRequestParams, ApiResponse } from '../../types/common.types';
 import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
 import logger from '../../utils/logger';
-import { saveResource } from '../dynamic/resources.tool'; // Importar saveResource
-import * as fs from 'fs-extra'; // Importar fs para leer el archivo PowerPoint
-import * as path from 'path'; // Importar path
+import { saveResource } from '../dynamic/resources.tool'; // Import saveResource
+import * as fs from 'fs-extra'; // Import fs to read the PowerPoint file
+import * as path from 'path'; // Import path
 
-// Define el esquema de entrada para la herramienta powerpoint/shapes
+// Define the input schema for the powerpoint/shapes tool
 const PowerPointShapesInputSchema = z.object({
-  filePath: z.string().describe('Ruta al archivo PowerPoint.'),
-  operation: z.enum(['insert', 'modify', 'format', 'delete', 'list']).describe('Operación a realizar: insert, modify, format, delete, list.'),
-  slideIndex: z.number().int().positive().optional().describe('Índice de la diapositiva (1-basado). Requerido para insert, modify, format, delete.'),
-  shapeType: z.string().optional().describe('Tipo de forma a insertar (e.g., "msoShapeRectangle", "msoShapeTextbox"). Requerido para insert.'),
+  filePath: z.string().describe('Path to the PowerPoint file.'),
+  operation: z.enum(['insert', 'modify', 'format', 'delete', 'list']).describe('Operation to perform: insert, modify, format, delete, list.'),
+  slideIndex: z.number().int().positive().optional().describe('1-based index of the slide. Required for insert, modify, format, delete.'),
+  shapeType: z.string().optional().describe('Type of shape to insert (e.g., "msoShapeRectangle", "msoShapeTextbox"). Required for insert.'),
   position: z.object({
     left: z.number().optional(),
     top: z.number().optional(),
-  }).optional().describe('Posición de la forma (left, top). Opcional para insert, modify.'),
+  }).optional().describe('Position of the shape (left, top). Optional for insert, modify.'),
   size: z.object({
     width: z.number().optional(),
     height: z.number().optional(),
-  }).optional().describe('Tamaño de la forma (width, height). Opcional para insert, modify.'),
-  text: z.string().optional().describe('Texto para la forma (si es un cuadro de texto). Opcional para insert, modify.'),
-  shapeIndex: z.number().int().positive().optional().describe('Índice de la forma en la diapositiva (1-basado). Requerido para modify, format, delete.'),
-  shapeName: z.string().optional().describe('Nombre de la forma. Alternativa a shapeIndex para modify, format, delete.'),
+  }).optional().describe('Size of the shape (width, height). Optional for insert, modify.'),
+  text: z.string().optional().describe('Text for the shape (if it is a textbox). Optional for insert, modify.'),
+  shapeIndex: z.number().int().positive().optional().describe('1-based index of the shape on the slide. Required for modify, format, delete.'),
+  shapeName: z.string().optional().describe('Name of the shape. Alternative to shapeIndex for modify, format, delete.'),
   formatProperties: z.object({
-    fillColor: z.string().optional().describe('Color de relleno (e.g., "RGB(255, 0, 0)").'),
-    lineColor: z.string().optional().describe('Color de línea (e.g., "RGB(0, 0, 255)").'),
-    lineWidth: z.number().optional().describe('Ancho de línea.'),
-    fontName: z.string().optional().describe('Nombre de la fuente.'),
-    fontSize: z.number().optional().describe('Tamaño de la fuente.'),
-    fontBold: z.boolean().optional().describe('Negrita.'),
-    fontItalic: z.boolean().optional().describe('Itálica.'),
-    fontUnderline: z.boolean().optional().describe('Subrayado.'),
-  }).optional().describe('Propiedades de formato a aplicar. Requerido para format.'),
+    fillColor: z.string().optional().describe('Fill color (e.g., "RGB(255, 0, 0)").'),
+    lineColor: z.string().optional().describe('Line color (e.g., "RGB(0, 0, 255)").'),
+    lineWidth: z.number().optional().describe('Line width.'),
+    fontName: z.string().optional().describe('Font name.'),
+    fontSize: z.number().optional().describe('Font size.'),
+    fontBold: z.boolean().optional().describe('Bold.'),
+    fontItalic: z.boolean().optional().describe('Italic.'),
+    fontUnderline: z.boolean().optional().describe('Underline.'),
+  }).optional().describe('Format properties to apply. Required for format.'),
 });
 
 type PowerPointShapesInput = z.infer<typeof PowerPointShapesInputSchema>;
 
 /**
  * @tool powerpoint/shapes
- * @description Permite insertar, modificar, dar formato, eliminar y listar formas en presentaciones de PowerPoint.
- * Utiliza COM Interop a través de winax.
- * @param {string} filePath - Ruta al archivo PowerPoint.
- * @param {'insert' | 'modify' | 'format' | 'delete' | 'list'} operation - Operación a realizar.
- * @param {number} [slideIndex] - Índice de la diapositiva (1-basado). Requerido para insert, modify, format, delete.
- * @param {string} [shapeType] - Tipo de forma a insertar (e.g., "msoShapeRectangle", "msoShapeTextbox"). Requerido para insert.
- * @param {{left?: number, top?: number}} [position] - Posición de la forma.
- * @param {{width?: number, height?: number}} [size] - Tamaño de la forma.
- * @param {string} [text] - Texto para la forma (si es un cuadro de texto).
- * @param {number} [shapeIndex] - Índice de la forma (1-basado). Requerido para modify, format, delete.
- * @param {string} [shapeName] - Nombre de la forma. Alternativa a shapeIndex.
- * @param {{fillColor?: string, lineColor?: string, lineWidth?: number, fontName?: string, fontSize?: number, fontBold?: boolean, fontItalic?: boolean, fontUnderline?: boolean}} [formatProperties] - Propiedades de formato. Requerido para format.
- * @returns {Promise<string>} Un mensaje indicando el resultado de la operación.
+ * @description Allows inserting, modifying, formatting, deleting, and listing shapes in PowerPoint presentations.
+ * Uses COM Interop via winax.
+ * @param {string} filePath - Path to the PowerPoint file.
+ * @param {'insert' | 'modify' | 'format' | 'delete' | 'list'} operation - Operation to perform.
+ * @param {number} [slideIndex] - 1-based index of the slide. Required for insert, modify, format, delete.
+ * @param {string} [shapeType] - Type of shape to insert (e.g., "msoShapeRectangle", "msoShapeTextbox"). Required for insert.
+ * @param {{left?: number, top?: number}} [position] - Position of the shape.
+ * @param {{width?: number, height?: number}} [size] - Size of the shape.
+ * @param {string} [text] - Text for the shape (if it is a textbox).
+ * @param {number} [shapeIndex] - 1-based index of the shape. Required for modify, format, delete.
+ * @param {string} [shapeName] - Name of the shape. Alternative to shapeIndex.
+ * @param {{fillColor?: string, lineColor?: string, lineWidth?: number, fontName?: string, fontSize?: number, fontBold?: boolean, fontItalic?: boolean, fontUnderline?: boolean}} [formatProperties] - Format properties. Required for format.
+ * @returns {Promise<string>} A message indicating the result of the operation.
  */
 const powerpointShapesTool: McpResource = {
   path: 'powerpoint/shapes',
-  description: 'Permite insertar, modificar, dar formato, eliminar y listar formas en presentaciones de PowerPoint.',
+  description: 'Allows inserting, modifying, formatting, deleting, and listing shapes in PowerPoint presentations.',
   schema: PowerPointShapesInputSchema,
   handler: async (params: ToolRequestParams): Promise<ApiResponse<any>> => {
     let app: any = null;
     let presentation: any = null;
     let slide: any = null;
-    let filePath: string | undefined; // Declarar filePath fuera del try y permitir undefined
+    let filePath: string | undefined; // Declare filePath outside the try and allow undefined
 
     try {
       // Validate input parameters using the Zod schema
       const input = PowerPointShapesInputSchema.parse(params);
-      filePath = input.filePath; // Asignar filePath aquí
+      filePath = input.filePath; // Assign filePath here
 
 
       const {
-        operation, // Eliminar filePath de la desestructuración aquí
+        operation, // Remove filePath from destructuring here
         slideIndex,
         shapeType,
         position,
@@ -267,20 +276,20 @@ const powerpointShapesTool: McpResource = {
         // Ensure presentation is closed if it was opened
         if (presentation) {
             try {
-                // Guardar la presentación antes de cerrarla
+                // Save the presentation before closing it
                 presentation.Save();
-                // Guardar el archivo PowerPoint modificado como un recurso dinámico
-                // Esto se hace en el finally porque Save() ocurre aquí para todas las operaciones de modificación.
-                // No necesitamos verificar la operación específica aquí.
-                // Asegurarse de que filePath tiene un valor antes de intentar leer el archivo
+                // Save the modified PowerPoint file as a dynamic resource
+                // This is done in the finally block because Save() happens here for all modification operations.
+                // We don't need to check the specific operation here.
+                // Ensure filePath has a value before attempting to read the file
                 if (filePath) {
                     try {
-                        const pptContent = await fs.readFile(filePath, null); // Leer como Buffer
+                        const pptContent = await fs.readFile(filePath, null); // Read as Buffer
                         await saveResource('powerpoint/shapes', path.basename(filePath), pptContent);
                         // logger.info(`Saved ${filePath} as a dynamic resource.`);
                     } catch (resourceSaveError: any) {
                         // logger.error(`Failed to save ${filePath} as a dynamic resource: ${resourceSaveError.message}`);
-                        // Continuar la ejecución aunque falle el guardado del recurso
+                        // Continue execution even if resource saving fails
                     }
                 }
                 presentation.Close(); // Close after saving
@@ -294,27 +303,12 @@ const powerpointShapesTool: McpResource = {
         // and no other operations are pending. Releasing the object reference is safer.
         releaseObject(app);
     }
-    // Añadir un retorno al final para cubrir todos los casos posibles
-    // Esto solo se alcanzará si no se lanzó un error o se retornó antes.
-    // En un escenario ideal, todos los casos del switch deberían retornar.
-    // Pero para satisfacer al linter, añadimos este retorno de fallback.
-    return { success: false, error: { code: 'UNHANDLED_CASE', message: 'La operación de formas de PowerPoint no retornó un resultado explícito.' } };
+    // Add a return at the end to cover all possible cases
+    // This will only be reached if no error was thrown or returned before.
+    // In an ideal scenario, all switch cases should return.
+    // But to satisfy the linter, we add this fallback return.
+    return { success: false, error: { code: 'UNHANDLED_CASE', message: 'PowerPoint shapes operation did not return an explicit result.' } };
   },
 };
 
 export default powerpointShapesTool;
-
-// Helper function placeholder for parsing RGB string like "RGB(255, 0, 0)"
-// This would need to be implemented based on how winax handles color values.
-// function parseRGB(rgbString: string): number {
-//     // Example parsing logic (needs refinement based on actual format and winax capabilities)
-//     const match = rgbString.match(/^RGB\((\d+),\s*(\d+),\s*(\d+)\)$/);
-//     if (match) {
-//         const r = parseInt(match[1], 10);
-//         const g = parseInt(match[2], 10);
-//         const b = parseInt(match[3], 10);
-//         // COM RGB values are typically BGR, so (B * 256^2) + (G * 256^1) + (R * 256^0)
-//         return (b << 16) | (g << 8) | r;
-//     }
-//     throw new Error(`Invalid RGB string format: ${rgbString}`);
-// }

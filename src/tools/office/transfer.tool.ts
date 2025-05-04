@@ -1,3 +1,10 @@
+/**
+ * @file Tool for transferring data between Office applications (Word, Excel, PowerPoint) using COM Interop.
+ * @author David Jurado
+ * @date 2025-05-04
+ * @copyright Copyright (c) 2025 David Jurado
+ * @license MIT
+ */
 // src/tools/office/transfer.tool.ts
 import { McpResource } from '@/types/common.types';
 import { z } from 'zod';
@@ -9,18 +16,18 @@ import { ApiResponse, ErrorResponse, SuccessResponse } from '@/types/common.type
 // Define the input schema for the office/transfer tool
 const officeTransferInputSchema = z.object({
   //type: z.literal('object'), // Added to satisfy validator
-  source: z.string().describe('Especificación de origen (ej: "excel:./data.xlsx:Sheet1:A1:B2", "word:./document.docx:paragraph:3", "powerpoint:./presentation.pptx:slide:2:shape:5")'),
-  target: z.string().describe('Especificación de destino (ej: "word:./document.docx:paragraph:3", "excel:./data.xlsx:Sheet1:A1", "powerpoint:./presentation.pptx:slide:2")'),
-  operation: z.enum(['embed', 'insert', 'copy']).describe('Tipo de operación: "embed", "insert", o "copy"'),
+  source: z.string().describe('Source specification (e.g., "excel:./data.xlsx:Sheet1:A1:B2", "word:./document.docx:paragraph:3", "powerpoint:./presentation.pptx:slide:2:shape:5")'),
+  target: z.string().describe('Target specification (e.g., "word:./document.docx:paragraph:3", "excel:./data.xlsx:Sheet1:A1", "powerpoint:./presentation.pptx:slide:2")'),
+  operation: z.enum(['embed', 'insert', 'copy']).describe('Operation type: "embed", "insert", or "copy"'),
   // Add other potential parameters like format, etc. if needed later
 });
 
-// Define the output schema (puede ser un simple éxito/fallo o más detallado)
+// Define the output schema (can be a simple success/failure or more detailed)
 const officeTransferOutputSchema = z.object({
     success: z.boolean(),
-    // Para éxito, puede haber datos adicionales si es necesario
+    // For success, there can be additional data if needed
     data: z.any().optional(),
-    // Para fallo, se usa la estructura de ErrorResponse
+    // For failure, the ErrorResponse structure is used
     error: z.object({
         code: z.string(),
         message: z.string(),
@@ -28,7 +35,11 @@ const officeTransferOutputSchema = z.object({
     }).optional(),
 });
 
-// Helper function to parse source/target strings
+/**
+ * Helper function to parse source/target strings.
+ * @param specifier - The source or target string specification.
+ * @returns An object containing the application, file path, and location, or null if the format is invalid.
+ */
 function parseOfficeSpecifier(specifier: string): { app: string; filePath: string; location: string } | null {
     const parts = specifier.split(':');
     if (parts.length < 3) {
@@ -44,14 +55,14 @@ function parseOfficeSpecifier(specifier: string): { app: string; filePath: strin
 
 const officeTransferTool: McpResource = {
     path: 'office/transfer',
-    description: 'Mueve datos entre aplicaciones de Office (Word, Excel, PowerPoint) usando COM Interop.',
-    schema: officeTransferInputSchema, // Corregido de inputSchema a schema
-    // outputSchema: officeTransferOutputSchema, // outputSchema no es parte de McpResource
+    description: 'Transfers data between Office applications (Word, Excel, PowerPoint) using COM Interop.',
+    schema: officeTransferInputSchema, // Corrected from inputSchema to schema
+    // outputSchema: officeTransferOutputSchema, // outputSchema is not part of McpResource
     handler: async (params, context): Promise<ApiResponse<any>> => {
         let sourceApp: any = null;
         let targetApp: any = null;
         let sourceDoc: any = null;
-        let targetDoc: any = null; // Permitir que targetDoc sea de tipo any
+        let targetDoc: any = null; // Allow targetDoc to be of type any
 
         try {
             const { source, target, operation } = officeTransferInputSchema.parse(params);
@@ -64,9 +75,9 @@ const officeTransferTool: McpResource = {
                     success: false,
                     error: {
                         code: 'INVALID_INPUT',
-                        message: 'Formato de especificador de origen o destino inválido.',
+                        message: 'Invalid source or target specifier format.',
                     },
-                } as ErrorResponse; // Asegurar que coincide con ErrorResponse
+                } as ErrorResponse; // Ensure it matches ErrorResponse
             }
 
             // Basic validation for supported applications
@@ -79,9 +90,9 @@ const officeTransferTool: McpResource = {
                    success: false,
                    error: {
                        code: 'UNSUPPORTED_APPLICATION',
-                       message: `Aplicación de origen o destino no soportada. Soportadas: ${supportedApps.map(app => app.split('.')[0]).join(', ')}.`,
+                       message: `Unsupported source or target application. Supported: ${supportedApps.map(app => app.split('.')[0]).join(', ')}.`,
                    },
-               } as ErrorResponse; // Asegurar que coincide con ErrorResponse
+               } as ErrorResponse; // Ensure it matches ErrorResponse
            }
 
             // Get COM objects for source and target applications
@@ -143,15 +154,15 @@ const officeTransferTool: McpResource = {
                  // Save changes (optional, depending on requirements)
                  // sourceDoc.Save();
                  // targetDoc.Save();
-                 return { success: true, data: { message: `Operación de transferencia de datos '${operation}' completada con éxito.` } };
+                 return { success: true, data: { message: `Data transfer operation '${operation}' completed successfully.` } };
             } else {
                  return {
                     success: false,
                     error: {
                         code: 'TRANSFER_FAILED',
-                        message: `La operación de transferencia de datos '${operation}' falló.`,
+                        message: `Data transfer operation '${operation}' failed.`,
                     },
-                 } as ErrorResponse; // Asegurar que coincide con ErrorResponse
+                 } as ErrorResponse; // Ensure it matches ErrorResponse
             }
 
         } catch (error) {

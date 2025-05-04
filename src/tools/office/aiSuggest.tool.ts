@@ -1,90 +1,98 @@
+/**
+ * @file Tool for providing AI-powered suggestions based on the current context of an Office application.
+ * Allows suggesting formats, search terms, or chart types.
+ * @author David Jurado
+ * @date 2025-05-04
+ * @copyright Copyright (c) 2025 David Jurado
+ * @license MIT
+ */
 import { z } from 'zod';
-import { McpResource, ToolRequestParams, ApiResponse, FastMCPContext } from '@/types/common.types'; // Importar McpResource, ToolRequestParams, ApiResponse y FastMCPContext
-import { getOfficeApplication, OfficeAppName } from '../../utils/officeInterop'; // Importar OfficeAppName
-import { TextContent, ContentResult } from 'fastmcp'; // Importar TextContent y ContentResult
+import { McpResource, ToolRequestParams, ApiResponse, FastMCPContext } from '@/types/common.types'; // Import McpResource, ToolRequestParams, ApiResponse and FastMCPContext
+import { getOfficeApplication, OfficeAppName } from '../../utils/officeInterop'; // Import OfficeAppName
+import { TextContent, ContentResult } from 'fastmcp'; // Import TextContent and ContentResult
 
-// Define el esquema de entrada para la herramienta office/ai-suggest
+// Define the input schema for the office/ai-suggest tool
 const AiSuggestInputSchema = z.object({
-  application: z.enum(['Word.Application', 'Excel.Application', 'PowerPoint.Application']), // Usar nombres completos
+  application: z.enum(['Word.Application', 'Excel.Application', 'PowerPoint.Application']), // Use full names
   operation: z.enum(['format', 'search', 'chart']),
-  contextRange: z.string().optional(), // Podría ser un rango de Excel, un identificador de párrafo, etc.
-  filePath: z.string().optional(), // Ruta del archivo si es relevante
+  contextRange: z.string().optional(), // Could be an Excel range, a paragraph identifier, etc.
+  filePath: z.string().optional(), // File path if relevant
 });
 
 type AiSuggestInput = z.infer<typeof AiSuggestInputSchema>;
 
 /**
  * @tool office/ai-suggest
- * @description Proporciona sugerencias impulsadas por IA basadas en el contexto actual de una aplicación de Office.
- * Permite sugerir formatos, términos de búsqueda o tipos de gráficos.
+ * @description Provides AI-powered suggestions based on the current context of an Office application.
+ * Allows suggesting formats, search terms, or chart types.
  * @input AiSuggestInputSchema
- * @output z.string() // La sugerencia generada por la IA
+ * @output z.string() // The AI-generated suggestion
  */
-export const aiSuggestTool: McpResource = { // Usar McpResource
-  path: 'office/ai-suggest', // Definir el path
-  description: 'Proporciona sugerencias impulsadas por IA basadas en el contexto actual de una aplicación de Office.',
-  schema: AiSuggestInputSchema, // Usar schema en lugar de inputSchema
-  handler: async (params: ToolRequestParams, context?: FastMCPContext<any>) => { // Usar ToolRequestParams y FastMCPContext<any>
-    // Acceder a la función de sampling a través del contexto de la sesión
+export const aiSuggestTool: McpResource = { // Use McpResource
+  path: 'office/ai-suggest', // Define the path
+  description: 'Provides AI-powered suggestions based on the current context of an Office application.',
+  schema: AiSuggestInputSchema, // Use schema instead of inputSchema
+  handler: async (params: ToolRequestParams, context?: FastMCPContext<any>) => { // Use ToolRequestParams and FastMCPContext<any>
+    // Access the sampling function through the session context
     const requestSampling = context?.session?.requestSampling;
 
     try {
-      // Validar los parámetros de entrada
+      // Validate input parameters
       const input = AiSuggestInputSchema.parse(params);
 
       if (!requestSampling) {
-          throw new Error('La función requestSampling no está disponible en el contexto de la sesión.');
+          throw new Error('The requestSampling function is not available in the session context.');
       }
 
       const { application, operation, contextRange, filePath } = input;
 
-      // Obtener la aplicación de Office activa
-      const officeApp = await getOfficeApplication(application as OfficeAppName); // Usar await y OfficeAppName
+      // Get the active Office application
+      const officeApp = await getOfficeApplication(application as OfficeAppName); // Use await and OfficeAppName
       if (!officeApp) {
-        throw new Error(`Aplicación de Office no encontrada o no soportada: ${application}`);
+        throw new Error(`Office application not found or not supported: ${application}`);
       }
 
-      let contextText = ''; // Renombrar para evitar conflicto con el parámetro context
+      let contextText = ''; // Rename to avoid conflict with the context parameter
       try {
-        // Intentar obtener el texto seleccionado a través del objeto COM
-        // La forma de acceder a la selección varía ligeramente entre aplicaciones
+        // Attempt to get the selected text through the COM object
+        // The way to access the selection varies slightly between applications
         if (application === 'Word.Application') {
             contextText = officeApp.Selection.Text;
         } else if (application === 'Excel.Application') {
-            contextText = officeApp.Selection.Text; // O Value, dependiendo del tipo de dato
+            contextText = officeApp.Selection.Text; // Or Value, depending on the data type
         } else if (application === 'PowerPoint.Application') {
              // PowerPoint selection is more complex, might need to check ActiveWindow.Selection
              // For simplicity, we might skip selection context for now or get slide text
-             contextText = 'No se pudo obtener contexto de selección en PowerPoint.';
+             contextText = 'Could not get selection context in PowerPoint.';
         }
 
       } catch (selectErr) {
-        // Si falla la selección, intentar obtener contexto del documento activo
+        // If selection fails, attempt to get context from the active document
         try {
-           const activeDoc = officeApp.ActiveDocument || officeApp.ActivePresentation || officeApp.ActiveWorkbook; // Propiedad varía por aplicación
+           const activeDoc = officeApp.ActiveDocument || officeApp.ActivePresentation || officeApp.ActiveWorkbook; // Property varies by application
            if (activeDoc) {
                if (application === 'Word.Application' && activeDoc.Content) {
                    contextText = activeDoc.Content.Text;
-                   // Limitar el tamaño del contexto para evitar prompts demasiado largos
+                   // Limit context size to avoid overly long prompts
                    if (contextText.length > 1000) {
                        contextText = contextText.substring(0, 1000) + '...';
                    }
                } else if (application === 'Excel.Application' && activeDoc.ActiveSheet) {
-                   // Podríamos intentar obtener datos de la hoja activa o un rango específico si contextRange está definido
-                   // Por ahora, solo indicamos que no se pudo obtener contexto específico
-                   contextText = `Documento activo: ${activeDoc.Name}. No se pudo obtener contexto detallado.`;
+                   // We could try to get data from the active sheet or a specific range if contextRange is defined
+                   // For now, we just indicate that specific context could not be obtained
+                   contextText = `Active document: ${activeDoc.Name}. Could not get detailed context.`;
                } else if (application === 'PowerPoint.Application' && activeDoc.Slides) {
-                   // Podríamos intentar obtener texto de la diapositiva actual
-                   contextText = `Presentación activa: ${activeDoc.Name}. No se pudo obtener contexto detallado.`;
+                   // We could try to get text from the current slide
+                   contextText = `Active presentation: ${activeDoc.Name}. Could not get detailed context.`;
                } else {
-                   contextText = `No se pudo obtener contexto detallado del documento activo en ${application}.`;
+                   contextText = `Could not get detailed context from the active document in ${application}.`;
                }
            } else {
-               contextText = `No se pudo obtener contexto del documento activo en ${application}.`;
+               contextText = `Could not get context from the active document in ${application}.`;
            }
         } catch (docErr) {
-            contextText = `Error al intentar obtener contexto del documento o selección en ${application}.`;
-            console.error("Error al obtener contexto:", docErr);
+            contextText = `Error attempting to get context from document or selection in ${application}.`;
+            console.error("Error getting context:", docErr);
         }
       }
 
@@ -92,33 +100,33 @@ export const aiSuggestTool: McpResource = { // Usar McpResource
       let prompt = '';
       switch (operation) {
         case 'format':
-          prompt = `Basado en el siguiente texto o contexto de un documento de ${application}, sugiere opciones de formato (estilos, negrita, cursiva, alineación, etc.) que serían apropiadas. Contexto: "${contextText}"`;
+          prompt = `Based on the following text or context from a ${application} document, suggest appropriate formatting options (styles, bold, italics, alignment, etc.). Context: "${contextText}"`;
           break;
         case 'search':
-          prompt = `Basado en el siguiente texto o contexto de un documento de ${application}, sugiere términos de búsqueda relevantes o posibles ubicaciones dentro del documento para encontrar información relacionada. Contexto: "${contextText}"`;
+          prompt = `Based on the following text or context from a ${application} document, suggest relevant search terms or possible locations within the document to find related information. Context: "${contextText}"`;
           break;
         case 'chart':
-          if (application !== 'Excel.Application') { // Usar nombre completo
-              throw new Error(`La operación 'chart' solo es soportada para Excel. Aplicación actual: ${application}`);
+          if (application !== 'Excel.Application') { // Use full name
+              throw new Error(`The 'chart' operation is only supported for Excel. Current application: ${application}`);
           }
-          prompt = `Basado en el siguiente contexto de una hoja de cálculo de Excel, sugiere tipos de gráficos apropiados y posibles rangos de datos para visualizar. Contexto: "${contextText}"`;
+          prompt = `Based on the following context from an Excel worksheet, suggest appropriate chart types and possible data ranges to visualize. Context: "${contextText}"`;
           break;
         default:
-          throw new Error(`Operación no soportada: ${operation}`);
+          throw new Error(`Unsupported operation: ${operation}`);
       }
 
-      // Generar sugerencia usando FastMCP sampling
+      // Generate suggestion using FastMCP sampling
       const samplingResult = await requestSampling({
-          prompt: prompt, // Usar el prompt generado
-          maxTokens: 500, // Limitar la longitud de la sugerencia (ajustar según necesidad)
-          // Otros parámetros de sampling pueden ser añadidos aquí si son relevantes
+          prompt: prompt, // Use the generated prompt
+          maxTokens: 500, // Limit suggestion length (adjust as needed)
+          // Other sampling parameters can be added here if relevant
       });
 
-      // Procesar el resultado del sampling
+      // Process the sampling result
       let suggestion = '';
       if (samplingResult && samplingResult.content && samplingResult.content.length > 0) {
-          // Asumir que el primer bloque de contenido de texto es la sugerencia
-          // Usar type assertion para acceder a 'type' y 'text' debido a error de tipo
+          // Assume the first text content block is the suggestion
+          // Use type assertion to access 'type' and 'text' due to type error
           const textContent = samplingResult.content.find((c: any) => c.type === 'text') as TextContent | undefined;
           if (textContent) {
               suggestion = textContent.text;
@@ -126,17 +134,17 @@ export const aiSuggestTool: McpResource = { // Usar McpResource
       }
 
       if (!suggestion) {
-          // Si no se obtuvo texto del sampling, lanzar un error o devolver un mensaje por defecto
-          throw new Error('FastMCP sampling no generó ninguna sugerencia de texto.');
+          // If no text was obtained from sampling, throw an error or return a default message
+          throw new Error('FastMCP sampling did not generate any text suggestion.');
       }
 
-      // Devolver una respuesta de éxito con la sugerencia
+      // Return a success response with the suggestion
       return { success: true, data: suggestion };
 
     } catch (error: any) {
-      console.error(`Error en la herramienta office/ai-suggest: ${error.message}`);
-      // Devolver una respuesta de error
-      return { success: false, error: { code: 'AI_SUGGEST_ERROR', message: `Error al procesar la sugerencia de IA: ${error.message}` } };
+      console.error(`Error in office/ai-suggest tool: ${error.message}`);
+      // Return an error response
+      return { success: false, error: { code: 'AI_SUGGEST_ERROR', message: `Error processing AI suggestion: ${error.message}` } };
     }
   },
 };

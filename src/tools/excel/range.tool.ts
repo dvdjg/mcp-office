@@ -1,44 +1,53 @@
+/**
+ * @file Tool for manipulating cell ranges in Excel worksheets.
+ * Allows reading, writing, formatting, and applying other operations to specific ranges.
+ * Uses COM Interop via winax to interact with Excel.
+ * @author David Jurado
+ * @date 2025-05-04
+ * @copyright Copyright (c) 2025 David Jurado
+ * @license MIT
+ */
 import { z } from 'zod';
 import { McpResource, ToolRequestParams } from '../../types/common.types';
 import { getOfficeApplication } from '../../utils/officeInterop';
-import { saveResource } from '../dynamic/resources.tool'; // Importar saveResource
-import * as fs from 'fs-extra'; // Importar fs para leer el archivo Excel
-import * as path from 'path'; // Importar path
+import { saveResource } from '../dynamic/resources.tool'; // Import saveResource
+import * as fs from 'fs-extra'; // Import fs to read the Excel file
+import * as path from 'path'; // Import path
 
-// Define el esquema de entrada para la herramienta excel/range
+// Define the input schema for the excel/range tool
 const ExcelRangeInputSchema = z.object({
-  filePath: z.string().describe('Ruta al archivo Excel.'),
-  sheetName: z.string().optional().describe('Nombre de la hoja de cálculo. Si no se proporciona, se usa la hoja activa.'),
-  sheetIndex: z.number().int().positive().optional().describe('Índice de la hoja de cálculo (1-basado). Si se proporciona, anula sheetName.'),
-  rangeAddress: z.string().describe('Dirección del rango (e.g., "A1", "B2:C5").'),
-  operation: z.enum(['read', 'write', 'format', 'apply']).describe('Operación a realizar en el rango.'),
-  values: z.array(z.array(z.any())).optional().describe('Valores para escribir en el rango (para la operación "write").'),
-  formatProperties: z.record(z.any()).optional().describe('Propiedades de formato a aplicar (para la operación "format").'),
-  // Puedes añadir más propiedades para la operación 'apply' si es necesario
+  filePath: z.string().describe('Path to the Excel file.'),
+  sheetName: z.string().optional().describe('Name of the worksheet. If not provided, the active sheet is used.'),
+  sheetIndex: z.number().int().positive().optional().describe('1-based index of the worksheet. If provided, it overrides sheetName.'),
+  rangeAddress: z.string().describe('Range address (e.g., "A1", "B2:C5").'),
+  operation: z.enum(['read', 'write', 'format', 'apply']).describe('Operation to perform on the range.'),
+  values: z.array(z.array(z.any())).optional().describe('Values to write to the range (for the "write" operation).'),
+  formatProperties: z.record(z.any()).optional().describe('Format properties to apply (for the "format" operation).'),
+  // You can add more properties for the 'apply' operation if needed
 });
 
 type ExcelRangeInput = z.infer<typeof ExcelRangeInputSchema>;
 
 /**
  * @tool excel/range
- * @description Manipula rangos de celdas en hojas de cálculo de Excel.
- * Permite leer, escribir, formatear y aplicar otras operaciones a rangos específicos.
- * Utiliza COM Interop a través de winax para interactuar con Excel.
- * Requiere la ruta del archivo, el nombre o índice de la hoja, la dirección del rango y la operación.
- * Para escribir, se proporcionan los valores como un array de arrays.
- * Para formatear, se proporcionan las propiedades de formato como un objeto.
+ * @description Manipulates cell ranges in Excel worksheets.
+ * Allows reading, writing, formatting, and applying other operations to specific ranges.
+ * Uses COM Interop via winax to interact with Excel.
+ * Requires the file path, sheet name or index, range address, and operation.
+ * For writing, values are provided as an array of arrays.
+ * For formatting, format properties are provided as an object.
  */
 const excelRangeTool: McpResource = {
   path: 'excel/range',
-  description: 'Manipulates cell ranges in Excel worksheets.', // Translated description
+  description: 'Manipulates cell ranges in Excel worksheets.',
   schema: ExcelRangeInputSchema, // Added schema
   handler: async (params: any) => {
     let excelApp;
     try {
-      // Validar los parámetros de entrada
+      // Validate input parameters
       const input = ExcelRangeInputSchema.parse(params);
 
-      excelApp = await getOfficeApplication('Excel.Application'); // Corregido el nombre de la aplicación
+      excelApp = await getOfficeApplication('Excel.Application'); // Corrected application name
       const workbook = excelApp.Workbooks.Open(input.filePath);
       let worksheet;
 
@@ -51,93 +60,93 @@ const excelRangeTool: McpResource = {
       }
 
       if (!worksheet) {
-        throw new Error(`Hoja de cálculo "${input.sheetName || input.sheetIndex}" no encontrada.`);
+        throw new Error(`Worksheet "${input.sheetName || input.sheetIndex}" not found.`);
       }
 
       const range = worksheet.Range(input.rangeAddress);
 
       if (!range) {
-        throw new Error(`Rango "${input.rangeAddress}" inválido.`);
+        throw new Error(`Invalid range "${input.rangeAddress}".`);
       }
 
       switch (input.operation) {
         case 'read':
-          // Leer valores del rango
+          // Read values from the range
           const values = range.Value2;
-          return { success: true, data: values }; // Retorno de éxito con data
+          return { success: true, data: values }; // Success return with data
 
         case 'write':
-          // Escribir valores en el rango
+          // Write values to the range
           if (!input.values) {
-            throw new Error('Se requieren valores para la operación "write".');
+            throw new Error('Values are required for the "write" operation.');
           }
-          // Asegurarse de que el tamaño del rango coincide con el de los valores
-          // Esto es una simplificación; una implementación robusta debería manejar tamaños diferentes
-          // o permitir escribir en un rango de destino más grande.
+          // Ensure the range size matches the values size
+          // This is a simplification; a robust implementation should handle different sizes
+          // or allow writing to a larger destination range.
           if (range.Rows.Count !== input.values.length || range.Columns.Count !== (input.values[0]?.length || 0)) {
-             // Si el rango de destino es una sola celda, winax puede manejar la escritura de un array de arrays
+             // If the destination range is a single cell, winax can handle writing an array of arrays
              if (range.Cells.Count === 1) {
                 range.Value = input.values;
              } else {
-                // Para rangos más grandes, intentar escribir directamente puede fallar si las dimensiones no coinciden exactamente.
-                // Una alternativa sería iterar sobre las celdas o usar CopyFromRecordset si los datos provienen de una fuente compatible.
-                // Por ahora, lanzamos un error si las dimensiones no coinciden para rangos > 1 celda.
-                 throw new Error(`Las dimensiones de los valores proporcionados no coinciden con las del rango. Rango: ${range.Rows.Count}x${range.Columns.Count}, Valores: ${input.values.length}x${(input.values[0]?.length || 0)}`);
+                // For larger ranges, attempting to write directly may fail if dimensions don't match exactly.
+                // An alternative would be to iterate over cells or use CopyFromRecordset if data comes from a compatible source.
+                // For now, we throw an error if dimensions don't match for ranges > 1 cell.
+                 throw new Error(`Dimensions of provided values do not match the range dimensions. Range: ${range.Rows.Count}x${range.Columns.Count}, Values: ${input.values.length}x${(input.values[0]?.length || 0)}`);
              }
           } else {
              range.Value = input.values;
           }
           workbook.Save();
-          // Guardar el archivo Excel modificado como un recurso dinámico
+          // Save the modified Excel file as a dynamic resource
           try {
-              const excelContent = await fs.readFile(input.filePath, null); // Leer como Buffer
+              const excelContent = await fs.readFile(input.filePath, null); // Read as Buffer
               await saveResource('excel/range', path.basename(input.filePath), excelContent);
               // logger.info(`Saved ${input.filePath} as a dynamic resource.`);
           } catch (resourceSaveError: any) {
               // logger.error(`Failed to save ${input.filePath} as a dynamic resource: ${resourceSaveError.message}`);
-              // Continuar la ejecución aunque falle el guardado del recurso
+              // Continue execution even if resource saving fails
           }
-          return { success: true, data: null, message: `Valores escritos en el rango "${input.rangeAddress}".` }; // Incluir data: null
+          return { success: true, data: null, message: `Values written to range "${input.rangeAddress}".` }; // Include data: null
 
         case 'format':
-          // Aplicar formato al rango
+          // Apply format to the range
           if (!input.formatProperties) {
-            throw new Error('Se requieren propiedades de formato para la operación "format".');
+            throw new Error('Format properties are required for the "format" operation.');
           }
-          // Implementación básica de formato. Se puede expandir para soportar más propiedades.
-          // Ejemplo: { Font: { Bold: true, Color: 255 }, Interior: { ColorIndex: 6 } }
+          // Basic format implementation. Can be expanded to support more properties.
+          // Example: { Font: { Bold: true, Color: 255 }, Interior: { ColorIndex: 6 } }
           for (const prop in input.formatProperties) {
             if (Object.prototype.hasOwnProperty.call(input.formatProperties, prop)) {
               const value = input.formatProperties[prop];
               if (typeof range[prop] === 'object' && range[prop] !== null) {
-                 // Si la propiedad es un objeto (como Font, Interior), aplicar propiedades anidadas
+                 // If the property is an object (like Font, Interior), apply nested properties
                  for (const subProp in value) {
                     if (Object.prototype.hasOwnProperty.call(value, subProp)) {
                        range[prop][subProp] = value[subProp];
                     }
                  }
               } else {
-                 // Si la propiedad es un valor directo
+                 // If the property is a direct value
                  range[prop] = value;
               }
             }
           }
           workbook.Save();
-          // Guardar el archivo Excel modificado como un recurso dinámico
+          // Save the modified Excel file as a dynamic resource
           try {
-              const excelContent = await fs.readFile(input.filePath, null); // Leer como Buffer
+              const excelContent = await fs.readFile(input.filePath, null); // Read as Buffer
               await saveResource('excel/range', path.basename(input.filePath), excelContent);
               // logger.info(`Saved ${input.filePath} as a dynamic resource.`);
           } catch (resourceSaveError: any) {
               // logger.error(`Failed to save ${input.filePath} as a dynamic resource: ${resourceSaveError.message}`);
-              // Continuar la ejecución aunque falle el guardado del recurso
+              // Continue execution even if resource saving fails
           }
-          return { success: true, data: null, message: `Formato aplicado al rango "${input.rangeAddress}".` }; // Incluir data: null
+          return { success: true, data: null, message: `Format applied to range "${input.rangeAddress}".` }; // Include data: null
 
         case 'apply':
-          // Operación genérica para aplicar propiedades al rango
-          if (!input.formatProperties) { // Reutilizamos formatProperties para propiedades generales
-             throw new Error('Se requieren propiedades para la operación "apply".');
+          // Generic operation to apply properties to the range
+          if (!input.formatProperties) { // Reuse formatProperties for general properties
+             throw new Error('Properties are required for the "apply" operation.');
           }
            for (const prop in input.formatProperties) {
             if (Object.prototype.hasOwnProperty.call(input.formatProperties, prop)) {
@@ -145,27 +154,27 @@ const excelRangeTool: McpResource = {
             }
           }
           workbook.Save();
-          // Guardar el archivo Excel modificado como un recurso dinámico
+          // Save the modified Excel file as a dynamic resource
           try {
-              const excelContent = await fs.readFile(input.filePath, null); // Leer como Buffer
+              const excelContent = await fs.readFile(input.filePath, null); // Read as Buffer
               await saveResource('excel/range', path.basename(input.filePath), excelContent);
               // logger.info(`Saved ${input.filePath} as a dynamic resource.`);
           } catch (resourceSaveError: any) {
               // logger.error(`Failed to save ${input.filePath} as a dynamic resource: ${resourceSaveError.message}`);
-              // Continuar la ejecución aunque falle el guardado del recurso
+              // Continue execution even if resource saving fails
           }
-          return { success: true, data: null, message: `Propiedades aplicadas al rango "${input.rangeAddress}".` }; // Incluir data: null
+          return { success: true, data: null, message: `Properties applied to range "${input.rangeAddress}".` }; // Include data: null
 
         default:
-          throw new Error(`Operación "${input.operation}" no soportada.`);
+          throw new Error(`Unsupported operation: "${input.operation}".`);
       }
     } catch (error: any) {
-      // Manejo básico de errores
-      return { success: false, error: { code: 'OFFICE_API_ERROR', message: error.message } }; // Ajustar formato de error
+      // Basic error handling
+      return { success: false, error: { code: 'OFFICE_API_ERROR', message: error.message } }; // Adjust error format
     } finally {
-      // Considerar si cerrar Excel o dejarlo abierto.
-      // Para un servidor MCP, probablemente quieras dejarlo abierto para futuras operaciones.
-      // Si decides cerrarlo, asegúrate de guardar primero si es necesario.
+      // Consider whether to close Excel or leave it open.
+      // For an MCP server, you probably want to leave it open for future operations.
+      // If you decide to close it, make sure to save first if necessary.
       // if (excelApp) {
       //   excelApp.Quit();
       // }

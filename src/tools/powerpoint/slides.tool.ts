@@ -1,143 +1,155 @@
+/**
+ * @file Tool for managing slides in PowerPoint presentations.
+ * Allows adding, deleting, and (basically) modifying slides.
+ * Requires the path to the file and the operation to perform.
+ * Delete and set operations require the slide index.
+ * The add operation requires the slide layout name.
+ * Uses COM Interop via winax.
+ * @author David Jurado
+ * @date 2025-05-04
+ * @copyright Copyright (c) 2025 David Jurado
+ * @license MIT
+ */
 import { z } from 'zod';
 import { McpResource, ToolRequestParams, ApiResponse } from '../../types/common.types';
 import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
-import logger from '../../utils/logger'; // Importar logger
-import { saveResource } from '../dynamic/resources.tool'; // Importar saveResource
-import * as fs from 'fs-extra'; // Importar fs para leer el archivo PowerPoint
-import * as path from 'path'; // Importar path
+import logger from '../../utils/logger'; // Import logger
+import { saveResource } from '../dynamic/resources.tool'; // Import saveResource
+import * as fs from 'fs-extra'; // Import fs to read the PowerPoint file
+import * as path from 'path'; // Import path
 
-// Esquema de entrada para la herramienta powerpoint/slides
+// Input schema for the powerpoint/slides tool
 const SlidesToolInputSchema = z.object({
-  filePath: z.string().describe('Ruta al archivo de presentación de PowerPoint.'),
-  operation: z.enum(['add', 'delete', 'set']).describe('Operación a realizar: "add" (añadir diapositiva), "delete" (eliminar diapositiva), "set" (modificar diapositiva existente).'),
-  slideIndex: z.number().optional().describe('Índice de la diapositiva (1-basado) para operaciones "delete" o "set".'),
-  slideLayout: z.string().optional().describe('Nombre del diseño de la diapositiva para la operación "add" (e.g., "ppLayoutTitle").'),
-  // Podríamos añadir más campos aquí para la operación 'set', como contenido, etc.
-  // Por ahora, 'set' podría usarse para algo simple como cambiar el diseño si fuera posible o añadir contenido básico.
-  // Para esta implementación inicial, 'set' no hará nada complejo, solo se incluye para cumplir con la especificación.
+  filePath: z.string().describe('Path to the PowerPoint presentation file.'),
+  operation: z.enum(['add', 'delete', 'set']).describe('Operation to perform: "add" (add slide), "delete" (delete slide), "set" (modify existing slide).'),
+  slideIndex: z.number().optional().describe('1-based index of the slide for "delete" or "set" operations.'),
+  slideLayout: z.string().optional().describe('Name of the slide layout for the "add" operation (e.g., "ppLayoutTitle").'),
+  // We could add more fields here for the 'set' operation, such as content, etc.
+  // For now, 'set' might be used for something simple like changing the layout if possible or adding basic content.
+  // For this initial implementation, 'set' will not do anything complex, it is only included to meet the specification.
 });
 
 type SlidesToolInput = z.infer<typeof SlidesToolInputSchema>;
 
 /**
  * @tool powerpoint/slides
- * @description Gestiona diapositivas en presentaciones de PowerPoint.
- * Permite añadir, eliminar y (básicamente) modificar diapositivas.
- * Requiere la ruta al archivo y la operación a realizar.
- * Las operaciones "delete" y "set" requieren el índice de la diapositiva.
- * La operación "add" requiere el nombre del diseño de la diapositiva.
- * Utiliza COM Interop a través de winax.
- * @param {SlidesToolInput} input - Parámetros de entrada para la herramienta.
- * @returns {Promise<string>} - Un mensaje indicando el resultado de la operación.
+ * @description Manages slides in PowerPoint presentations.
+ * Allows adding, deleting, and (basically) modifying slides.
+ * Requires the path to the file and the operation to perform.
+ * Delete and set operations require the slide index.
+ * The add operation requires the slide layout name.
+ * Uses COM Interop via winax.
+ * @param {SlidesToolInput} input - Input parameters for the tool.
+ * @returns {Promise<string>} - A message indicating the result of the operation.
  */
 const slidesTool: McpResource = {
   path: 'powerpoint/slides',
-  description: 'Gestiona diapositivas en presentaciones de PowerPoint.',
-  schema: SlidesToolInputSchema, // Corregido de inputSchema a schema
+  description: 'Manages slides in PowerPoint presentations.',
+  schema: SlidesToolInputSchema, // Corrected from inputSchema to schema
   handler: async (params: ToolRequestParams): Promise<ApiResponse<any>> => {
     let pptApp: any = null;
     let presentation: any = null;
-    let filePath: string | undefined; // Declarar filePath fuera del try y permitir undefined
+    let filePath: string | undefined; // Declare filePath outside the try and allow undefined
 
     try {
       const input = SlidesToolInputSchema.parse(params);
-      filePath = input.filePath; // Asignar filePath aquí
+      filePath = input.filePath; // Assign filePath here
       const { operation, slideIndex, slideLayout } = input;
 
-      // Obtener instancia de PowerPoint
+      // Get PowerPoint instance
       pptApp = await getOfficeApplication('PowerPoint.Application');
-      pptApp.Visible = true; // Opcional: hacer visible la aplicación
-      // Abrir o crear presentación
+      pptApp.Visible = true; // Optional: make the application visible
+      // Open or create presentation
       try {
         presentation = pptApp.Presentations.Open(filePath);
       } catch (error) {
-        // Si el archivo no existe, crear una nueva presentación
+        // If the file does not exist, create a new presentation
         presentation = pptApp.Presentations.Add();
-        presentation.SaveAs(filePath); // Guardar la nueva presentación
+        presentation.SaveAs(filePath); // Save the new presentation
       }
 
       switch (operation) {
         case 'add':
           if (!slideLayout) {
-            throw new Error('El parámetro slideLayout es requerido para la operación "add".');
+            throw new Error('The slideLayout parameter is required for the "add" operation.');
           }
-          // Buscar el diseño de diapositiva por nombre
+          // Find the slide layout by name
           let layout;
           try {
             layout = pptApp.SlideLayouts.Item(slideLayout);
           } catch (e) {
-            throw new Error(`Diseño de diapositiva "${slideLayout}" no encontrado.`);
+            throw new Error(`Slide layout "${slideLayout}" not found.`);
           }
 
-          // Añadir diapositiva
+          // Add slide
           const newSlide = presentation.Slides.Add(presentation.Slides.Count + 1, layout.Layout);
-          return { success: true, data: `Diapositiva añadida con diseño "${slideLayout}".` }; // Retorno ajustado
+          return { success: true, data: `Slide added with layout "${slideLayout}".` }; // Adjusted return
 
         case 'delete':
           if (slideIndex === undefined) {
-            throw new Error('El parámetro slideIndex es requerido para la operación "delete".');
+            throw new Error('The slideIndex parameter is required for the "delete" operation.');
           }
           if (slideIndex < 1 || slideIndex > presentation.Slides.Count) {
-            throw new Error(`Índice de diapositiva ${slideIndex} fuera de rango.`);
+            throw new Error(`Slide index ${slideIndex} out of bounds.`);
           }
-          // Eliminar diapositiva
+          // Delete slide
           presentation.Slides.Item(slideIndex).Delete();
-          return { success: true, data: `Diapositiva en el índice ${slideIndex} eliminada.` }; // Retorno ajustado
+          return { success: true, data: `Slide at index ${slideIndex} deleted.` }; // Adjusted return
 
         case 'set':
           if (slideIndex === undefined) {
-            throw new Error('El parámetro slideIndex es requerido para la operación "set".');
+            throw new Error('The slideIndex parameter is required for the "set" operation.');
           }
            if (slideIndex < 1 || slideIndex > presentation.Slides.Count) {
-            throw new Error(`Índice de diapositiva ${slideIndex} fuera de rango.`);
+            throw new Error(`Slide index ${slideIndex} out of bounds.`);
           }
-          // Implementación básica para 'set'. Podría expandirse para modificar contenido, diseño, etc.
-          // Por ahora, solo confirmamos que la diapositiva existe.
+          // Basic implementation for 'set'. Could be expanded to modify content, layout, etc.
+          // For now, we just confirm that the slide exists.
           const slideToSet = presentation.Slides.Item(slideIndex);
-          // Aquí iría la lógica para modificar la diapositiva
-          return { success: true, data: `Operación 'set' en la diapositiva ${slideIndex} completada (sin modificaciones complejas implementadas).` }; // Retorno ajustado
+          // Logic to modify the slide would go here
+          return { success: true, data: `Operation 'set' on slide ${slideIndex} completed (no complex modifications implemented).` }; // Adjusted return
 
         default:
-          throw new Error(`Operación no soportada: ${operation}`);
+          throw new Error(`Unsupported operation: ${operation}`);
       }
 
     } catch (error: any) {
-      // Manejo de errores
-      logger.error(`Error in powerpoint/slides tool: ${error.message}`); // Usar logger
-      return { success: false, error: { code: 'POWERPOINT_SLIDES_ERROR', message: `Error al procesar la solicitud de PowerPoint: ${error.message}` } }; // Retorno de error ajustado
+      // Error handling
+      logger.error(`Error in powerpoint/slides tool: ${error.message}`); // Use logger
+      return { success: false, error: { code: 'POWERPOINT_SLIDES_ERROR', message: `Error processing PowerPoint request: ${error.message}` } }; // Adjusted error return
     } finally {
-      // Guardar y cerrar la presentación
+      // Save and close the presentation
       if (presentation) {
         try {
             presentation.Save();
-            // Guardar el archivo PowerPoint modificado como un recurso dinámico
-            // Esto se hace en el finally porque Save() ocurre aquí para todas las operaciones de modificación.
-            // No necesitamos verificar la operación específica aquí.
-            // Asegurarse de que filePath tiene un valor antes de intentar leer el archivo
+            // Save the modified PowerPoint file as a dynamic resource
+            // This is done in the finally block because Save() happens here for all modification operations.
+            // We don't need to check the specific operation here.
+            // Ensure filePath has a value before attempting to read the file
             if (filePath) {
                 try {
-                    const pptContent = await fs.readFile(filePath, null); // Leer como Buffer
+                    const pptContent = await fs.readFile(filePath, null); // Read as Buffer
                     await saveResource('powerpoint/slides', path.basename(filePath), pptContent);
                     // logger.info(`Saved ${filePath} as a dynamic resource.`);
                 } catch (resourceSaveError: any) {
                     // logger.error(`Failed to save ${filePath} as a dynamic resource: ${resourceSaveError.message}`);
-                    // Continuar la ejecución aunque falle el guardado del recurso
+                    // Continue execution even if resource saving fails
                 }
             }
             presentation.Close();
         } catch (closeError: any) {
-            logger.warn(`Error al cerrar la presentación: ${closeError.message}`); // Usar logger
+            logger.warn(`Error closing the presentation: ${closeError.message}`); // Use logger
         }
         releaseObject(presentation);
       }
-      // La aplicación de PowerPoint se gestiona externamente, no la cerramos aquí.
+      // The PowerPoint application is managed externally, we don't close it here.
       releaseObject(pptApp);
     }
-    // Añadir un retorno al final para cubrir todos los casos posibles
-    // Esto solo se alcanzará si no se lanzó un error o se retornó antes.
-    // En un escenario ideal, todos los casos del switch deberían retornar.
-    // Pero para satisfacer al linter, añadimos este retorno de fallback.
-    return { success: false, error: { code: 'UNHANDLED_CASE', message: 'La operación de diapositiva de PowerPoint no retornó un resultado explícito.' } };
+    // Add a return at the end to cover all possible cases
+    // This will only be reached if no error was thrown or returned before.
+    // In an ideal scenario, all switch cases should return.
+    // But to satisfy the linter, we add this fallback return.
+    return { success: false, error: { code: 'UNHANDLED_CASE', message: 'PowerPoint slide operation did not return an explicit result.' } };
   },
 };
 

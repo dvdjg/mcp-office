@@ -1,71 +1,80 @@
+/**
+ * @file Tool for parsing and converting PDF files.
+ * Allows extracting text from a PDF or converting specific pages to images.
+ * Uses the `pdf-parse` and `pdf2pic` libraries.
+ * @author David Jurado
+ * @date 2025-05-04
+ * @copyright Copyright (c) 2025 David Jurado
+ * @license MIT
+ */
 import { z } from 'zod';
-import { McpResource, ApiResponse, ToolRequestParams } from '../../types/common.types'; // Importar ToolRequestParams
-import { Context } from 'fastmcp'; // Importar Context
+import { McpResource, ApiResponse, ToolRequestParams } from '../../types/common.types'; // Import ToolRequestParams
+import { Context } from 'fastmcp'; // Import Context
 import pdfParse from 'pdf-parse';
-import { fromPath } from 'pdf2pic'; // Eliminar WriteImageResponse de la importación
+import { fromPath } from 'pdf2pic'; // Remove WriteImageResponse from import
 import * as path from 'path';
 import * as fs from 'fs/promises';
 
-// Esquema de entrada para la herramienta office/pdf/parse
+// Input schema for the office/pdf/parse tool
 const PdfParseInputSchema = z.object({
   //type: z.literal('object'), // Added to satisfy validator
-  filePath: z.string().min(1, { message: 'filePath es requerido.' }),
+  filePath: z.string().min(1, { message: 'filePath is required.' }),
   operation: z.enum(['parse', 'convert']),
-  outputDirectory: z.string().optional(), // Requerido para 'convert'
-  pageRange: z.string().optional(), // Opcional para 'convert' (e.g., "1-3", "5")
-  format: z.enum(['png', 'jpeg', 'webp']).default('png'), // Opcional para 'convert'
-  quality: z.number().int().min(1).max(100).default(80).optional(), // Opcional para 'convert'
+  outputDirectory: z.string().optional(), // Required for 'convert'
+  pageRange: z.string().optional(), // Optional for 'convert' (e.g., "1-3", "5")
+  format: z.enum(['png', 'jpeg', 'webp']).default('png'), // Optional for 'convert'
+  quality: z.number().int().min(1).max(100).default(80).optional(), // Optional for 'convert'
 });
 
 type PdfParseInput = z.infer<typeof PdfParseInputSchema>;
 
-// Definir un tipo para el resultado de pdf2pic.bulk cuando se guarda en archivo
+// Define a type for the result of pdf2pic.bulk when saving to file
 interface Pdf2PicResult {
   filename: string;
-  // Añadir otras propiedades de WriteImageResponse si son necesarias y conocidas
-  // Por ejemplo, si la respuesta incluye el path completo o el tamaño:
+  // Add other WriteImageResponse properties if necessary and known
+  // For example, if the response includes the full path or size:
   // path?: string;
   // size?: number;
 }
 
 /**
  * @tool office/pdf/parse
- * @description Herramienta para analizar y convertir archivos PDF.
- * Permite extraer texto de un PDF o convertir páginas específicas a imágenes.
- * Utiliza las librerías `pdf-parse` y `pdf2pic`.
- * @param {object} params - Parámetros de entrada.
- * @param {string} params.filePath - Ruta al archivo PDF de origen.
- * @param {'parse' | 'convert'} params.operation - Operación a realizar ('parse' o 'convert').
- * @param {string} [params.outputDirectory] - Directorio para guardar imágenes (requerido para 'convert').
- * @param {string} [params.pageRange] - Rango de páginas a convertir (e.g., "1-3", "5"). Convierte todas si no se especifica.
- * @param {'png' | 'jpeg' | 'webp'} [params.format='png'] - Formato de imagen de salida.
- * @param {number} [params.quality=80] - Calidad de la imagen (1-100).
- * @returns {Promise<string | string[]>} - Texto extraído (para 'parse') o rutas de archivos de imagen creados (para 'convert').
- * @throws {Error} - Si ocurre un error durante el proceso o los parámetros son inválidos.
+ * @description Tool for parsing and converting PDF files.
+ * Allows extracting text from a PDF or converting specific pages to images.
+ * Uses the `pdf-parse` and `pdf2pic` libraries.
+ * @param {object} params - Input parameters.
+ * @param {string} params.filePath - Path to the source PDF file.
+ * @param {'parse' | 'convert'} params.operation - Operation to perform ('parse' or 'convert').
+ * @param {string} [params.outputDirectory] - Directory to save images (required for 'convert').
+ * @param {string} [params.pageRange] - Page range to convert (e.g., "1-3", "5"). Converts all if not specified.
+ * @param {'png' | 'jpeg' | 'webp'} [params.format='png'] - Output image format.
+ * @param {number} [params.quality=80] - Image quality (1-100).
+ * @returns {Promise<string | string[]>} - Extracted text (for 'parse') or paths of created image files (for 'convert').
+ * @throws {Error} - If an error occurs during the process or parameters are invalid.
  */
 const pdfParseTool: McpResource = {
-  path: 'office/pdf/parse', // Añadir la propiedad path
-  description: 'Analiza y convierte archivos PDF.',
-  schema: PdfParseInputSchema, // Cambiar inputSchema a schema
-  handler: async (params: ToolRequestParams, context?: Context<any>): Promise<ApiResponse<string | string[]>> => { // Ajustar la firma del handler
-    // Castear params al tipo esperado después de la validación de Zod
+  path: 'office/pdf/parse', // Add the path property
+  description: 'Parses and converts PDF files.',
+  schema: PdfParseInputSchema, // Change inputSchema to schema
+  handler: async (params: ToolRequestParams, context?: Context<any>): Promise<ApiResponse<string | string[]>> => { // Adjust handler signature
+    // Cast params to the expected type after Zod validation
     const { filePath, operation, outputDirectory, pageRange, format, quality } = params as PdfParseInput;
 
     try {
-      // Verificar si el archivo PDF existe
+      // Check if the PDF file exists
       await fs.access(filePath);
 
       if (operation === 'parse') {
         const dataBuffer = await fs.readFile(filePath);
         const data = await pdfParse(dataBuffer);
-        return { success: true, data: data.text }; // Envolver en ApiResponse
+        return { success: true, data: data.text }; // Wrap in ApiResponse
 
       } else if (operation === 'convert') {
         if (!outputDirectory) {
-          return { success: false, error: { code: 'VALIDATION_ERROR', message: 'outputDirectory es requerido para la operación "convert".' } }; // Devolver ErrorResponse
+          return { success: false, error: { code: 'VALIDATION_ERROR', message: 'outputDirectory is required for the "convert" operation.' } }; // Return ErrorResponse
         }
 
-        // Asegurarse de que el directorio de salida existe
+        // Ensure the output directory exists
         await fs.mkdir(outputDirectory, { recursive: true });
 
         const options = {
@@ -74,14 +83,14 @@ const pdfParseTool: McpResource = {
           savePath: outputDirectory,
           format: format,
           quality: quality,
-          width: 1600, // Ancho de la imagen, ajustable
-          height: 2300 // Alto de la imagen, ajustable
+          width: 1600, // Image width, adjustable
+          height: 2300 // Image height, adjustable
         };
 
         const convert = fromPath(filePath, options);
 
         if (!convert) {
-           return { success: false, error: { code: 'PROCESSING_ERROR', message: 'Error al inicializar pdf2pic.' } };
+           return { success: false, error: { code: 'PROCESSING_ERROR', message: 'Error initializing pdf2pic.' } };
         }
 
         let pagesToConvert: number[] | 'all' = 'all';
@@ -96,41 +105,41 @@ const pdfParseTool: McpResource = {
                   pagesToConvert.push(i);
                 }
               } else {
-                return { success: false, error: { code: 'VALIDATION_ERROR', message: `Rango de páginas inválido: ${range}` } }; // Devolver ErrorResponse
+                return { success: false, error: { code: 'VALIDATION_ERROR', message: `Invalid page range: ${range}` } }; // Return ErrorResponse
               }
             } else {
               const pageNum = Number(range);
               if (!isNaN(pageNum) && pageNum > 0) {
                 pagesToConvert.push(pageNum);
               } else {
-                return { success: false, error: { code: 'VALIDATION_ERROR', message: `Número de página inválido: ${range}` } }; // Devolver ErrorResponse
+                return { success: false, error: { code: 'VALIDATION_ERROR', message: `Invalid page number: ${range}` } }; // Return ErrorResponse
               }
             }
           }
         }
 
-        let results: Pdf2PicResult[]; // Tipar results
-        // Mover la lógica de bulk dentro del bloque if(convert)
+        let results: Pdf2PicResult[]; // Type results
+        // Move bulk logic inside the if(convert) block
         if (pagesToConvert === 'all') {
-          results = await convert.bulk(-1) as Pdf2PicResult[]; // -1 para todas las páginas
+          results = await convert.bulk(-1) as Pdf2PicResult[]; // -1 for all pages
         } else {
           results = await convert.bulk(pagesToConvert) as Pdf2PicResult[];
         }
 
-        // pdf2pic devuelve un array de objetos con el nombre del archivo guardado
-        return { success: true, data: results.map((result: Pdf2PicResult) => path.join(outputDirectory, result.filename)) }; // Tipar result y envolver en ApiResponse
+        // pdf2pic returns an array of objects with the saved filename
+        return { success: true, data: results.map((result: Pdf2PicResult) => path.join(outputDirectory, result.filename)) }; // Type result and wrap in ApiResponse
 
       } else {
-        // Esto no debería ocurrir si el esquema Zod funciona correctamente, pero es una salvaguarda
-        return { success: false, error: { code: 'INVALID_OPERATION', message: `Operación no soportada: ${operation}` } }; // Devolver ErrorResponse
+        // This should not happen if the Zod schema works correctly, but it's a safeguard
+        return { success: false, error: { code: 'INVALID_OPERATION', message: `Unsupported operation: ${operation}` } }; // Return ErrorResponse
       }
 
     } catch (error: any) {
       if (error.code === 'ENOENT') {
-        return { success: false, error: { code: 'FILE_NOT_FOUND', message: `Archivo no encontrado: ${filePath}` } }; // Devolver ErrorResponse
+        return { success: false, error: { code: 'FILE_NOT_FOUND', message: `File not found: ${filePath}` } }; // Return ErrorResponse
       }
-      // Capturar otros errores de pdf-parse o pdf2pic
-      return { success: false, error: { code: 'PROCESSING_ERROR', message: `Error al procesar el archivo PDF: ${error.message}` } }; // Devolver ErrorResponse
+      // Catch other pdf-parse or pdf2pic errors
+      return { success: false, error: { code: 'PROCESSING_ERROR', message: `Error processing PDF file: ${error.message}` } }; // Return ErrorResponse
     }
   },
 };

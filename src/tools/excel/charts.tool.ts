@@ -1,55 +1,64 @@
+/**
+ * @file Tool for managing charts in Excel files.
+ * Allows inserting, modifying, deleting, and repositioning charts.
+ * Uses COM Interop via winax.
+ * @author David Jurado
+ * @date 2025-05-04
+ * @copyright Copyright (c) 2025 David Jurado
+ * @license MIT
+ */
 import { z } from 'zod';
 import { McpResource, ToolRequestParams, ApiResponse } from '../../types/common.types';
 import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
-import logger from '../../utils/logger'; // Importar logger
-import { saveResource } from '../dynamic/resources.tool'; // Importar saveResource
-import * as fs from 'fs-extra'; // Importar fs para leer el archivo Excel
-import * as path from 'path'; // Importar path
+import logger from '../../utils/logger'; // Import logger
+import { saveResource } from '../dynamic/resources.tool'; // Import saveResource
+import * as fs from 'fs-extra'; // Import fs to read the Excel file
+import * as path from 'path'; // Import path
 
-// Definir el esquema de entrada para la herramienta excel/charts
+// Define the input schema for the excel/charts tool
 const ExcelChartsInputSchema = z.object({
-  filePath: z.string().describe('La ruta al archivo de Excel.'),
-  operation: z.enum(['insert', 'modify', 'delete', 'reposition', 'list']).describe('La operación a realizar.'),
-  sheetName: z.string().optional().describe('El nombre de la hoja de cálculo. Si no se proporciona, se usa la hoja activa.'),
-  sheetIndex: z.number().int().positive().optional().describe('El índice de la hoja de cálculo (1-basado). Si no se proporciona, se usa la hoja activa.'),
-  rangeAddress: z.string().optional().describe('La dirección del rango de datos para el gráfico (e.g., "A1:B10"). Requerido para la operación "insert".'),
-  chartType: z.string().optional().describe('El tipo de gráfico (e.g., "xlColumnClustered", "xlLine"). Requerido para la operación "insert".'),
-  chartTitle: z.string().optional().describe('El título del gráfico.'),
-  chartIndex: z.number().int().positive().optional().describe('El índice del objeto gráfico en la hoja (1-basado). Requerido para "modify", "delete", "reposition".'),
-  chartName: z.string().optional().describe('El nombre del objeto gráfico en la hoja. Puede usarse en lugar de chartIndex para "modify", "delete", "reposition".'),
+  filePath: z.string().describe('The path to the Excel file.'),
+  operation: z.enum(['insert', 'modify', 'delete', 'reposition', 'list']).describe('The operation to perform.'),
+  sheetName: z.string().optional().describe('The name of the worksheet. If not provided, the active sheet is used.'),
+  sheetIndex: z.number().int().positive().optional().describe('The 1-based index of the worksheet. If provided, it overrides sheetName.'),
+  rangeAddress: z.string().optional().describe('The data range address for the chart (e.g., "A1:B10"). Required for the "insert" operation.'),
+  chartType: z.string().optional().describe('The chart type (e.g., "xlColumnClustered", "xlLine"). Required for the "insert" operation.'),
+  chartTitle: z.string().optional().describe('The title of the chart.'),
+  chartIndex: z.number().int().positive().optional().describe('The 1-based index of the chart object on the sheet. Required for "modify", "delete", "reposition".'),
+  chartName: z.string().optional().describe('The name of the chart object on the sheet. Can be used instead of chartIndex for "modify", "delete", "reposition".'),
   position: z.object({
     left: z.number().optional(),
     top: z.number().optional(),
     width: z.number().optional(),
     height: z.number().optional(),
-  }).optional().describe('La posición y tamaño del gráfico. Requerido para "reposition".'),
-  // Propiedades adicionales para modify (ejemplo)
-  newRangeAddress: z.string().optional().describe('Nueva dirección del rango de datos para la operación "modify".'),
+  }).optional().describe('The position and size of the chart. Required for "reposition".'),
+  // Additional properties for modify (example)
+  newRangeAddress: z.string().optional().describe('New data range address for the "modify" operation.'),
 });
 
 type ExcelChartsInput = z.infer<typeof ExcelChartsInputSchema>;
 
 /**
  * @tool excel/charts
- * @description Herramienta para gestionar gráficos en archivos de Excel.
- * Permite insertar, modificar, eliminar y reposicionar gráficos.
- * Utiliza COM Interop a través de winax.
+ * @description Manages charts in Excel files.
+ * Allows inserting, modifying, deleting, and repositioning charts.
+ * Uses COM Interop via winax.
  * @input ExcelChartsInputSchema
- * @output object - Depende de la operación.
+ * @output object - Depends on the operation.
  */
 const excelChartsTool: McpResource = {
   path: 'excel/charts',
-  description: 'Gestiona gráficos en archivos de Excel.',
-  schema: ExcelChartsInputSchema, // Corregido de inputSchema a schema
+  description: 'Manages charts in Excel files.',
+  schema: ExcelChartsInputSchema,
   handler: async (params: ToolRequestParams): Promise<ApiResponse<any>> => {
     let excelApp: any = null;
     let workbook: any = null;
     let worksheet: any = null;
-    let filePath: string | undefined; // Declarar filePath fuera del try y permitir undefined
+    let filePath: string | undefined; // Declare filePath outside the try and allow undefined
 
     try {
       const input = ExcelChartsInputSchema.parse(params);
-      filePath = input.filePath; // Asignar filePath aquí
+      filePath = input.filePath; // Assign filePath here
 
       const { operation, sheetName, sheetIndex, rangeAddress, chartType, chartTitle, chartIndex, chartName, position, newRangeAddress } = input;
 
@@ -65,7 +74,7 @@ const excelChartsTool: McpResource = {
       }
 
       if (!worksheet) {
-        throw new Error(`Hoja de cálculo "${input.sheetName || input.sheetIndex}" no encontrada.`);
+        throw new Error(`Worksheet "${input.sheetName || input.sheetIndex}" not found.`);
       }
 
       const chartObjects = worksheet.ChartObjects();
@@ -73,21 +82,21 @@ const excelChartsTool: McpResource = {
       switch (operation) {
         case 'insert': {
           if (!rangeAddress || !chartType) {
-            throw new Error('Para insertar un gráfico, se requieren rangeAddress y chartType.');
+            throw new Error('For inserting a chart, rangeAddress and chartType are required.');
           }
           const range = worksheet.Range(rangeAddress);
           if (!range) {
-            throw new Error(`Rango de datos "${rangeAddress}" no válido.`);
+            throw new Error(`Invalid data range "${rangeAddress}".`);
           }
 
-          // winax puede requerir el valor numérico del tipo de gráfico
-          // Aquí usamos un enfoque simple, se podría mapear strings a constantes COM
+          // winax may require the numeric value of the chart type
+          // Here we use a simple approach, strings could be mapped to COM constants
           const chartTypeValue = excelApp.constants[chartType] || parseInt(chartType, 10);
           if (isNaN(chartTypeValue)) {
-             throw new Error(`Tipo de gráfico "${chartType}" no reconocido.`);
+             throw new Error(`Unrecognized chart type "${chartType}".`);
           }
 
-          const chartObject = chartObjects.Add(0, 0, 300, 200); // Posición y tamaño inicial
+          const chartObject = chartObjects.Add(0, 0, 300, 200); // Initial position and size
           const chart = chartObject.Chart;
           chart.SetSourceData(range);
           chart.ChartType = chartTypeValue;
@@ -97,31 +106,31 @@ const excelChartsTool: McpResource = {
             chart.ChartTitle.Text = chartTitle;
           }
 
-          // Reposicionar si se especifica
+          // Reposition if specified
           if (position) {
             if (position.left !== undefined) chartObject.Left = position.left;
-            if (position.top !== undefined) chartObject.Top = position.top; // Corregido de position.position a position.top
+            if (position.top !== undefined) chartObject.Top = position.top;
             if (position.width !== undefined) chartObject.Width = position.width;
             if (position.height !== undefined) chartObject.Height = position.height;
           }
 
-          return { success: true, data: 'Gráfico insertado correctamente.' }; // Retorno ajustado
+          return { success: true, data: 'Chart inserted successfully.' }; // Adjusted return
         }
 
         case 'modify': {
           if (!chartIndex && !chartName) {
-            throw new Error('Para modificar un gráfico, se requiere chartIndex o chartName.');
+            throw new Error('For modifying a chart, chartIndex or chartName is required.');
           }
           const chartObject = chartIndex ? chartObjects.Item(chartIndex) : chartObjects.Item(chartName);
           if (!chartObject) {
-            throw new Error(`Gráfico con índice ${chartIndex} o nombre "${chartName}" no encontrado.`);
+            throw new Error(`Chart with index ${chartIndex} or name "${chartName}" not found.`);
           }
           const chart = chartObject.Chart;
 
           if (newRangeAddress) {
              const newRange = worksheet.Range(newRangeAddress);
              if (!newRange) {
-                throw new Error(`Nuevo rango de datos "${newRangeAddress}" no válido.`);
+                throw new Error(`Invalid new data range "${newRangeAddress}".`);
              }
              chart.SetSourceData(newRange);
           }
@@ -129,7 +138,7 @@ const excelChartsTool: McpResource = {
           if (chartType) {
              const chartTypeValue = excelApp.constants[chartType] || parseInt(chartType, 10);
              if (isNaN(chartTypeValue)) {
-                throw new Error(`Tipo de gráfico "${chartType}" no reconocido.`);
+                throw new Error(`Unrecognized chart type "${chartType}".`);
              }
              chart.ChartType = chartTypeValue;
           }
@@ -137,51 +146,51 @@ const excelChartsTool: McpResource = {
           if (chartTitle) {
             chart.HasTitle = true;
             chart.ChartTitle.Text = chartTitle;
-          } else if (chartTitle === '') { // Permitir eliminar el título
+          } else if (chartTitle === '') { // Allow deleting the title
              chart.HasTitle = false;
           }
 
-          // Modificar tamaño si se especifica
+          // Modify size if specified
           if (position) {
             if (position.width !== undefined) chartObject.Width = position.width;
             if (position.height !== undefined) chartObject.Height = position.height;
           }
 
 
-          return { success: true, data: 'Gráfico modificado correctamente.' }; // Retorno ajustado
+          return { success: true, data: 'Chart modified successfully.' }; // Adjusted return
         }
 
         case 'delete': {
           if (!chartIndex && !chartName) {
-            throw new Error('Para eliminar un gráfico, se requiere chartIndex o chartName.');
+            throw new Error('For deleting a chart, chartIndex or chartName is required.');
           }
           const chartObject = chartIndex ? chartObjects.Item(chartIndex) : chartObjects.Item(chartName);
           if (!chartObject) {
-            throw new Error(`Gráfico con índice ${chartIndex} o nombre "${chartName}" no encontrado.`);
+            throw new Error(`Chart with index ${chartIndex} or name "${chartName}" not found.`);
           }
           chartObject.Delete();
-          return { success: true, data: 'Gráfico eliminado correctamente.' }; // Retorno ajustado
+          return { success: true, data: 'Chart deleted successfully.' }; // Adjusted return
         }
 
         case 'reposition': {
           if (!chartIndex && !chartName) {
-            throw new Error('Para reposicionar un gráfico, se requiere chartIndex o chartName.');
+            throw new Error('For repositioning a chart, chartIndex or chartName is required.');
           }
            if (!position) {
-             throw new Error('Para reposicionar un gráfico, se requiere la propiedad position.');
+             throw new Error('For repositioning a chart, the position property is required.');
            }
           const chartObject = chartIndex ? chartObjects.Item(chartIndex) : chartObjects.Item(chartName);
           if (!chartObject) {
-            throw new Error(`Gráfico con índice ${chartIndex} o nombre "${chartName}" no encontrado.`);
+            throw new Error(`Chart with index ${chartIndex} or name "${chartName}" not found.`);
           }
 
           if (position.left !== undefined) chartObject.Left = position.left;
           if (position.top !== undefined) chartObject.Top = position.top;
-          if (position.width !== undefined) chartObject.Width = position.width; // Permitir modificar tamaño al reposicionar
-          if (position.height !== undefined) chartObject.Height = position.height; // Permitir modificar tamaño al reposicionar
+          if (position.width !== undefined) chartObject.Width = position.width; // Allow modifying size when repositioning
+          if (position.height !== undefined) chartObject.Height = position.height; // Allow modifying size when repositioning
 
 
-          return { success: true, data: 'Gráfico reposicionado correctamente.' }; // Retorno ajustado
+          return { success: true, data: 'Chart repositioned successfully.' }; // Adjusted return
         }
 
         case 'list': {
@@ -196,52 +205,52 @@ const excelChartsTool: McpResource = {
                     width: chartObject.Width,
                     height: chartObject.Height,
                     chartTitle: chartObject.Chart.HasTitle ? chartObject.Chart.ChartTitle.Text : null,
-                    chartType: chartObject.Chart.ChartType, // Esto devolverá un número, se podría mapear a string si es necesario
+                    chartType: chartObject.Chart.ChartType, // This will return a number, could be mapped to string if needed
                 });
             }
-            return { success: true, data: chartsList }; // Retorno ajustado
+            return { success: true, data: chartsList }; // Adjusted return
         }
 
         default:
-          throw new Error(`Operación "${operation}" no soportada.`);
+          throw new Error(`Unsupported operation: "${operation}".`);
       }
     } catch (error: any) {
-      // Aquí puedes usar tu manejador de errores si tienes uno centralizado
-      // Por ahora, devolvemos un ErrorResponse simple
+      // Here you can use your centralized error handler if you have one
+      // For now, we return a simple ErrorResponse
       return { success: false, error: { code: 'EXCEL_CHART_ERROR', message: error.message } };
     } finally {
       if (workbook) {
         try {
             workbook.Save();
-            // Guardar el archivo Excel modificado como un recurso dinámico
-            // Esto se hace en el finally porque Save() ocurre aquí para todas las operaciones de modificación.
-            // No necesitamos verificar la operación específica aquí.
-            // Asegurarse de que filePath tiene un valor antes de intentar leer el archivo
+            // Save the modified Excel file as a dynamic resource
+            // This is done in the finally block because Save() happens here for all modification operations.
+            // We don't need to check the specific operation here.
+            // Ensure filePath has a value before attempting to read the file
             if (filePath) {
                 try {
-                    const excelContent = await fs.readFile(filePath, null); // Leer como Buffer
+                    const excelContent = await fs.readFile(filePath, null); // Read as Buffer
                     await saveResource('excel/charts', path.basename(filePath), excelContent);
                     // logger.info(`Saved ${filePath} as a dynamic resource.`);
                 } catch (resourceSaveError: any) {
                     // logger.error(`Failed to save ${filePath} as a dynamic resource: ${resourceSaveError.message}`);
-                    // Continuar la ejecución aunque falle el guardado del recurso
+                    // Continue execution even if resource saving fails
                 }
             }
             workbook.Close();
         } catch (closeError: any) {
-            // Ignorar errores al cerrar si ya hubo un error principal
-            logger.warn(`Error al cerrar el libro de trabajo: ${closeError.message}`); // Usar logger
+            // Ignore errors when closing if there was already a main error
+            logger.warn(`Error closing the workbook: ${closeError.message}`); // Use logger
         }
         releaseObject(workbook);
       }
-      // La aplicación de Excel se gestiona externamente, no la cerramos aquí.
+      // The Excel application is managed externally, we don't close it here.
       releaseObject(excelApp);
     }
-    // Añadir un retorno al final para cubrir todos los casos posibles
-    // Esto solo se alcanzará si no se lanzó un error o se retornó antes.
-    // En un escenario ideal, todos los casos del switch deberían retornar.
-    // Pero para satisfacer al linter, añadimos este retorno de fallback.
-    return { success: false, error: { code: 'UNHANDLED_CASE', message: 'La operación de gráfico de Excel no retornó un resultado explícito.' } };
+    // Add a return at the end to cover all possible cases
+    // This will only be reached if no error was thrown or returned before.
+    // In an ideal scenario, all switch cases should return.
+    // But to satisfy the linter, we add this fallback return.
+    return { success: false, error: { code: 'UNHANDLED_CASE', message: 'Excel chart operation did not return an explicit result.' } };
   },
 };
 

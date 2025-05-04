@@ -1,51 +1,59 @@
+/**
+ * @file Tool for exporting Office documents (Word, Excel, PowerPoint) to PDF format.
+ * Uses COM Interop via winax to interact with Office applications.
+ * @author David Jurado
+ * @date 2025-05-04
+ * @copyright Copyright (c) 2025 David Jurado
+ * @license MIT
+ */
 import { z } from 'zod';
 import { McpResource, ToolRequestParams, ApiResponse } from '../../types/common.types';
-import { OfficeAppName, getOfficeApplication } from '../../utils/officeInterop'; // Importar los nombres correctos
-import { saveResource } from '../dynamic/resources.tool'; // Importar saveResource
-import * as fs from 'fs-extra'; // Importar fs para leer el archivo PDF
-import * as path from 'path'; // Importar path
+import { OfficeAppName, getOfficeApplication } from '../../utils/officeInterop'; // Import correct names
+import { saveResource } from '../dynamic/resources.tool'; // Import saveResource
+import * as fs from 'fs-extra'; // Import fs to read the PDF file
+import * as path from 'path'; // Import path
 
-// Esquema de entrada para la herramienta office/pdf/export
+// Input schema for the office/pdf/export tool
 const PdfExportInputSchema = z.object({
-  filePath: z.string().describe('Ruta al archivo de Office de origen (Word, Excel, o PowerPoint).'),
-  outputFilePath: z.string().describe('Ruta donde guardar el archivo PDF de salida.'),
-  application: z.enum(['Word', 'Excel', 'PowerPoint']).describe('La aplicación de Office a utilizar.'),
-  configuration: z.record(z.any()).optional().describe('Configuración opcional para la exportación a PDF (e.g., rango de páginas, calidad).'),
+  filePath: z.string().describe('Path to the source Office file (Word, Excel, or PowerPoint).'),
+  outputFilePath: z.string().describe('Path where the output PDF file will be saved.'),
+  application: z.enum(['Word', 'Excel', 'PowerPoint']).describe('The Office application to use.'),
+  configuration: z.record(z.any()).optional().describe('Optional configuration for PDF export (e.g., page range, quality).'),
 });
 
 type PdfExportInput = z.infer<typeof PdfExportInputSchema>;
 
 /**
  * @tool office/pdf/export
- * @description Herramienta para exportar documentos de Office (Word, Excel, PowerPoint) a formato PDF.
- * Utiliza COM Interop a través de winax para interactuar con las aplicaciones de Office.
- * Soporta operaciones para convertir, configurar (opcional) y guardar el archivo PDF.
- * @operation convert - Convierte el archivo de Office especificado a PDF.
- * @operation configure - (Opcional) Permite configurar opciones de exportación antes de convertir. (Implementación básica)
- * @operation save - Guarda el archivo convertido a la ruta especificada. (Integrado en convert)
- * @param filePath - Ruta al archivo de Office de origen.
- * @param outputFilePath - Ruta donde guardar el archivo PDF de salida.
- * @param application - La aplicación de Office a utilizar ('Word', 'Excel', 'PowerPoint').
- * @param configuration - Configuración opcional para la exportación a PDF.
+ * @description Tool for exporting Office documents (Word, Excel, PowerPoint) to PDF format.
+ * Uses COM Interop via winax to interact with Office applications.
+ * Supports operations to convert, configure (optional), and save the PDF file.
+ * @operation convert - Converts the specified Office file to PDF.
+ * @operation configure - (Optional) Allows configuring export options before converting. (Basic implementation)
+ * @operation save - Saves the converted file to the specified path. (Integrated into convert)
+ * @param filePath - Path to the source Office file.
+ * @param outputFilePath - Path where the output PDF file will be saved.
+ * @param application - The Office application to use ('Word', 'Excel', 'PowerPoint').
+ * @param configuration - Optional configuration for PDF export.
  */
 export const pdfExportTool: McpResource = {
-  path: 'office/pdf/export', // Usar 'path' en lugar de 'name'
-  description: 'Exporta documentos de Office a PDF.',
-  schema: PdfExportInputSchema, // Usar 'schema' en lugar de 'inputSchema'
-  handler: async (params: ToolRequestParams, context: any): Promise<ApiResponse<any>> => { // Ajustar tipo de retorno
+  path: 'office/pdf/export', // Use 'path' instead of 'name'
+  description: 'Exports Office documents to PDF.',
+  schema: PdfExportInputSchema, // Use 'schema' instead of 'inputSchema'
+  handler: async (params: ToolRequestParams, context: any): Promise<ApiResponse<any>> => { // Adjust return type
     let officeApp: any | null = null;
     let doc = null;
 
     try {
-      // Validar los parámetros de entrada
-      const validationResult = PdfExportInputSchema.safeParse(params); // Validar params directamente
+      // Validate input parameters
+      const validationResult = PdfExportInputSchema.safeParse(params); // Validate params directly
 
       if (!validationResult.success) {
         return {
           success: false,
-          error: { // Ajustar estructura del error
+          error: { // Adjust error structure
             code: 'VALIDATION_ERROR',
-            message: 'Error de validación de entrada',
+            message: 'Input validation error',
             details: validationResult.error.errors,
           },
         };
@@ -53,8 +61,8 @@ export const pdfExportTool: McpResource = {
 
       const { filePath, outputFilePath, application, configuration } = validationResult.data;
 
-      // Obtener la aplicación de Office
-      // Mapear el nombre de la aplicación a su ProgID
+      // Get the Office application
+      // Map the application name to its ProgID
       let appProgId: OfficeAppName;
       if (application === 'Word') {
         appProgId = 'Word.Application';
@@ -64,52 +72,52 @@ export const pdfExportTool: McpResource = {
         appProgId = 'PowerPoint.Application';
       } else {
          // Although schema validation should catch this, keep as a fallback
-         return { // Retornar como ErrorResponse
+         return { // Return as ErrorResponse
            success: false,
            error: {
              code: 'UNSUPPORTED_APPLICATION',
-             message: `Aplicación de Office no soportada: ${application}`,
+             message: `Unsupported Office application: ${application}`,
            },
          };
       }
 
       officeApp = await getOfficeApplication(appProgId);
       if (!officeApp) {
-        return { // Retornar como ErrorResponse
+        return { // Return as ErrorResponse
            success: false,
            error: {
              code: 'OFFICE_APP_ERROR',
-             message: `No se pudo obtener la instancia de la aplicación de Office: ${application}`,
+             message: `Could not get Office application instance: ${application}`,
            },
          };
       }
 
-      // Abrir el documento/presentación
+      // Open the document/presentation
       if (application === 'Word') {
         doc = officeApp.Documents.Open(filePath);
       } else if (application === 'Excel') {
         doc = officeApp.Workbooks.Open(filePath);
       } else if (application === 'PowerPoint') {
-        doc = officeApp.Presentations.Open(filePath); // Corregido 'Presenations' a 'Presentations'
+        doc = officeApp.Presentations.Open(filePath); // Corrected 'Presenations' to 'Presentations'
       }
 
       if (!doc) {
-        return { // Retornar como ErrorResponse
+        return { // Return as ErrorResponse
            success: false,
            error: {
              code: 'FILE_OPEN_ERROR',
-             message: `No se pudo abrir el archivo: ${filePath}`,
+             message: `Could not open file: ${filePath}`,
            },
          };
       }
 
-      // Configurar opciones de exportación (implementación básica, se puede expandir)
+      // Configure export options (basic implementation, can be expanded)
       const exportConfig = configuration || {};
-      const exportFormat = 17; // wdExportFormatPDF, xlTypePDF, ppSaveAsPDF (generalmente 17)
+      const exportFormat = 17; // wdExportFormatPDF, xlTypePDF, ppSaveAsPDF (generally 17)
 
-      // Realizar la exportación a PDF
+      // Perform the export to PDF
       if (application === 'Word') {
-        // Word usa ExportAsFixedFormat
+        // Word uses ExportAsFixedFormat
         doc.ExportAsFixedFormat(
           outputFilePath,
           exportFormat,
@@ -138,17 +146,17 @@ export const pdfExportTool: McpResource = {
           exportConfig.Item || 0,
           exportConfig.OpenAfterExport || false
         );
-        // Guardar el archivo PDF exportado como un recurso dinámico
+        // Save the exported PDF file as a dynamic resource
         try {
-            const pdfContent = await fs.readFile(outputFilePath, null); // Leer como Buffer
+            const pdfContent = await fs.readFile(outputFilePath, null); // Read as Buffer
             await saveResource('office/pdf/export', path.basename(outputFilePath), pdfContent);
             context?.log.info(`Saved ${outputFilePath} as a dynamic resource.`);
         } catch (resourceSaveError: any) {
             context?.log.error(`Failed to save ${outputFilePath} as a dynamic resource: ${resourceSaveError.message}`);
-            // Continuar la ejecución aunque falle el guardado del recurso
+            // Continue execution even if resource saving fails
         }
       } else if (application === 'Excel') {
-        // Excel usa ExportAsFixedFormat
+        // Excel uses ExportAsFixedFormat
         doc.ExportAsFixedFormat(
           exportFormat,
           outputFilePath,
@@ -160,17 +168,17 @@ export const pdfExportTool: McpResource = {
           exportConfig.OpenAfterPublish || false,
           exportConfig.FixedFormatExtClassPtr || null
         );
-        // Guardar el archivo PDF exportado como un recurso dinámico
+        // Save the exported PDF file as a dynamic resource
         try {
-            const pdfContent = await fs.readFile(outputFilePath, null); // Leer como Buffer
+            const pdfContent = await fs.readFile(outputFilePath, null); // Read as Buffer
             await saveResource('office/pdf/export', path.basename(outputFilePath), pdfContent);
             context?.log.info(`Saved ${outputFilePath} as a dynamic resource.`);
         } catch (resourceSaveError: any) {
             context?.log.error(`Failed to save ${outputFilePath} as a dynamic resource: ${resourceSaveError.message}`);
-            // Continuar la ejecución aunque falle el guardado del recurso
+            // Continue execution even if resource saving fails
         }
       } else if (application === 'PowerPoint') {
-        // PowerPoint usa ExportAsFixedFormat
+        // PowerPoint uses ExportAsFixedFormat
         doc.ExportAsFixedFormat(
           outputFilePath,
           exportFormat,
@@ -190,61 +198,46 @@ export const pdfExportTool: McpResource = {
           exportConfig.CreateHiddenSlides || false,
           exportConfig.OpenAfterExport || false
         );
-        // Guardar el archivo PDF exportado como un recurso dinámico
+        // Save the exported PDF file as a dynamic resource
         try {
-            const pdfContent = await fs.readFile(outputFilePath, null); // Leer como Buffer
+            const pdfContent = await fs.readFile(outputFilePath, null); // Read as Buffer
             await saveResource('office/pdf/export', path.basename(outputFilePath), pdfContent);
             context?.log.info(`Saved ${outputFilePath} as a dynamic resource.`);
         } catch (resourceSaveError: any) {
             context?.log.error(`Failed to save ${outputFilePath} as a dynamic resource: ${resourceSaveError.message}`);
-            // Continuar la ejecución aunque falle el guardado del recurso
+            // Continue execution even if resource saving fails
         }
       }
 
 
-      return { // Ajustar estructura de éxito
+      return { // Adjust success structure
         success: true,
         data: {
           outputFilePath: outputFilePath,
-          message: `Archivo exportado a PDF exitosamente: ${outputFilePath}`,
+          message: `File exported to PDF successfully: ${outputFilePath}`,
         },
       };
 
     } catch (error: any) {
-      return { // Ajustar estructura del error
+      return { // Adjust error structure
         success: false,
         error: {
           code: 'EXPORT_ERROR',
-          message: `Error al exportar a PDF: ${error.message}`,
+          message: `Error exporting to PDF: ${error.message}`,
           details: error,
         },
       };
     } finally {
-      // Cerrar el documento y liberar objetos COM
+      // Close the document and release COM objects
       if (doc) {
         try {
           doc.Close();
         } catch (e) {
-          console.error('Error al cerrar el documento:', e);
+          console.error('Error closing the document:', e);
         }
       }
-      // No cerrar la aplicación de Office aquí, ya que puede haber otros documentos abiertos
-      // La gestión de la instancia de la aplicación de Office debe ser manejada externamente si es necesario.
+      // Do not close the Office application here, as there may be other documents open
+      // Management of the Office application instance should be handled externally if necessary.
     }
   },
 };
-
-// Helper function to get Office application instance (assuming it exists in officeInterop.ts)
-// You might need to implement or adjust this function based on your officeInterop.ts
-/*
-import * as winax from 'winax';
-
-export function getOfficeApp(appName: 'Word' | 'Excel' | 'PowerPoint'): any {
-  try {
-    return new winax.Object.create(`${appName}.Application`);
-  } catch (e) {
-    console.error(`Error al crear instancia de ${appName}:`, e);
-    return null;
-  }
-}
-*/

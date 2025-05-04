@@ -1,9 +1,16 @@
+/**
+ * @file Tool for performing data analysis operations (sort, filter, pivot, calculate) on Excel ranges or tables.
+ * @author David Jurado
+ * @date 2025-05-04
+ * @copyright Copyright (c) 2025 David Jurado
+ * @license MIT
+ */
 import { z, ZodError } from 'zod';
 import { McpResource, ApiResponse, SuccessResponse, ErrorResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types';
-import { getOfficeApplication, releaseObject } from '../../utils/officeInterop'; // Importar releaseObject
-import logger from '../../utils/logger'; // Importar logger
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop'; // Import releaseObject
+import logger from '../../utils/logger'; // Import logger
 
-// --- Constantes COM (Ejemplos, verificar en documentación de Excel) ---
+// --- COM Constants (Examples, verify in Excel documentation) ---
 // https://learn.microsoft.com/en-us/office/vba/api/excel.xlautofilteroperator
 const XlAutoFilterOperator = {
     xlAnd: 1,
@@ -43,51 +50,51 @@ const XlHeaderShow = {
 
 // --- Schemas ---
 
-// Esquema combinado para todas las operaciones (usando z.object)
+// Combined schema for all operations (using z.object)
 const ExcelDataAnalysisInputSchema = z.object({
     operation: z.enum(['sort', 'filter', 'pivot', 'calculate']).describe('The operation to perform (sort, filter, pivot, or calculate).'),
-    // Incluir todos los campos posibles de las operaciones
-    filePath: z.string().describe('Ruta al archivo de Excel.'),
-    sheetName: z.string().optional().describe('Nombre de la hoja de cálculo. Si no se proporciona, se usa la hoja activa.'),
-    sheetIndex: z.number().int().positive().optional().describe('Índice de la hoja de cálculo (1-basado). Si se proporciona, anula sheetName.'),
-    rangeAddress: z.string().optional().describe('Dirección del rango (p. ej., "A1:D10"). Requerido si no se usa tableName.'),
-    tableName: z.string().optional().describe('Nombre de la tabla. Requerido si no se usa rangeAddress.'),
+    // Include all possible fields for the operations
+    filePath: z.string().describe('Path to the Excel file.'),
+    sheetName: z.string().optional().describe('Name of the worksheet. If not provided, the active sheet is used.'),
+    sheetIndex: z.number().int().positive().optional().describe('1-based index of the worksheet. If provided, it overrides sheetName.'),
+    rangeAddress: z.string().optional().describe('Range address (e.g., "A1:D10"). Required if tableName is not used.'),
+    tableName: z.string().optional().describe('Name of the table. Required if rangeAddress is not used.'),
 
-    // Campos específicos para 'sort'
+    // Specific fields for 'sort'
     sortCriteria: z.array(z.object({
-        column: z.union([z.string(), z.number().int().positive()]).describe('Columna por la que ordenar (nombre de columna o índice 1-basado).'),
-        order: z.enum(['Ascending', 'Descending']).default('Ascending').describe('Orden de ordenación.'),
-    })).min(1).optional().describe('Criterios de ordenación. Requerido para "sort".'),
-    header: z.nativeEnum(XlHeaderShow).default(XlHeaderShow.xlGuess).optional().describe('Especifica si el rango tiene encabezados. Usado en "sort".'),
+        column: z.union([z.string(), z.number().int().positive()]).describe('Column to sort by (column name or 1-based index).'),
+        order: z.enum(['Ascending', 'Descending']).default('Ascending').describe('Sort order.'),
+    })).min(1).optional().describe('Sort criteria. Required for "sort".'),
+    header: z.nativeEnum(XlHeaderShow).default(XlHeaderShow.xlGuess).optional().describe('Specifies if the range has headers. Used in "sort".'),
 
-    // Campos específicos para 'filter'
+    // Specific fields for 'filter'
     filterCriteria: z.array(z.object({
-        column: z.union([z.string(), z.number().int().positive()]).describe('Columna por la que filtrar (nombre de columna o índice 1-basado).'),
-        criteria1: z.any().describe('Primer criterio de filtro.'),
-        operator: z.nativeEnum(XlAutoFilterOperator).optional().describe('Operador de filtro (constante XlAutoFilterOperator).'),
-        criteria2: z.any().optional().describe('Segundo criterio de filtro (para operadores que requieren dos).'),
-        visibleDropDown: z.boolean().default(true).optional().describe('Mostrar u ocultar el botón desplegable de autofiltro.'),
-    })).min(1).optional().describe('Criterios de filtro. Requerido para "filter".'),
+        column: z.union([z.string(), z.number().int().positive()]).describe('Column to filter by (column name or 1-based index).'),
+        criteria1: z.any().describe('First filter criterion.'),
+        operator: z.nativeEnum(XlAutoFilterOperator).optional().describe('Filter operator (XlAutoFilterOperator constant).'),
+        criteria2: z.any().optional().describe('Second filter criterion (for operators requiring two).'),
+        visibleDropDown: z.boolean().default(true).optional().describe('Show or hide the AutoFilter drop-down button.'),
+    })).min(1).optional().describe('Filter criteria. Required for "filter".'),
 
-    // Campos específicos para 'pivot'
+    // Specific fields for 'pivot'
     pivotTableParameters: z.object({
-        pivotTableName: z.string().describe('Nombre para la nueva tabla dinámica.'),
-        destination: z.string().describe('Celda donde se colocará la tabla dinámica (p. ej., "Sheet2!A1").'),
-        rowFields: z.array(z.union([z.string(), z.number().int().positive()])).optional().describe('Campos de fila.'),
-        columnFields: z.array(z.union([z.string(), z.number().int().positive()])).optional().describe('Campos de columna.'),
+        pivotTableName: z.string().describe('Name for the new pivot table.'),
+        destination: z.string().describe('Cell where the pivot table will be placed (e.g., "Sheet2!A1").'),
+        rowFields: z.array(z.union([z.string(), z.number().int().positive()])).optional().describe('Row fields.'),
+        columnFields: z.array(z.union([z.string(), z.number().int().positive()])).optional().describe('Column fields.'),
         dataFields: z.array(z.object({
-            field: z.union([z.string(), z.number().int().positive()]).describe('Campo de datos.'),
-            function: z.nativeEnum(XlConsolidationFunction).optional().describe('Función de resumen (constante XlConsolidationFunction).'),
-            name: z.string().optional().describe('Nombre personalizado para el campo de datos.'),
-        })).optional().describe('Campos de datos.'),
-        filterFields: z.array(z.union([z.string(), z.number().int().positive()])).optional().describe('Campos de filtro.'),
-    }).optional().describe('Parámetros para la creación de la tabla dinámica. Requerido para "pivot".'),
+            field: z.union([z.string(), z.number().int().positive()]).describe('Data field.'),
+            function: z.nativeEnum(XlConsolidationFunction).optional().describe('Summary function (XlConsolidationFunction constant).'),
+            name: z.string().optional().describe('Custom name for the data field.'),
+        })).optional().describe('Data fields.'),
+        filterFields: z.array(z.union([z.string(), z.number().int().positive()])).optional().describe('Filter fields.'),
+    }).optional().describe('Parameters for pivot table creation. Required for "pivot".'),
 
-    // Campos específicos para 'calculate'
-    formulaRange: z.string().optional().describe('Dirección del rango que contiene las fórmulas a calcular (p. ej., "A1:A10"). Requerido para "calculate".'),
+    // Specific fields for 'calculate'
+    formulaRange: z.string().optional().describe('Address of the range containing formulas to calculate (e.g., "A1:A10"). Required for "calculate".'),
 
 }).refine(data => {
-    // Validaciones condicionales basadas en la operación
+    // Conditional validations based on the operation
     if (data.operation === 'sort') {
         return data.sortCriteria !== undefined && data.sortCriteria.length > 0;
     } else if (data.operation === 'filter') {
@@ -97,12 +104,12 @@ const ExcelDataAnalysisInputSchema = z.object({
     } else if (data.operation === 'calculate') {
         return data.formulaRange !== undefined;
     }
-    return true; // Si la operación no requiere campos específicos, pasa la validación
+    return true; // If the operation does not require specific fields, validation passes
 }, {
     message: "Missing required fields for the specified operation.",
     path: [], // Apply error to the whole object
 }).refine(data => {
-    // Validar que se proporcione rangeAddress o tableName
+    // Validate that either rangeAddress or tableName is provided
     return data.rangeAddress !== undefined || data.tableName !== undefined;
 }, {
     message: "Either rangeAddress or tableName must be provided.",
@@ -110,13 +117,13 @@ const ExcelDataAnalysisInputSchema = z.object({
 });
 
 
-// Inferir el tipo combinado para usar en el handler
+// Infer the combined type for use in the handler
 type ExcelDataAnalysisInput = z.infer<typeof ExcelDataAnalysisInputSchema>;
 
 
 /**
  * @tool excel/data-analysis
- * @description Realiza operaciones de análisis de datos (ordenar, filtrar, tabla dinámica, calcular) en rangos o tablas de Excel.
+ * @description Performs data analysis operations (sort, filter, pivot, calculate) on Excel ranges or tables.
  * @inputSchema See `ExcelDataAnalysisInputSchema` (z.object). Uses combined properties from all operations.
  * @outputSchema Returns a success status with a message in `data`.
  * @dependencies Requires Microsoft Excel installed and accessible via COM Interop.
@@ -180,15 +187,15 @@ type ExcelDataAnalysisInput = z.infer<typeof ExcelDataAnalysisInputSchema>;
  */
 export const excelDataAnalysisTool: McpResource[] = [{
   path: 'excel/data-analysis',
-  description: 'Performs data analysis operations (sort, filter, pivot, calculate) on Excel ranges or tables.', // Translated description
-  schema: ExcelDataAnalysisInputSchema, // Usar el nuevo esquema z.object
+  description: 'Performs data analysis operations (sort, filter, pivot, calculate) on Excel ranges or tables.',
+  schema: ExcelDataAnalysisInputSchema, // Use the new z.object schema
   handler: async (params: ToolRequestParams, context?: FastMCPContext<any>): Promise<ApiResponse<string>> => {
     let excelApp: any = null;
     let workbook: any = null;
     let sheet: any = null;
 
     try {
-      // Validar input parameters using the combined schema
+      // Validate input parameters using the combined schema
       const input = ExcelDataAnalysisInputSchema.parse(params);
 
       excelApp = await getOfficeApplication('Excel.Application');
@@ -202,13 +209,13 @@ export const excelDataAnalysisTool: McpResource[] = [{
         try {
           targetRange = sheet.ListObjects(input.tableName).Range;
         } catch (e: any) {
-          throw new Error(`Tabla "${input.tableName}" no encontrada: ${e.message}`);
+          throw new Error(`Table "${input.tableName}" not found: ${e.message}`);
         }
       } else if (input.rangeAddress) {
         targetRange = sheet.Range(input.rangeAddress);
       } else {
         // This case should be caught by the schema refine, but as a fallback:
-        throw new Error('Se requiere rangeAddress o tableName.');
+        throw new Error('rangeAddress or tableName is required.');
       }
 
       let resultMessage: string;
@@ -230,14 +237,14 @@ export const excelDataAnalysisTool: McpResource[] = [{
           sort.Orientation = excelApp.constants.xlSortColumns;
           sort.SortMethod = excelApp.constants.xlPinYin; // Or xlStroke
           sort.Apply();
-          resultMessage = `Operación 'sort' aplicada al rango/tabla en "${input.filePath}".`;
+          resultMessage = `Operation 'sort' applied to the range/table in "${input.filePath}".`;
           break;
         }
         case 'filter': {
           const filterInput = input; // input is already validated as ExcelDataAnalysisInput
           if (!filterInput.filterCriteria) throw new Error("filterCriteria is required for 'filter' operation.");
 
-          targetRange.AutoFilter(); // Asegura que AutoFilter esté activado
+          targetRange.AutoFilter(); // Ensure AutoFilter is activated
           filterInput.filterCriteria.forEach(criteria => {
             targetRange.AutoFilter(
               targetRange.Columns(criteria.column).Column, // Field
@@ -247,7 +254,7 @@ export const excelDataAnalysisTool: McpResource[] = [{
               criteria.visibleDropDown !== undefined ? criteria.visibleDropDown : true // Default visibleDropDown
             );
           });
-          resultMessage = `Operación 'filter' aplicada al rango/tabla en "${input.filePath}".`;
+          resultMessage = `Operation 'filter' applied to the range/table in "${input.filePath}".`;
           break;
         }
         case 'pivot': {
@@ -260,28 +267,28 @@ export const excelDataAnalysisTool: McpResource[] = [{
             pivotInput.pivotTableParameters.pivotTableName
           );
 
-          // Añadir campos de fila
-          pivotInput.pivotTableParameters.rowFields?.forEach((field: string | number) => { // Añadir tipo para field
+          // Add row fields
+          pivotInput.pivotTableParameters.rowFields?.forEach((field: string | number) => { // Add type for field
             pivotTable.PivotFields(field).Orientation = excelApp.constants.xlRowField;
           });
 
-          // Añadir campos de columna
-          pivotInput.pivotTableParameters.columnFields?.forEach((field: string | number) => { // Añadir tipo para field
+          // Add column fields
+          pivotInput.pivotTableParameters.columnFields?.forEach((field: string | number) => { // Add type for field
             pivotTable.PivotFields(field).Orientation = excelApp.constants.xlColumnField;
           });
 
-          // Añadir campos de datos
+          // Add data fields
           pivotInput.pivotTableParameters.dataFields?.forEach(dataField => {
             const field = pivotTable.PivotFields(dataField.field);
             const dataFieldItem = pivotTable.AddDataField(field, dataField.name, dataField.function !== undefined ? dataField.function : excelApp.constants.xlSum); // Default function
           });
 
-          // Añadir campos de filtro
-          pivotInput.pivotTableParameters.filterFields?.forEach((field: string | number) => { // Añadir tipo para field
+          // Add filter fields
+          pivotInput.pivotTableParameters.filterFields?.forEach((field: string | number) => { // Add type for field
             pivotTable.PivotFields(field).Orientation = excelApp.constants.xlPageField; // Filter
           });
 
-          resultMessage = `Operación 'pivot' completada. Tabla dinámica "${pivotInput.pivotTableParameters.pivotTableName}" creada en "${pivotInput.pivotTableParameters.destination}".`;
+          resultMessage = `Operation 'pivot' completed. Pivot table "${pivotInput.pivotTableParameters.pivotTableName}" created at "${pivotInput.pivotTableParameters.destination}".`;
           break;
         }
         case 'calculate': {
@@ -290,15 +297,15 @@ export const excelDataAnalysisTool: McpResource[] = [{
 
           const formulaRange = sheet.Range(calcInput.formulaRange);
           formulaRange.Calculate();
-          // Nota: Esta operación no devuelve los resultados del cálculo, solo los ejecuta.
-          resultMessage = `Operación 'calculate' ejecutada en el rango "${calcInput.formulaRange}" en "${input.filePath}".`;
+          // Note: This operation does not return the calculation results, it only executes them.
+          resultMessage = `Operation 'calculate' executed on range "${calcInput.formulaRange}" in "${input.filePath}".`;
           break;
         }
         default:
           // This case should theoretically not be reached due to discriminated union,
           // but adding a type assertion for safety and to satisfy TypeScript.
           // const exhaustiveCheck: never = input; // No longer needed with combined schema
-          throw new Error(`Operación "${(input as any).operation}" no soportada.`); // Acceder a operation directamente
+          throw new Error(`Unsupported operation: "${(input as any).operation}".`); // Access operation directly
 
       }
 
@@ -311,35 +318,40 @@ export const excelDataAnalysisTool: McpResource[] = [{
     } catch (error: any) {
       // Handle Zod validation errors specifically
       if (error instanceof ZodError) {
-        // Serializar error.errors para que sea serializable
+        // Serialize error.errors to be serializable
         const errorDetails = JSON.stringify(error.errors, null, 2);
         logger.warn(`[excel/data-analysis] Input validation failed: ${error.message}`, { errors: errorDetails, params });
         return {
           success: false,
           error: {
             code: 'VALIDATION_ERROR',
-            message: 'Error de validación de entrada.',
+            message: 'Input validation error.',
             details: errorDetails,
           },
         };
       }
       // Handle other errors
-      logger.error(`[excel/data-analysis] Error al ejecutar la herramienta: ${error.message}`, { error: String(error), params }); // Serializar error
+      logger.error(`[excel/data-analysis] Error executing tool: ${error.message}`, { error: String(error), params }); // Serialize error
       return {
         success: false,
         error: {
           code: 'OFFICE_API_ERROR', // Or a more specific code if possible
-          message: `Error al ejecutar la herramienta excel/data-analysis: ${error.message}`,
-          details: String(error), // Serializar error
+          message: `Error executing excel/data-analysis tool: ${error.message}`,
+          details: String(error), // Serialize error
         },
       };
     } finally {
-      // No cerrar Excel aquí, la aplicación debe permanecer abierta para futuras operaciones.
-      // Liberar workbook y sheet si se obtuvieron
-      if (workbook) workbook.Close(false); // Cerrar sin guardar
+      // Do not close Excel here, the application should remain open for future operations.
+      // Release workbook and sheet if obtained
+      if (workbook) workbook.Close(false); // Close without saving
       releaseObject(sheet);
       releaseObject(workbook);
-      // No liberar excelApp aquí
+      // Do not release excelApp here
     }
+    // Add a return at the end to cover all possible cases
+    // This will only be reached if no error was thrown or returned before.
+    // In an ideal scenario, all switch cases should return.
+    // But to satisfy the linter, we add this fallback return.
+    return { success: false, error: { code: 'UNHANDLED_CASE', message: 'Excel data analysis operation did not return an explicit result.' } };
   },
 }];

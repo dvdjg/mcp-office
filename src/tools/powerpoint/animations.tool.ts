@@ -1,37 +1,46 @@
+/**
+ * @file Tool for managing shape animations and slide transitions in PowerPoint.
+ * Allows adding animations to shapes, configuring slide transitions,
+ * removing animations/transitions, and listing existing ones.
+ * Uses COM Interop via winax.
+ * @author David Jurado
+ * @date 2025-05-04
+ * @copyright Copyright (c) 2025 David Jurado
+ * @license MIT
+ */
 import { z } from 'zod';
 import { McpResource, ApiResponse, ToolRequestParams } from '../../types/common.types';
 import { getOfficeApplication } from '../../utils/officeInterop';
 
-// Esquema de entrada para la herramienta powerpoint/animations
+// Input schema for the powerpoint/animations tool
 const AnimationsInputSchema = z.object({
-  filePath: z.string().describe('Ruta al archivo de PowerPoint.'),
-  operation: z.enum(['add', 'configure', 'remove', 'list']).describe('Operación a realizar: add (animación a forma), configure (transición a diapositiva), remove (animación/transición), list (animaciones/transiciones).'),
-  slideIndex: z.number().int().positive().optional().describe('Índice de la diapositiva (1-basado). Requerido para configure, remove y list.'),
-  shapeIndex: z.number().int().positive().optional().describe('Índice de la forma (1-basado). Requerido para add, remove y list (animaciones).'),
-  shapeName: z.string().optional().describe('Nombre de la forma. Alternativa a shapeIndex para add, remove y list (animaciones).'),
-  animationType: z.string().optional().describe('Tipo de animación (constante MsoAnimEffect). Requerido para add.'),
-  transitionType: z.string().optional().describe('Tipo de transición (constante PpTransition). Requerido para configure.'),
-  duration: z.number().positive().optional().describe('Duración en segundos. Opcional para add y configure.'),
-  effectParameters: z.record(z.any()).optional().describe('Parámetros adicionales para la animación/transición (p. ej., dirección, orden).'),
+  filePath: z.string().describe('Path to the PowerPoint file.'),
+  operation: z.enum(['add', 'configure', 'remove', 'list']).describe('Operation to perform: add (animation to shape), configure (transition to slide), remove (animation/transition), list (animations/transitions).'),
+  slideIndex: z.number().int().positive().optional().describe('1-based index of the slide. Required for configure, remove, and list.'),
+  shapeIndex: z.number().int().positive().optional().describe('1-based index of the shape. Required for add, remove, and list (animations).'),
+  shapeName: z.string().optional().describe('Name of the shape. Alternative to shapeIndex for add, remove, and list (animations).'),
+  animationType: z.string().optional().describe('Animation type (MsoAnimEffect constant). Required for add.'),
+  transitionType: z.string().optional().describe('Transition type (PpTransition constant). Required for configure.'),
+  duration: z.number().positive().optional().describe('Duration in seconds. Optional for add and configure.'),
+  effectParameters: z.record(z.any()).optional().describe('Additional parameters for the animation/transition (e.g., direction, order).'),
 });
 
 type AnimationsInput = z.infer<typeof AnimationsInputSchema>;
 
 /**
- * @tool
- * @description Gestiona animaciones de formas y transiciones de diapositivas en PowerPoint.
- * Permite añadir animaciones a formas, configurar transiciones de diapositivas,
- * eliminar animaciones/transiciones y listar las existentes.
- * Utiliza COM Interop a través de winax.
- * Requiere especificar la ruta del archivo, la operación y los índices/nombres
- * de diapositivas/formas según la operación.
+ * @tool powerpoint/animations
+ * @description Manages shape animations and slide transitions in PowerPoint.
+ * Allows adding animations to shapes, configuring slide transitions,
+ * removing animations/transitions, and listing existing ones.
+ * Uses COM Interop via winax.
+ * Requires specifying the file path, operation, and slide/shape indices/names based on the operation.
  */
 const animationsTool: McpResource = {
   path: 'powerpoint/animations',
-  description: 'Gestiona animaciones de formas y transiciones de diapositivas en PowerPoint.',
+  description: 'Manages shape animations and slide transitions in PowerPoint.',
   schema: AnimationsInputSchema,
   handler: async (params: ToolRequestParams): Promise<ApiResponse<any>> => {
-    const input = AnimationsInputSchema.parse(params); // Validar y parsear la entrada
+    const input = AnimationsInputSchema.parse(params); // Validate and parse input
     const { filePath, operation, slideIndex, shapeIndex, shapeName, animationType, transitionType, duration, effectParameters } = input;
     const app = await getOfficeApplication('PowerPoint.Application');
     let presentation;
@@ -42,20 +51,20 @@ const animationsTool: McpResource = {
       switch (operation) {
         case 'add':
           if (!slideIndex || (!shapeIndex && !shapeName) || !animationType) {
-            throw new Error('Para la operación "add", se requieren slideIndex, shapeIndex o shapeName, y animationType.');
+            throw new Error('For the "add" operation, slideIndex, shapeIndex or shapeName, and animationType are required.');
           }
           const slideForAdd = presentation.Slides(slideIndex);
           const shapeForAdd = shapeIndex ? slideForAdd.Shapes(shapeIndex) : slideForAdd.Shapes(shapeName);
           if (!shapeForAdd) {
-             throw new Error(`Forma no encontrada en la diapositiva ${slideIndex} con índice ${shapeIndex} o nombre ${shapeName}.`);
+             throw new Error(`Shape not found on slide ${slideIndex} with index ${shapeIndex} or name ${shapeName}.`);
           }
 
-          // Añadir animación
-          // Nota: MsoAnimEffect es un enum en la API de PowerPoint. Necesitamos mapear el string a su valor numérico.
-          // winax debería manejar esto si la constante existe en el objeto app.MsoAnimEffect
+          // Add animation
+          // Note: MsoAnimEffect is an enum in the PowerPoint API. We need to map the string to its numeric value.
+          // winax should handle this if the constant exists in the app.MsoAnimEffect object
           const animEffectValue = app.MsoAnimEffect[animationType];
           if (animEffectValue === undefined) {
-              throw new Error(`Tipo de animación inválido: ${animationType}.`);
+              throw new Error(`Invalid animation type: ${animationType}.`);
           }
 
           const effect = slideForAdd.TimeLine.MainSequence.AddEffect(
@@ -67,30 +76,30 @@ const animationsTool: McpResource = {
             effect.Timing.Duration = duration;
           }
 
-          // Aplicar parámetros adicionales si existen
+          // Apply additional parameters if they exist
           if (effectParameters) {
-              // Esto es un ejemplo básico. La aplicación de parámetros depende del tipo de animación.
-              // Se necesitaría lógica más compleja para manejar diferentes tipos de efectos y sus propiedades.
-              // Por ejemplo, para una animación de entrada, podrías querer configurar la dirección.
+              // This is a basic example. Parameter application depends on the animation type.
+              // More complex logic would be needed to handle different effect types and their properties.
+              // For example, for an entrance animation, you might want to configure the direction.
               // effect.EffectParameters.Direction = app.MsoAnimDirection.msoAnimDirectionLeft;
-              console.warn('La aplicación de effectParameters no está completamente implementada y puede requerir lógica específica por tipo de animación.');
+              console.warn('Application of effectParameters is not fully implemented and may require specific logic per animation type.');
           }
 
 
-          return { success: true, data: { message: `Animación '${animationType}' añadida a la forma ${shapeIndex || shapeName} en la diapositiva ${slideIndex}.` } };
+          return { success: true, data: { message: `Animation '${animationType}' added to shape ${shapeIndex || shapeName} on slide ${slideIndex}.` } };
 
         case 'configure':
           if (!slideIndex || !transitionType) {
-            throw new Error('Para la operación "configure", se requieren slideIndex y transitionType.');
+            throw new Error('For the "configure" operation, slideIndex and transitionType are required.');
           }
           const slideForConfig = presentation.Slides(slideIndex);
           const transition = slideForConfig.SlideShowTransition;
 
-          // Configurar transición
-          // Nota: PpTransition es un enum en la API de PowerPoint. Necesitamos mapear el string a su valor numérico.
+          // Configure transition
+          // Note: PpTransition is an enum in the PowerPoint API. We need to map the string to its numeric value.
           const transitionEffectValue = app.PpTransition[transitionType];
            if (transitionEffectValue === undefined) {
-              throw new Error(`Tipo de transición inválido: ${transitionType}.`);
+              throw new Error(`Invalid transition type: ${transitionType}.`);
           }
           transition.EntryEffect = transitionEffectValue;
 
@@ -98,43 +107,43 @@ const animationsTool: McpResource = {
             transition.Duration = duration;
           }
 
-           // Aplicar parámetros adicionales si existen
+           // Apply additional parameters if they exist
           if (effectParameters) {
-              // Similar a las animaciones, la aplicación de parámetros de transición depende del tipo.
-              // Por ejemplo, para una transición de empuje, podrías querer configurar la dirección.
+              // Similar to animations, transition parameter application depends on the type.
+              // For example, for a push transition, you might want to configure the direction.
               // transition.Direction = app.PpTransitionDirection.ppTransitionDirectionLeft;
-               console.warn('La aplicación de effectParameters para transiciones no está completamente implementada y puede requerir lógica específica por tipo de transición.');
+               console.warn('Application of effectParameters for transitions is not fully implemented and may require specific logic per transition type.');
           }
 
-          return { success: true, data: { message: `Transición '${transitionType}' configurada para la diapositiva ${slideIndex}.` } };
+          return { success: true, data: { message: `Transition '${transitionType}' configured for slide ${slideIndex}.` } };
 
         case 'remove':
              if (!slideIndex || (!shapeIndex && !shapeName)) {
-                 throw new Error('Para la operación "remove", se requieren slideIndex y shapeIndex o shapeName.');
+                 throw new Error('For the "remove" operation, slideIndex and shapeIndex or shapeName are required.');
              }
              const slideForRemove = presentation.Slides(slideIndex);
              const shapeForRemove = shapeIndex ? slideForRemove.Shapes(shapeIndex) : slideForRemove.Shapes(shapeName);
              if (!shapeForRemove) {
-                 throw new Error(`Forma no encontrada en la diapositiva ${slideIndex} con índice ${shapeIndex} o nombre ${shapeName}.`);
+                 throw new Error(`Shape not found on slide ${slideIndex} with index ${shapeIndex} or name ${shapeName}.`);
              }
 
-             // Eliminar animaciones asociadas a la forma
+             // Remove animations associated with the shape
              const effectsToRemove = [];
-             // Iterar hacia atrás para evitar problemas con índices después de la eliminación
+             // Iterate backwards to avoid issues with indices after deletion
              for (let i = slideForRemove.TimeLine.MainSequence.Count; i >= 1; i--) {
                  const effect = slideForRemove.TimeLine.MainSequence(i);
-                 // Comparar formas por su COM object o un identificador único si es posible.
-                 // Comparar por nombre puede ser problemático si hay formas con nombres duplicados.
-                 // Comparar por el objeto COM directamente es más fiable si winax lo permite.
-                 // Si winax no permite la comparación directa de objetos COM, podríamos intentar comparar propiedades únicas como ID o Name (si garantizamos nombres únicos).
-                 // Por ahora, asumimos que la comparación directa de objetos COM funciona o que los nombres son únicos para este caso.
+                 // Compare shapes by their COM object or a unique identifier if possible.
+                 // Comparing by name can be problematic if there are shapes with duplicate names.
+                 // Comparing by the COM object directly is more reliable if winax allows it.
+                 // If winax does not allow direct comparison of COM objects, we could try comparing unique properties like ID or Name (if we guarantee unique names).
+                 // For now, we assume direct COM object comparison works or names are unique for this case.
                  try {
-                     if (effect.Shape && effect.Shape.Name === shapeForRemove.Name) { // Comparación por nombre como fallback/ejemplo
+                     if (effect.Shape && effect.Shape.Name === shapeForRemove.Name) { // Comparison by name as fallback/example
                           effectsToRemove.push(effect);
                      }
                  } catch (compareError) {
-                      console.warn(`Error comparando formas durante la eliminación de animación: ${compareError instanceof Error ? compareError.message : String(compareError)}`);
-                      // Continuar con la eliminación incluso si la comparación falla para un efecto específico
+                      console.warn(`Error comparing shapes during animation removal: ${compareError instanceof Error ? compareError.message : String(compareError)}`);
+                      // Continue with removal even if comparison fails for a specific effect
                  }
              }
 
@@ -142,56 +151,56 @@ const animationsTool: McpResource = {
                  try {
                      effect.Delete();
                  } catch (deleteError) {
-                     console.error(`Error eliminando efecto de animación: ${deleteError instanceof Error ? deleteError.message : String(deleteError)}`);
-                     // Continuar eliminando otros efectos
+                     console.error(`Error deleting animation effect: ${deleteError instanceof Error ? deleteError.message : String(deleteError)}`);
+                     // Continue deleting other effects
                  }
              });
 
 
-             return { success: true, data: { message: `Animaciones eliminadas para la forma ${shapeIndex || shapeName} en la diapositiva ${slideIndex}.` } };
+             return { success: true, data: { message: `Animations removed for shape ${shapeIndex || shapeName} on slide ${slideIndex}.` } };
 
         case 'list':
             if (!slideIndex) {
-                throw new Error('Para la operación "list", se requiere slideIndex.');
+                throw new Error('For the "list" operation, slideIndex is required.');
             }
             const slideForList = presentation.Slides(slideIndex);
             const animations = [];
 
-            // Listar animaciones de formas en la diapositiva
+            // List shape animations on the slide
             for (let i = 1; i <= slideForList.TimeLine.MainSequence.Count; i++) {
                 const effect = slideForList.TimeLine.MainSequence(i);
                 animations.push({
                     shapeName: effect.Shape.Name,
-                    // shapeIndex: effect.Shape.ZOrderPosition, // ZOrderPosition no es un índice fiable en la colección Shapes
-                    animationType: effect.EffectType, // Esto devuelve un valor numérico, necesitaríamos mapearlo a la constante MsoAnimEffect
+                    // shapeIndex: effect.Shape.ZOrderPosition, // ZOrderPosition is not a reliable index in the Shapes collection
+                    animationType: effect.EffectType, // This returns a numeric value, we would need to map it to the MsoAnimEffect constant
                     duration: effect.Timing.Duration,
-                    // Otros detalles de la animación si son relevantes
+                    // Other animation details if relevant
                 });
             }
 
-            // Obtener detalles de la transición de la diapositiva
+            // Get slide transition details
             const transitionForList = slideForList.SlideShowTransition;
             const transitionDetails = {
-                transitionType: transitionForList.EntryEffect, // Esto devuelve un valor numérico, necesitaríamos mapearlo a la constante PpTransition
+                transitionType: transitionForList.EntryEffect, // This returns a numeric value, we would need to map it to the PpTransition constant
                 duration: transitionForList.Duration,
-                // Otros detalles de la transición si son relevantes
+                // Other transition details if relevant
             };
 
 
-            return { success: true, data: { animations, transition: transitionDetails, message: `Listado de animaciones y transición para la diapositiva ${slideIndex}.` } };
+            return { success: true, data: { animations, transition: transitionDetails, message: `Listed animations and transition for slide ${slideIndex}.` } };
 
 
         default:
-          throw new Error(`Operación no soportada: ${operation}`);
+          throw new Error(`Unsupported operation: ${operation}`);
       }
     } catch (error: any) {
-      console.error(`Error en la herramienta powerpoint/animations: ${error.message}`);
+      console.error(`Error in powerpoint/animations tool: ${error.message}`);
       return {
         success: false,
         error: {
-          code: 'OFFICE_API_ERROR', // O un código de error más específico
+          code: 'OFFICE_API_ERROR', // Or a more specific error code
           message: error.message,
-          details: error, // Incluir el objeto de error original para depuración
+          details: error, // Include the original error object for debugging
         },
       };
     } finally {
@@ -199,13 +208,13 @@ const animationsTool: McpResource = {
         try {
             presentation.Save();
             presentation.Close();
-        } catch (saveCloseError: any) { // Tipar como any
-             console.error(`Error al guardar/cerrar la presentación: ${saveCloseError.message}`);
-             // Continuar para no bloquear el finally
+        } catch (saveCloseError: any) { // Type as any
+             console.error(`Error saving/closing the presentation: ${saveCloseError.message}`);
+             // Continue to not block the finally block
         }
       }
-      // No cerrar la aplicación de PowerPoint aquí, ya que otras herramientas pueden necesitarla.
-      // app.Quit(); // ¡No hacer esto!
+      // Do not close the PowerPoint application here, as other tools may need it.
+      // app.Quit(); // Do not do this!
     }
   },
 };

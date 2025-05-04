@@ -7,16 +7,15 @@
  * @license MIT
  */
 import { FastMCP, UserError, UnexpectedStateError, Context as FastMCPContext, ContentResult, TextContent, ToolParameters, audioContent, imageContent, SerializableValue } from 'fastmcp';
-import { StandardSchemaV1 } from '@standard-schema/spec'; // Import StandardSchemaV1
-import { IncomingMessage } from 'http'; // Ensure IncomingMessage is imported
-import { allRegisteredTools, aiAssistantGuideResource } from '@/tools'; // Updated import
+import { StandardSchemaV1 } from '@standard-schema/spec';
+import { IncomingMessage } from 'http';
+import { allRegisteredTools, aiAssistantGuideResource } from '@/tools';
 import logger from '@/utils/logger';
 import { handleToolError, createErrorResponse } from '@/utils/errorHandler';
-import { validateFilePath, isFsAccessAllowed } from '@/utils/security'; // Import validateFilePath and isFsAccessAllowed
-// Import the actual getWordElementContent function
+import { validateFilePath, isFsAccessAllowed } from '@/utils/security';
 import { getWordElementContent as getOfficeElementContentInterop } from '@/utils/officeInterop';
-import { McpResource, ToolRequestParams, ApiResponse } from '@/types/common.types'; // Removed SerializableValue import from here
-import { version as packageVersion, name as packageName } from '../../package.json'; // Import name and version
+import { McpResource, ToolRequestParams, ApiResponse } from '@/types/common.types';
+import { version as packageVersion, name as packageName } from '../../package.json';
 import { z } from 'zod';
 
 // --- Authentication ---
@@ -78,6 +77,11 @@ const authenticateHandler = async (
 
 
 // --- FastMCP Server Configuration ---
+
+/**
+ * The port the MCP server will listen on for SSE connections.
+ * If not defined, the server will run in STDIO mode.
+ */
 const OFFICE_MCP_PORT = process.env.OFFICE_MCP_PORT;
 
 logger.debug('Creating FastMCP server instance...');
@@ -94,9 +98,17 @@ const mcpServer = new FastMCP<AuthSessionData>({ // Specify session data type fo
 logger.debug('FastMCP server instance created with authentication.');
 
 // --- Register Tools ---
+
+/**
+ * Registers all available tools with the FastMCP server instance.
+ * Skips FS tools if FS access is disabled or not in STDIO mode.
+ */
 logger.info(`Registering ${allRegisteredTools.length} tools...`);
 
-// Determine if the server is running in STDIO mode (local execution)
+/**
+ * Determines if the server is running in STDIO mode (local execution).
+ * This is true if the OFFICE_MCP_PORT environment variable is not set.
+ */
 const isStdioMode = !OFFICE_MCP_PORT;
 
 for (let i = 0; i < allRegisteredTools.length; i++) {
@@ -235,6 +247,11 @@ for (let i = 0; i < allRegisteredTools.length; i++) {
 }
 
 // --- Register Prompts ---
+
+/**
+ * Registers prompts with the FastMCP server instance.
+ * Prompts define templates for generating LLM input based on user arguments.
+ */
 logger.info("Registering prompts...");
 try {
     mcpServer.addPrompt({
@@ -287,6 +304,11 @@ logger.info("Prompt registration complete.");
 logger.info("All tools registered.");
 
 // --- Register Resources ---
+
+/**
+ * Registers static resources with the FastMCP server instance.
+ * Resources provide access to static data or information.
+ */
 logger.info("Registering resources...");
 try {
     logger.debug(`[Resource Registration] Attempting to register resource: ${aiAssistantGuideResource[0].path}`); // Access first element
@@ -320,6 +342,11 @@ try {
 }
 
 // --- Register Resource Templates ---
+
+/**
+ * Registers resource templates with the FastMCP server instance.
+ * Resource templates define dynamic URIs for accessing data based on parameters.
+ */
 logger.info("Registering resource templates...");
 
 /**
@@ -482,7 +509,7 @@ function hideSensitiveParams(params: ToolRequestParams): ToolRequestParams {
 
 
 // --- COM Interop Test (Optional with winax) ---
-import { getOfficeApplication, releaseObject } from '@/utils/officeInterop'; // Usar alias
+import { getOfficeApplication, releaseObject } from '@/utils/officeInterop'; // Use alias
 
 /**
  * Performs a basic test of COM Interop by attempting to get a Word application instance.
@@ -495,7 +522,7 @@ async function testCom() {
     logger.info("[COM TEST] Attempting getOfficeApplication('Word.Application')...");
     const wordApp = await getOfficeApplication('Word.Application');
     logger.info("[COM TEST] getOfficeApplication completed.");
-    // Verificar que el objeto y la propiedad existen antes de acceder
+    // Check if the object and property exist before accessing
     if (wordApp && typeof wordApp.Version !== 'undefined') {
         logger.info(`[COM TEST] Got Word Application, Version: ${wordApp.Version}`);
     } else if (wordApp) {
@@ -504,13 +531,13 @@ async function testCom() {
         logger.warn("[COM TEST] Failed to get Word Application object.");
     }
 
-    // Intenta abrir un documento (opcional, requiere manejo de errores adicional)
+    // Attempt to open a document (optional, requires additional error handling)
     // try {
-    //   if (wordApp) { // Solo intentar si wordApp existe
+    //   if (wordApp) { // Only attempt if wordApp exists
     //      const doc = wordApp.Documents.Add();
     //      logger.info('Created new document.');
-    //      // Asegurarse de que Close toma los argumentos correctos si se descomenta
-    //      // El primer argumento suele ser si guardar cambios (false = no guardar)
+    //      // Ensure Close takes the correct arguments if uncommented
+    //      // The first argument is usually whether to save changes (false = do not save)
     //      doc.Close(false);
     //      logger.info('Closed test document.');
     //   }
@@ -518,7 +545,7 @@ async function testCom() {
     //    logger.error('Failed to create or close test document:', docError);
     // }
 
-    // Intentar liberar el objeto solo si se obtuvo
+    // Attempt to release the object only if obtained
     if (wordApp) {
         logger.info("[COM TEST] Attempting releaseObject(wordApp)...");
         releaseObject(wordApp);
@@ -528,12 +555,13 @@ async function testCom() {
     logger.info(`[COM TEST SUCCESS] COM Interop test finished successfully. Duration: ${comDuration}ms`);
   } catch (error) {
     const comDuration = Date.now() - comStartTime;
-    // Registrar el error pero no detener el inicio del servidor
+    // Log the error but do not stop server startup
     logger.error(`[COM TEST FAILED] COM Interop test failed. Duration: ${comDuration}ms`, { error });
   }
 }
 logger.info("Calling testCom()...");
-testCom(); // Llama a la función de prueba al inicio
+// Call the test function on startup
+testCom();
 logger.info("testCom() finished.");
 // --- End COM Interop Test ---
 
@@ -570,38 +598,10 @@ if (OFFICE_MCP_PORT) {
 }
 
 // Graceful shutdown handling
-// --- EPIPE Error Handling in Streams ---
-// These handlers attempt to catch EPIPE errors that can occur if
-// the process tries to write to stdout/stderr after the pipe
-// has been closed (common when the parent process terminates abruptly).
-// Note: This generally only silences the symptom, it doesn't fix the root
-// cause if the shutdown is not clean (e.g., with fastmcp dev).
 
-/*
-process.stdout.on('error', (err: NodeJS.ErrnoException) => {
-  if (err.code === 'EPIPE') {
-    // Ignore EPIPE on stdout, likely caused by abrupt closure.
-    logger.warn('EPIPE error on stdout ignored during shutdown.');
-  } else {
-    // Log other unexpected stdout errors
-    logger.error('Unexpected error on process.stdout:', { error: err });
-    // Consider exiting if it's a critical error unrelated to EPIPE
-    // process.exit(1);
-  }
-});
-
-process.stderr.on('error', (err: NodeJS.ErrnoException) => {
-  if (err.code === 'EPIPE') {
-    // Ignore EPIPE on stderr, likely caused by abrupt closure.
-    logger.warn('EPIPE error on stderr ignored during shutdown.');
-  } else {
-    // Log other unexpected stderr errors
-    logger.error('Unexpected error on process.stderr:', { error: err });
-    // Consider exiting if it's a critical error unrelated to EPIPE
-    // process.exit(1);
-  }
-});
-*/
+/**
+ * Handles SIGTERM and SIGINT signals for graceful server shutdown.
+ */
 process.on('SIGTERM', () => {
     logger.info('SIGTERM signal received. Closing server...');
     mcpServer.stop().then(() => { // Assuming a stop method exists
