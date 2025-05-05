@@ -549,20 +549,26 @@ The Office MCP Server integrates with AI agents (e.g., Claude) via FastMCP's pro
 **Completions**: Tool names, operation parameters.
 
 ### word/markdown/import
-**Description**: Converts Markdown to Word with template support.
+**Description**: Converts Markdown to Word, applying basic formatting (headings, lists, bold, italic) based on Markdown syntax using COM Interop, with optional template support.
 
 **Operations**:
 - **parse**: Converts Markdown to Word.
-  - **Input**: `path` (string, Markdown file), `template` (string, optional, template path), `output` (string, output path).
+  - **Input**: `filePath` (string, path to the Markdown file), `template` (string, optional, template path), `output` (string, output path).
   - **Output**: `{ success: true, output: string }`.
   - **Example**:
     ```bash
-    curl -X POST "http://localhost:3000/word/markdown/import?path=/docs/input.md&template=/docs/template.docx&output=/docs/output.docx"
+    curl -X POST "http://localhost:3000/word/markdown/import" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "filePath": "/docs/input.md",
+        "template": "/docs/template.docx",
+        "output": "/docs/output.docx"
+      }'
     ```
 
 **AI Request Examples**:
 - User: “Convert input.md to a Word document using template.docx.”
-  - AI Infers: `POST /word/markdown/import?path=/docs/input.md&template=/docs/template.docx&output=/docs/output.docx`.
+  - AI Infers: `POST /word/markdown/import` with `filePath=/docs/input.md`, `template=/docs/template.docx`, and `output=/docs/output.docx`.
 
 **Completions**: File paths, template paths.
 
@@ -741,7 +747,7 @@ The Office MCP Server integrates with AI agents (e.g., Claude) via FastMCP's pro
 **Completions**: File paths, position ranges.
 
 ### word/generate-and-insert-text
-**Description**: Uses a server-side LLM to generate text based on a prompt and inserts it into a Word document. *Note: Requires COM interop for insertion and server-side LLM configuration.*
+**Description**: Uses a server-side LLM to generate text based on a prompt, processes the Markdown output, and inserts it into a Word document with appropriate formatting. The initial summary from the LLM is treated as a Heading 1. *Note: Requires COM interop for insertion and server-side LLM configuration.*
 
 **Operations**:
 - **generate**: Generates text based on a prompt and inserts it.
@@ -762,7 +768,7 @@ The Office MCP Server integrates with AI agents (e.g., Claude) via FastMCP's pro
 **Configuration**: This tool requires server-side configuration to connect to an LLM provider. The following environment variables must be set where the Office MCP server is running:
 - `LLM_PROVIDER_API_KEY`: Your API key for the LLM provider.
 - `LLM_PROVIDER_ENDPOINT`: The API endpoint URL for the LLM provider (e.g., `https://api.openai.com/v1/chat/completions` for OpenAI, or a similar endpoint for other providers).
-- `LLM_MODEL_NAME`: (Optional) The name of the specific LLM model to use (e.g., `gpt-4o`, `gemini-1.5-pro`). If not set, a default model may be used by the server-side LLM utility.
+- `LLM_MODEL_NAME`: (Optional) The name of the specific LLM model to use (e.g., `gpt-4o`, `gemini-1.5-pro`). If not set, a default model may be used by the server-side LLM utility. The tool also enhances the user's prompt to guide the LLM in generating content suitable for Markdown processing.
 
 **AI Request Examples**:
 - User: "Generate a concluding paragraph for report.docx and insert it at the end."

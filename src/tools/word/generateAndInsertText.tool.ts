@@ -14,6 +14,7 @@ import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
 import { validateFilePath } from '../../utils/security'; // Normalized relative path
 import { UserError } from 'fastmcp'; // Import UserError for sampling errors
 import { generateText } from '../../utils/llmClient'; // Import the server-side LLM utility
+import { applyMarkdownFormattingToWord } from '../../utils/markdownToOffice'; // Import the Markdown formatting utility
 
 // Define the session data type expected by this tool's context
 // If authentication is required and provides session data:
@@ -80,7 +81,10 @@ async function generateAndInsertText(
     try {
         // 1. Request text generation from the server-side LLM utility
         logger.debug(`Requesting server-side LLM generation with prompt: "${validatedParams.prompt}"`);
-        const generatedText = await generateText(validatedParams.prompt, { maxTokens: validatedParams.maxTokens });
+        // Enhance the prompt to guide the LLM's output format
+        const enhancedPrompt = `Please provide the response in Markdown format. Start with a concise summary paragraph, followed by the main content. Do not include any introductory phrases before the summary.\n\n${validatedParams.prompt}`;
+        logger.debug(`Requesting server-side LLM generation with enhanced prompt: "${enhancedPrompt}"`);
+        const generatedText = await generateText(enhancedPrompt, { maxTokens: validatedParams.maxTokens });
 
         if (!generatedText) {
             logger.warn('Server-side LLM generation did not return usable text content.');
@@ -150,8 +154,59 @@ async function generateAndInsertText(
 
         // 4. Insert Generated Text
         logger.debug(`Inserting generated text (length: ${generatedText.length})`);
-        insertionRange.Text = generatedText;
-        logger.debug('Generated text inserted into document.');
+        // 4. Process and Insert Generated Text
+        logger.debug(`Processing and inserting generated text (length: ${generatedText.length})`);
+
+        // Attempt to separate the initial summary (first paragraph)
+        const parts = generatedText.split('\n\n');
+        const summary = parts[0];
+        const mainContent = parts.slice(1).join('\n\n');
+
+        // Insert the summary and apply Heading 1 style
+        insertionRange.Text = summary;
+        logger.debug('Summary inserted into document.');
+
+        // Apply Heading 1 style to the inserted summary paragraph
+        let summaryParagraph = null;
+        try {
+            summaryParagraph = insertionRange.Paragraphs(1);
+            if (summaryParagraph) {
+                try {
+                    summaryParagraph.Style = 'Heading 1';
+                    logger.debug('Applied style "Heading 1" to summary.');
+                } catch (styleError: any) {
+                    logger.warn(`Could not apply style "Heading 1" to summary: ${styleError.message}`);
+                }
+            }
+        } catch (paraError: any) {
+            logger.error(`Error getting summary paragraph: ${paraError.message}`);
+        } finally {
+            if (summaryParagraph) releaseObject(summaryParagraph);
+        }
+
+        // Determine the insertion range for the main content (immediately after the summary)
+        let mainContentInsertionRange = null;
+        try {
+             mainContentInsertionRange = insertionRange.End; // Get the position at the end of the inserted summary
+             mainContentInsertionRange = doc.Range(mainContentInsertionRange, mainContentInsertionRange); // Create a new range at this position
+             logger.debug('Determined insertion range for main content.');
+        } catch (rangeError: any) {
+             logger.error(`Error determining main content insertion range: ${rangeError.message}`);
+             // Fallback to inserting at the end of the document if range determination fails
+             mainContentInsertionRange = doc.Content.End;
+             mainContentInsertionRange = doc.Range(mainContentInsertionRange, mainContentInsertionRange);
+             logger.warn('Falling back to inserting main content at the end of the document.');
+        }
+
+
+        // Insert and format the main content using the utility
+        if (mainContentInsertionRange) {
+             await applyMarkdownFormattingToWord(mainContentInsertionRange, mainContent, wordApp);
+             logger.debug('Main content inserted and formatted.');
+        } else {
+             logger.error('Could not determine a valid range for main content insertion.');
+             return createErrorResponse('Failed to determine insertion range for main content.', 'RANGE_ERROR');
+        }
 
         // 5. Save and Close
         doc.Save();
@@ -169,6 +224,8 @@ async function generateAndInsertText(
         // 6. Release COM Objects
         releaseObject(insertionRange);
         releaseObject(paraRange);
+        // The utility function should handle releasing objects it creates internally.
+        // We only need to release objects created in this function.
         if (doc) {
             try { doc.Close(false); } catch (e: any) { logger.warn(`Error closing document ${validatedParams?.filePath || 'unknown'}: ${e.message}`); } // Log error message
             releaseObject(doc);

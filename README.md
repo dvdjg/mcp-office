@@ -3,7 +3,7 @@
 Welcome to the **Office MCP Server**, your go-to tool for automating Microsoft Office with flair! Built with **FastMCP** in TypeScript, this server makes Word, Excel, and PowerPoint automation a breeze. Whether you’re merging documents, rendering diagrams, formatting code, or exporting to PDF, Office MCP combines AI intelligence with developer-friendly tools to make Office tasks *fun*. Say goodbye to manual grunt work and hello to productivity paradise! 🎉
 
 ## Why Office MCP?
-- **AI-Powered Magic**: Leverage AI to suggest styles, resolve merge conflicts, or generate text. Note that while FastMCP supports client-side LLM sampling, the `word/generate-and-insert-text` tool currently uses a server-side LLM integration due to client limitations.
+- **AI-Powered Magic**: Leverage AI to suggest styles, resolve merge conflicts, or generate text. The `word/generate-and-insert-text` tool now processes LLM output in Markdown format, applying appropriate Word styles and handling the initial summary as a heading. This uses a server-side LLM integration due to client limitations and a new internal utility for Markdown-to-Word formatting.
 - **Archive Handling**: Easily manage files within ZIP, 7z, and other archive formats (listing, extracting, creating for ZIP/7z).
 - **Intelligent Language Detection**: Automatically detect programming languages in code snippets for accurate formatting.
 - **Granular Control**: Fine-tune every paragraph, table, or embedded object.
@@ -48,7 +48,8 @@ Here are the main types of context utilized:
     *   `LLM_PROVIDER_API_KEY`: Your API key for the LLM provider.
     *   `LLM_PROVIDER_ENDPOINT`: The API endpoint URL for the LLM provider (e.g., `https://api.openai.com/v1/chat/completions`).
     *   `LLM_MODEL_NAME`: (Optional) The name of the specific LLM model to use (e.g., `gpt-4o`).
-    This server-side approach allows the tool to perform AI-driven tasks such as text generation, content summarization, or style suggestions, bypassing client limitations.
+    This server-side approach allows the tool to perform AI-driven tasks such as text generation, content summarization, or style suggestions, bypassing client limitations. The `word/generate-and-insert-text` tool now also includes enhanced prompt engineering to guide the LLM's output format for better parsing and formatting.
+*   **Markdown Formatting Utility:** A new internal utility (`src/utils/markdownToOffice.ts`) has been introduced to handle the conversion of Markdown syntax to Office application formatting (initially focused on Word styles like headings, lists, bold, and italic) using COM Interop. This utility is designed to be reusable across different Office tools for consistent Markdown integration.
 *   **File Content Context:** Many tools operate directly on the content of Office files. This includes reading text from a Word document (`word/text/get`), writing data to an Excel sheet (`excel/range/write`), or extracting images from a PowerPoint presentation (`powerpoint/shapes/list`). The tools access and manipulate the file content based on the specific operation.
 *   **User Data/Input Context:** The parameters provided in tool requests (e.g., `filePath`, `position`, `prompt`, `rangeAddress`) constitute user data or input context. These parameters guide the tool's execution and determine the specific target and nature of the operation.
 *   **System/Environment Context:** Tools interact with the underlying system and environment, including the file system (reading/writing files), the operating system (running COM Interop for Office applications), and the availability of installed Office applications. This context is essential for the tools to function correctly within the user's environment.

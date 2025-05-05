@@ -16,6 +16,7 @@ import { handleToolError } from '../../utils/errorHandler'; // Normalized relati
 import { validateFilePath } from '../../utils/security'; // Normalized relative path
 import logger from '../../utils/logger'; // Normalized relative path
 import { getOfficeApplication, releaseObject } from '../../utils/officeInterop'; // Normalized relative path
+import { applyMarkdownFormattingToWord } from '../../utils/markdownToOffice'; // Import the Markdown formatting utility
 
 // --- Schemas ---
 /**
@@ -245,24 +246,14 @@ async function importFromMarkdown(params: ToolRequestParams, context?: FastMCPCo
         }
         reportProgress?.({ progress: 2, total: totalSteps }); // Step 2: Document Created
 
-        // --- Basic Text Insertion using COM ---
-        log.warn("Importing Markdown as plain text using COM (newDoc.Content.Text). Formatting is lost.");
-        newDoc.Content.Text = markdownContent; // Insert the entire Markdown as plain text
-        reportProgress?.({ progress: 3, total: totalSteps }); // Step 3: Text Inserted
+       // --- Apply Markdown Formatting using Utility ---
+       log.info("Applying Markdown formatting using the utility.");
+       const docContentRange = newDoc.Content;
+       docContentRange.Collapse(1); // wdCollapseStart - Ensure we start from the beginning
+       await applyMarkdownFormattingToWord(docContentRange, markdownContent, wordApp);
+       reportProgress?.({ progress: 3, total: totalSteps }); // Step 3: Text Inserted and Formatted
 
-        // --- Complex Formatting (Placeholder Idea) ---
-        // For real formatting, you would:
-        // 1. Parse markdownContent using md.parse(markdownContent, {})
-        // 2. Iterate through tokens:
-        //    - If heading_open, insert text, apply style (e.g., newDoc.Paragraphs.Last.Style = "Heading 1")
-        //    - If strong_open, turn on bold (e.g., wordApp.Selection.Font.Bold = true), insert text, turn off bold
-        //    - If bullet_list_open, start applying list formatting... etc.
-        // This is highly non-trivial.
-        // logger.debug("Parsed Markdown Tokens (for potential future formatting):", md.parse(markdownContent, {}));
-        // --- End Complex Formatting ---
-
-
-        // Save the new document
+       // Save the new document
         log.info(`Saving new Word document to: ${safeOutputPath}`);
         // Use WdSaveFormat enumeration for DOCX (value 16)
         const wdFormatDocumentDefault = 16; // .docx format
