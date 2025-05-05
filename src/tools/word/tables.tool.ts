@@ -390,6 +390,128 @@ export async function insertTableFromArray(
 
 
 // --- Tool Definition ---
+// Add new schema for extractTableData
+const extractTableDataSchema = z.object({
+    filePath: z.string().min(1, 'File path cannot be empty.'),
+    tableIndex: z.number().int().positive('Table index must be a positive integer.'),
+});
+
+type ExtractTableDataParams = z.infer<typeof extractTableDataSchema>;
+
+
+// Add new tool handler implementation for extractTableData
+export async function extractTableData(
+    params: unknown,
+    context?: FastMCPContext<undefined>
+): Promise<ApiResponse<any[][]>> {
+    logger.info(`Executing word/tables/extractData tool with params: ${JSON.stringify(params)}`);
+    let wordApp: any = null;
+    let doc: any = null;
+    let table: any = null;
+    let errorOccurred = false;
+
+    try {
+        // 1. Validate Input Parameters
+        const validatedParams = extractTableDataSchema.parse(params);
+        logger.debug('Parameters validated successfully.');
+
+        const safeFilePath = validateFilePath(validatedParams.filePath);
+        logger.debug(`File path validated: ${safeFilePath}`);
+
+        // 2. Get/Create Word Application Instance
+        wordApp = await getOfficeApplication('Word.Application');
+        logger.debug('Word application instance obtained.');
+
+        // 3. Open the Document
+        doc = wordApp.Documents.Open(safeFilePath);
+        if (!doc) {
+            throw new Error(`Failed to open document: ${safeFilePath}`);
+        }
+        logger.debug(`Document opened: ${safeFilePath}`);
+
+        // 4. Access the specified table
+        const tableIndex = validatedParams.tableIndex;
+        if (tableIndex <= 0 || tableIndex > doc.Tables.Count) {
+            throw new Error(`Table index ${tableIndex} is out of bounds. Document has ${doc.Tables.Count} tables.`);
+        }
+        table = doc.Tables(tableIndex);
+        logger.debug(`Accessed table with index: ${tableIndex}`);
+
+        // 5. Extract table data
+        const numRows = table.Rows.Count;
+        const numCols = table.Columns.Count;
+        const tableData: any[][] = Array(numRows).fill(null).map(() => Array(numCols).fill(null));
+
+        for (let r = 1; r <= numRows; r++) {
+            for (let c = 1; c <= numCols; c++) {
+                let cell = null;
+                try {
+                    cell = table.Cell(r, c);
+                    // Check if this cell is the top-left cell of a merged area
+                    // This is a simplified check; a more robust approach might track merged cells
+                    // as they are encountered. For now, rely on checking if the cell's
+                    // RowIndex and ColumnIndex match the loop indices.
+                    if (cell.RowIndex === r && cell.ColumnIndex === c) {
+                         tableData[r - 1][c - 1] = cell.Range.Text.replace(/\r?\n|\r/g, '').trim(); // Extract text, remove newlines, trim whitespace
+                    } else {
+                         // This cell is part of a merge started by a previous cell
+                         tableData[r - 1][c - 1] = null;
+                    }
+                } catch (cellError: any) {
+                    logger.warn(`Could not access cell (${r}, ${c}): ${cellError.message}`);
+                    tableData[r - 1][c - 1] = null; // Mark inaccessible cells as null
+                } finally {
+                    if (cell) releaseObject(cell);
+                }
+            }
+        }
+        logger.debug('Table data extracted.');
+
+        return { success: true, data: tableData };
+
+    } catch (error: any) {
+        errorOccurred = true;
+        logger.error(`Error in word/tables/extractData: ${error.message}`, { stack: error.stack });
+        if (doc) {
+            try {
+                 if (typeof doc.Close === 'function') {
+                     doc.Close(false); // wdDoNotSaveChanges = 0
+                     logger.debug('Document closed without saving changes due to error.');
+                 } else {
+                     logger.debug('Document object seems invalid or already closed, skipping close attempt.');
+                 }
+            } catch (closeError: any) {
+                if (!error.message?.toLowerCase().includes('object invalid')) {
+                   logger.error(`Error closing document after initial error: ${closeError.message}`);
+                }
+            }
+        }
+        if (wordApp) {
+            releaseObject(wordApp);
+            logger.debug('Word application released in catch block.');
+            wordApp = null;
+        }
+        return handleToolError(error, 'WORD_TABLE_EXTRACT_DATA_FAILED');
+    } finally {
+        releaseObject(table);
+        if (doc && typeof doc.Close === 'function' && !errorOccurred) {
+             try {
+                 doc.Close(false);
+                 logger.debug('Document closed in finally block (success path).');
+             } catch (finalCloseError: any) {
+                 logger.warn(`Error during final document close: ${finalCloseError.message}`);
+             } finally {
+                 releaseObject(doc);
+             }
+        } else if (doc) {
+             releaseObject(doc);
+        }
+        if (!errorOccurred && wordApp) {
+             releaseObject(wordApp);
+        }
+        logger.debug('COM objects released.');
+    }
+}
 export const wordTablesTool: McpResource[] = [
     {
         path: 'word/tables/insert',
@@ -407,6 +529,14 @@ export const wordTablesTool: McpResource[] = [
         description: 'Inserts a new table into a Word document from a 2D array, with optional styling.',
         // inputSchema: insertTableFromArraySchema.openapi('InsertTableFromArrayInput'),
         // outputSchema: z.object({ message: z.string() }).openapi('InsertTableFromArrayOutput'),
+    },
+    {
+        path: 'word/tables/extractData',
+        handler: extractTableData,
+        schema: extractTableDataSchema,
+        description: 'Extracts data from a specified Word table into a 2D array, handling merged cells.',
+        // inputSchema: extractTableDataSchema.openapi('ExtractTableDataInput'),
+        // outputSchema: z.array(z.array(z.any())).openapi('ExtractTableDataOutput'),
     },
     // --- Placeholders for other table operations ---
     {

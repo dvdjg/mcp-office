@@ -3,7 +3,9 @@
 Welcome to the **Office MCP Server**, your go-to tool for automating Microsoft Office with flair! Built with **FastMCP** in TypeScript, this server makes Word, Excel, and PowerPoint automation a breeze. Whether you’re merging documents, rendering diagrams, formatting code, or exporting to PDF, Office MCP combines AI intelligence with developer-friendly tools to make Office tasks *fun*. Say goodbye to manual grunt work and hello to productivity paradise! 🎉
 
 ## Why Office MCP?
-- **AI-Powered Magic**: Leverage AI to suggest styles, resolve merge conflicts, or generate text. The `word/generate-and-insert-text` tool now processes LLM output in Markdown format, applying appropriate Word styles and handling the initial summary as a heading. This uses a server-side LLM integration due to client limitations and a new internal utility for Markdown-to-Word formatting.
+- **AI-Powered Magic**: Leverage AI to suggest styles, resolve merge conflicts, or generate text. The `word/generate-and-insert-text` tool now processes LLM output in Markdown format, applying appropriate Word styles and handling the initial summary as a heading. This uses a server-side LLM integration due to client limitations and a new internal utility for Markdown-to-Word formatting, including support for HTML tables with merged cells.
+- **Enhanced Markdown Handling**: Seamlessly import and export Word content to and from Markdown, now with support for complex tables using embedded HTML.
+- **Table Data Extraction**: Easily extract data from Word tables into a structured format for further processing (`word/tables/extractData`).
 - **Archive Handling**: Easily manage files within ZIP, 7z, and other archive formats (listing, extracting, creating for ZIP/7z).
 - **Intelligent Language Detection**: Automatically detect programming languages in code snippets for accurate formatting.
 - **Granular Control**: Fine-tune every paragraph, table, or embedded object.

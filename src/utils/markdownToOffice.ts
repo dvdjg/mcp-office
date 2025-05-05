@@ -4,7 +4,7 @@ import { releaseObject } from './officeInterop';
 
 // Initialize Markdown parser
 const md = new MarkdownIt({
-  html: false,
+  html: true,
   xhtmlOut: false,
   breaks: true,
   linkify: true,
@@ -20,6 +20,92 @@ const md = new MarkdownIt({
  * @param markdownText The Markdown text to format and insert.
  * @param wordApp The Word Application COM object.
  */
+import { parse } from 'node-html-parser'; // Assuming node-html-parser is available or can be added as a dependency
+
+/**
+ * Parses an HTML table string and returns a structured representation.
+ * @param html The HTML string containing the table.
+ * @returns A 2D array representing the table rows and cells, including colspan and rowspan.
+ */
+function parseHtmlTable(html: string): { type: string; content: string; colspan: number; rowspan: number }[][] {
+    const root = parse(html);
+    const table = root.querySelector('table');
+    if (!table) {
+        return [];
+    }
+
+    const rows: { type: string; content: string; colspan: number; rowspan: number }[][] = [];
+    const trElements = table.querySelectorAll('tr');
+
+    for (const tr of trElements) {
+        const row: { type: string; content: string; colspan: number; rowspan: number }[] = [];
+        const cellElements = tr.querySelectorAll('th, td');
+        for (const cell of cellElements) {
+            const colspan = parseInt(cell.getAttribute('colspan') || '1', 10);
+            const rowspan = parseInt(cell.getAttribute('rowspan') || '1', 10);
+            row.push({
+                type: cell.tagName.toLowerCase(),
+                content: cell.text,
+                colspan,
+                rowspan,
+            });
+        }
+        rows.push(row);
+    }
+    return rows;
+}
+
+/**
+ * Creates a Word table from a structured table representation and applies merging.
+ * @param range The Word Range where the table should be inserted.
+ * @param tableData The structured table data (2D array).
+ * @param wordApp The Word Application COM object.
+ */
+async function createWordTableFromData(range: any, tableData: { type: string; content: string; colspan: number; rowspan: number }[][], wordApp: any): Promise<void> {
+    if (tableData.length === 0) {
+        return;
+    }
+
+    const numRows = tableData.length;
+    const numCols = Math.max(...tableData.map(row => row.length)); // Get max columns
+
+    // Insert a new table
+    const wordTable = range.Tables.Add(range, numRows, numCols);
+
+    let currentRow = 1;
+    for (const rowData of tableData) {
+        let currentCol = 1;
+        for (const cellData of rowData) {
+            const cell = wordTable.Cell(currentRow, currentCol);
+            cell.Range.Text = cellData.content;
+
+            // Apply bold for table headers (<th>)
+            if (cellData.type === 'th') {
+                cell.Range.Font.Bold = true;
+            }
+
+            // Apply merging
+            if (cellData.colspan > 1 || cellData.rowspan > 1) {
+                let mergeRange = cell.Range;
+                // Extend the range to cover the cells to be merged
+                if (cellData.colspan > 1) {
+                    const endCell = wordTable.Cell(currentRow, currentCol + cellData.colspan - 1);
+                    mergeRange.End = endCell.Range.End;
+                }
+                if (cellData.rowspan > 1) {
+                     const endCell = wordTable.Cell(currentRow + cellData.rowspan - 1, currentCol);
+                     mergeRange.End = endCell.Range.End;
+                }
+                 mergeRange.Cells.Merge();
+            }
+
+            currentCol += cellData.colspan;
+        }
+        currentRow++;
+    }
+}
+
+
 export async function applyMarkdownFormattingToWord(range: any, markdownText: string, wordApp: any): Promise<void> {
     logger.debug('Starting Markdown formatting for Word.');
 
@@ -30,39 +116,30 @@ export async function applyMarkdownFormattingToWord(range: any, markdownText: st
     let currentRange = range;
     let listLevel = 0; // Track list nesting level
 
-    for (const token of tokens) {
+    for (let i = 0; i < tokens.length; i++) {
+        const token = tokens[i];
         logger.debug(`Processing token: ${token.type}`);
 
         switch (token.type) {
             case 'heading_open':
-                // Insert heading text and apply style
                 const headingLevel = parseInt(token.tag.substring(1), 10);
-                // Find the next inline token for the heading text
-                const headingTextToken = tokens[tokens.indexOf(token) + 1];
+                const headingTextToken = tokens[i + 1];
                 if (headingTextToken && headingTextToken.type === 'inline') {
                     currentRange.Text = headingTextToken.content;
-                    // Move range to the end of the inserted text
                     currentRange.Collapse(0); // wdCollapseEnd
-                    // Add a new paragraph after the heading
                     currentRange.InsertParagraphAfter();
-                    // Move range to the new paragraph
                     currentRange.Collapse(0); // wdCollapseEnd
 
-                    // Apply heading style to the paragraph containing the heading text
-                    // Need to get the paragraph object from the range
                     let paragraph = null;
                     try {
                          paragraph = currentRange.Paragraphs(1);
                          if (paragraph) {
-                             // Apply style - Word styles are typically "Heading 1", "Heading 2", etc.
-                             // Need to handle potential errors if style doesn't exist
-                             try {
-                                 paragraph.Style = `Heading ${headingLevel}`;
-                                 logger.debug(`Applied style 'Heading ${headingLevel}'`);
-                             } catch (styleError: any) {
-                                 logger.warn(`Could not apply style 'Heading ${headingLevel}': ${styleError.message}`);
-                                 // Fallback or ignore? For now, just log and continue.
-                             }
+                              try {
+                                  paragraph.Style = `Heading ${headingLevel}`;
+                                  logger.debug(`Applied style 'Heading ${headingLevel}'`);
+                              } catch (styleError: any) {
+                                  logger.warn(`Could not apply style 'Heading ${headingLevel}': ${styleError.message}`);
+                              }
                          }
                     } catch (paraError: any) {
                          logger.error(`Error getting paragraph for heading: ${paraError.message}`);
@@ -70,80 +147,44 @@ export async function applyMarkdownFormattingToWord(range: any, markdownText: st
                          if (paragraph) releaseObject(paragraph);
                     }
 
-                    // Move the current range to the start of the paragraph *after* the heading
-                    currentRange = currentRange.Next(6 /* wdParagraph */); // Move to the next paragraph
+                    currentRange = currentRange.Next(6 /* wdParagraph */);
                     if (currentRange) {
                          currentRange.Collapse(1); // wdCollapseStart
                     } else {
-                         // If there's no next paragraph, get the end of the document
                          currentRange = wordApp.ActiveDocument.Content;
                          currentRange.Collapse(0); // wdCollapseEnd
                     }
-
-
+                    i += 2; // Skip inline and heading_close
                 }
-                // Skip the corresponding heading_close token as we processed the text here
-                tokens.splice(tokens.indexOf(token) + 2, 1); // Remove inline and heading_close
                 break;
 
             case 'paragraph_open':
-                // Insert paragraph text
-                 // Find the next inline token for the paragraph text
-                const paragraphTextToken = tokens[tokens.indexOf(token) + 1];
+                const paragraphTextToken = tokens[i + 1];
                 if (paragraphTextToken && paragraphTextToken.type === 'inline') {
                     currentRange.Text = paragraphTextToken.content;
-                    // Move range to the end of the inserted text
                     currentRange.Collapse(0); // wdCollapseEnd
-                    // Add a new paragraph after the current one
                     currentRange.InsertParagraphAfter();
-                    // Move range to the new paragraph
                     currentRange.Collapse(0); // wdCollapseEnd
+                    i += 2; // Skip inline and paragraph_close
                 }
-                // Skip the corresponding paragraph_close token
-                tokens.splice(tokens.indexOf(token) + 2, 1); // Remove inline and paragraph_close
                 break;
 
             case 'bullet_list_open':
             case 'ordered_list_open':
                 listLevel++;
-                // Need to handle list formatting via COM - this is complex.
-                // For now, just insert text and rely on Word's auto-formatting if enabled.
-                // Proper implementation requires setting ListFormat properties on paragraphs.
                 logger.warn(`Basic list handling: Inserting text, relying on Word auto-formatting. List level: ${listLevel}`);
                 break;
 
             case 'list_item_open':
-                 // Find the next inline token for the list item text
-                const listItemTextToken = tokens[tokens.indexOf(token) + 1];
+                const listItemTextToken = tokens[i + 1];
                 if (listItemTextToken && listItemTextToken.type === 'inline') {
-                    // Add indentation based on listLevel?
-                    // currentRange.Text = '  '.repeat(listLevel - 1) + '- ' + listItemTextToken.content;
-                     currentRange.Text = listItemTextToken.content; // Just insert text for now
-                    // Move range to the end of the inserted text
+                     currentRange.Text = listItemTextToken.content;
                     currentRange.Collapse(0); // wdCollapseEnd
-                    // Add a new paragraph after the list item
                     currentRange.InsertParagraphAfter();
-                    // Move range to the new paragraph
                     currentRange.Collapse(0); // wdCollapseEnd
-
-                     // TODO: Apply list formatting via COM here
-                     // This requires getting the paragraph and setting its ListFormat property
-                     // Example (simplified):
-                     // let paragraph = null;
-                     // try {
-                     //      paragraph = currentRange.Paragraphs(1);
-                     //      if (paragraph) {
-                     //           paragraph.Range.ListFormat.ApplyBulletDefault(); // Or ApplyNumberDefault()
-                     //           paragraph.Range.ListFormat.ListIndent(); // For nesting
-                     //      }
-                     // } catch (listFormatError: any) {
-                     //      logger.error(`Error applying list format: ${listFormatError.message}`);
-                     // } finally {
-                     //      if (paragraph) releaseObject(paragraph);
-                     // }
+                    // TODO: Apply list formatting via COM here
+                    i += 2; // Skip inline and list_item_close
                 }
-                // Skip the corresponding list_item_close token
-                tokens.splice(tokens.indexOf(token) + 2, 1); // Remove inline and list_item_close
                 break;
 
             case 'bullet_list_close':
@@ -153,45 +194,29 @@ export async function applyMarkdownFormattingToWord(range: any, markdownText: st
                 break;
 
             case 'strong_open':
-                // Turn on bold formatting for the current range
-                wordApp.Selection.Font.Bold = true; // This affects the current selection, not the range directly
+                wordApp.Selection.Font.Bold = true;
                 logger.debug('Bold formatting ON');
                 break;
             case 'strong_close':
-                 // Turn off bold formatting
                 wordApp.Selection.Font.Bold = false;
                 logger.debug('Bold formatting OFF');
                 break;
 
             case 'em_open':
-                // Turn on italic formatting
                 wordApp.Selection.Font.Italic = true;
                 logger.debug('Italic formatting ON');
                 break;
             case 'em_close':
-                // Turn off italic formatting
                 wordApp.Selection.Font.Italic = false;
                 logger.debug('Italic formatting OFF');
                 break;
 
-            case 'inline':
-                // This case should ideally be handled by the parent block elements (paragraph, heading, list_item)
-                // If we encounter an inline token here, it might be unexpected or needs specific handling.
-                // For now, just insert the text.
-                logger.warn(`Encountered unexpected inline token outside of a block element: "${token.content}"`);
-                currentRange.Text = token.content;
-                currentRange.Collapse(0); // wdCollapseEnd
-                break;
-
             case 'softbreak':
-                 // Insert a line break
                  currentRange.InsertBreak(6); // wdLineBreak
                  currentRange.Collapse(0); // wdCollapseEnd
                  break;
 
             case 'hr':
-                 // Insert a horizontal rule (border)
-                 // This is complex via COM. For now, insert a line of dashes.
                  currentRange.Text = '---';
                  currentRange.Collapse(0); // wdCollapseEnd
                  currentRange.InsertParagraphAfter();
@@ -199,18 +224,39 @@ export async function applyMarkdownFormattingToWord(range: any, markdownText: st
                  logger.warn('Inserted "---" for horizontal rule.');
                  break;
 
-            // Add cases for other Markdown elements as needed:
-            // - blockquote_open/blockquote_close
-            // - code_block
-            // - fence (for code blocks)
-            // - image
-            // - link
-            // - table_open/table_close, thead_open/thead_close, tbody_open/tbody_close, tr_open/tr_close, th_open/th_close, td_open/td_close
-            // - html_block, html_inline (if html: true in parser)
+            case 'html_block':
+            case 'html_inline':
+                // Handle HTML content, specifically tables
+                if (token.content.includes('<table')) {
+                    logger.debug('Detected HTML table. Parsing and creating Word table.');
+                    try {
+                        const tableData = parseHtmlTable(token.content);
+                        if (tableData.length > 0) {
+                            await createWordTableFromData(currentRange, tableData, wordApp);
+                            // After inserting the table, move the range past the table
+                            currentRange.Collapse(0); // wdCollapseEnd
+                            currentRange.InsertParagraphAfter(); // Add a paragraph after the table
+                            currentRange.Collapse(0); // wdCollapseEnd
+                        }
+                    } catch (error: any) {
+                        logger.error(`Error processing HTML table: ${error.message}`);
+                        // Optionally insert the raw HTML as text if parsing fails
+                        currentRange.Text = token.content;
+                        currentRange.Collapse(0); // wdCollapseEnd
+                        currentRange.InsertParagraphAfter();
+                        currentRange.Collapse(0); // wdCollapseEnd
+                    }
+                } else {
+                    // For other HTML, just insert as text for now
+                    currentRange.Text = token.content;
+                    currentRange.Collapse(0); // wdCollapseEnd
+                    currentRange.InsertParagraphAfter();
+                    currentRange.Collapse(0); // wdCollapseEnd
+                }
+                break;
 
             default:
                 logger.debug(`Skipping unhandled token type: ${token.type}`);
-                // Handle other token types or ignore
                 break;
         }
     }

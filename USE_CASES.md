@@ -24,6 +24,9 @@ Welcome to the **Office MCP Server**’s hall of fame, where Word, Excel, PowerP
   - [Use Case 18: The Code Stylist in Word](#use-case-18-the-code-stylist-in-word)
   - [Use Case 19: The Multimodal Illustrator](#use-case-19-the-multimodal-illustrator)
   - [Use Case 20: Array to Word Table Wizard](#use-case-20-array-to-word-table-wizard)
+  - [Use Case 21: Markdown Import with HTML Tables (The Web-to-Word Weaver)](#use-case-21-markdown-import-with-html-tables-the-web-to-word-weaver)
+  - [Use Case 22: Word Table Export to Markdown/HTML (The Table Translator)](#use-case-22-word-table-export-to-markdownhtml-the-table-translator)
+  - [Use Case 23: Word Table Data Extraction (The Data Miner)](#use-case-23-word-table-data-extraction-the-data-miner)
 - [Excel Use Cases (with a Smile)](#excel-use-cases-with-a-smile)
   - [The Excel Accountant with Judgment](#the-excel-accountant-with-judgment)
   - [The Express Excel Exporter](#the-express-excel-exporter)
@@ -205,6 +208,38 @@ Two teammates sent conflicting drafts of `MejorasDeProducto.docx`. Merging them 
 - **AI Infers**: The user wants to quickly turn structured data into a Word table. The new `word/tables/insertFromArray` tool is the perfect fit!
 - **AI Action**: Uses `word/tables/insertFromArray` with `filePath=/docs/ReporteDatos.docx`, providing the data array, and setting `styleOptions.headerRow` to `true`. The AI might suggest a `styleName` if the user doesn't specify one.
 - **Interaction**: AI asks for the document path, the data array, and any preferred table style or styling options (like header row or first column).
+### Use Case 21: Markdown Import with HTML Tables (The Web-to-Word Weaver)
+
+**Scenario**: You have a Markdown document (`web_data.md`) that includes complex tables formatted using embedded HTML (because standard Markdown tables are too limiting for merged cells and specific styling). You need to import this into a Word document (`ReporteWeb.docx`) while preserving the table structure, including merged cells. Manually recreating the table in Word is a formatting nightmare! 🕸️➡️📄
+
+**Solution**:
+
+- **User Tells AI**: "Import web_data.md into ReporteWeb.docx, make sure the HTML tables look right!"
+- **AI Infers**: The user needs to import Markdown with embedded HTML tables. The enhanced `word/markdown/import` tool is the perfect weaver for this task.
+- **AI Action**: Uses `word/markdown/import` with `path=/docs/web_data.md` and `output=/docs/ReporteWeb.docx`. The tool, now configured to handle HTML, will parse the embedded table HTML and recreate the table structure, including merged cells, in the Word document using COM Interop.
+- **Interaction**: AI asks for the Markdown file path and the desired output Word document path.
+
+### Use Case 22: Word Table Export to Markdown/HTML (The Table Translator)
+
+**Scenario**: You have a Word document (`InformeComplejo.docx`) containing a table with merged cells and specific formatting. You need to export this table to Markdown format, preserving the structure and merging using embedded HTML, so it can be easily shared or published online. Manually converting the table and handling merged cells is incredibly tedious! 📄➡️🕸️
+
+**Solution**:
+
+- **User Tells AI**: "Export the table from InformeComplejo.docx to Markdown/HTML!"
+- **AI Infers**: The user wants to export a Word table to Markdown with HTML. The enhanced `word/markdown/export` tool is the ideal translator.
+- **AI Action**: Uses `word/markdown/export` with `document=/docs/InformeComplejo.docx` and `output=/docs/table_export.md`. The tool will iterate through the specified table (or all tables if none is specified), detect merged cells, and generate Markdown with embedded HTML `<table>` tags, including `colspan` and `rowspan` attributes.
+- **Interaction**: AI asks for the Word document path and the desired output Markdown file path. It might also ask which table to export if there are multiple.
+
+### Use Case 23: Word Table Data Extraction (The Data Miner)
+
+**Scenario**: You have a Word document (`DatosTabla.docx`) containing a table with important data, including some merged cells. You need to extract this data into a structured format (like a 2D array) so you can process it further in another application or script. Manually copying and pasting the data is prone to errors, especially with merged cells! 📄⛏️📊
+
+**Solution**:
+
+- **User Tells AI**: "Extract the data from the table in DatosTabla.docx!"
+- **AI Infers**: The user wants to extract structured data from a Word table. The new `word/tables/extractData` tool is the perfect data miner.
+- **AI Action**: Uses `word/tables/extractData` with `filePath=/docs/DatosTabla.docx` and `tableIndex=1` (assuming it's the first table). The tool will read the table content, correctly handle merged cells by representing spanned cells as `null`, and return the data as a 2D array.
+- **Interaction**: AI asks for the Word document path and the index of the table to extract (1-based).
 ## Excel Use Cases (with a Smile)
 
 No more tears over spreadsheets! Office MCP brings joy (and efficiency) to your life with Excel.
