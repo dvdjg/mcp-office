@@ -54,7 +54,9 @@ import { pdfExportTool } from './office/pdfExport.tool'; // Import the new offic
 import pdfParseTool from './office/pdfParse.tool'; // Import the new office/pdf/parse tool
 import { officeCombineTool } from './office/combine.tool'; // Import the new office/combine tool
 // Import dynamic tools
-import { dynamicResourcesTool } from './dynamic/resources.tool';
+import { dynamicResourcesTool } from './dynamic/resources.tool'; // Assuming single object
+// Import the new image analysis/generation tool
+import { officeImageAnalysisGenerationTool } from './office/imageAnalysisGeneration.tool'; // Single object
 
 // Import static resources
 import aiAssistantGuideResource from '../resources/static/ai_assistant_guide.resource';
@@ -82,14 +84,15 @@ const analyzeMcpResource: McpResource = {
  * A flattened array containing all implemented tool definitions conforming to the McpResource interface.
  * This list is used by the server to register the tools.
  */
-const allImplementedTools: McpResource[] = [
-    ...fsDirectoryTool, // Array
-    ...fsFileTool,      // Array
+// Combine all tools, spreading arrays and adding single objects
+const allImplementedToolsIntermediate = [
+    ...fsDirectoryTool, // Spread array
+    ...fsFileTool,      // Spread array
     // Archive tools are registered via registerArchiveTools function call in server.ts
-    ...wordStylesTool,  // Array
-    ...wordMarkdownTool,// Array
-    ...wordTemplateTool,// Array
-    ...wordTextTool,    // Array
+    ...wordStylesTool,  // Spread array
+    ...wordMarkdownTool,// Spread array
+    ...wordTemplateTool,// Spread array
+    ...wordTextTool,    // Spread array
     wordImageExtractTool, // Single object
     wordImageInsertTool,  // Single object
     // Single objects
@@ -106,23 +109,27 @@ const allImplementedTools: McpResource[] = [
     mermaidExportTool,
     reformatTool,
     analyzeMcpResource,
-    excelWorksheetsTool,
+    ...excelWorksheetsTool, // Spread array
     excelRangeTool,
     excelTablesTool,
     excelChartsTool,
-    excelDataAnalysisTool,
+    ...excelDataAnalysisTool, // Spread array
     slidesTool,
     powerpointShapesTool,
-    powerpointPropertiesTool,
+    ...powerpointPropertiesTool, // Spread array
     animationsTool,
     officeTransferTool,
-    new OfficeWorkflowTool(),
+    new OfficeWorkflowTool(), // Assuming this instance conforms to McpResource
     pdfExportTool,
     pdfParseTool,
-    officeCombineTool,
-    dynamicResourcesTool,
+    officeCombineTool, // Assuming single object
+    dynamicResourcesTool, // Assuming single object
+    officeImageAnalysisGenerationTool, // Add the new tool here
      // Add other imported tools here
- ].flat(); // Flatten the array to ensure it only contains McpResource objects
+ ];
+
+ // Flatten the array manually for compatibility
+ const allImplementedTools: McpResource[] = Array.prototype.concat.apply([], allImplementedToolsIntermediate);
 
 
 // Placeholder tools for unimplemented features (ensure they conform to McpResource)
