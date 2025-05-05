@@ -21,6 +21,23 @@ const insertTableSchema = z.object({
 
 type InsertTableParams = z.infer<typeof insertTableSchema>;
 
+// Add new schema for insertTableFromArray
+const insertTableFromArraySchema = z.object({
+    filePath: z.string().min(1, 'File path cannot be empty.'),
+    data: z.array(z.array(z.any())).min(1, 'Data array cannot be empty.').refine(data => data.every(row => row.length === data[0].length), 'All rows in the data array must have the same number of columns.'),
+    position: z.string().optional().describe("Optional: 'end', 'selection', 'paragraph:N' (1-based index), 'bookmark:BookmarkName'. Defaults to end."),
+    styleName: z.string().optional().describe('Optional: Predefined Word table style name (e.g., "Table Grid").'),
+    styleOptions: z.object({
+        headerRow: z.boolean().optional().default(true).describe('Apply distinct formatting defined by the style to the first row.'),
+        firstColumn: z.boolean().optional().default(false).describe('Apply distinct formatting defined by the style to the first column.'),
+        bandedRows: z.boolean().optional().default(false).describe('Apply alternating row shading (banding).'),
+        bandedColumns: z.boolean().optional().default(false).describe('Apply alternating column shading (banding).'),
+    }).optional().describe('Optional: Fine-tune the applied style\'s appearance.'),
+});
+
+type InsertTableFromArrayParams = z.infer<typeof insertTableFromArraySchema>;
+
+
 // --- Tool Handler Implementation ---
 export async function insertTable(
     params: unknown,
@@ -189,6 +206,188 @@ export async function insertTable(
     }
 }
 
+// Add new tool handler implementation
+export async function insertTableFromArray(
+    params: unknown,
+    context?: FastMCPContext<undefined>
+): Promise<ApiResponse<{}>> {
+    logger.info(`Executing word/tables/insertFromArray tool with params: ${JSON.stringify(params)}`);
+    let wordApp: any = null;
+    let doc: any = null;
+    let table: any = null;
+    let insertionRange: any = null;
+    let errorOccurred = false;
+
+    try {
+        // 1. Validate Input Parameters
+        const validatedParams = insertTableFromArraySchema.parse(params);
+        logger.debug('Parameters validated successfully.');
+
+        const safeFilePath = validateFilePath(validatedParams.filePath);
+        logger.debug(`File path validated: ${safeFilePath}`);
+
+        // 2. Get/Create Word Application Instance
+        wordApp = await getOfficeApplication('Word.Application');
+        logger.debug('Word application instance obtained.');
+
+        // 3. Open the Document
+        doc = wordApp.Documents.Open(safeFilePath);
+        if (!doc) {
+            throw new Error(`Failed to open document: ${safeFilePath}`);
+        }
+        logger.debug(`Document opened: ${safeFilePath}`);
+
+        // 4. Determine Insertion Range
+        const position = validatedParams.position?.toLowerCase() || 'end';
+        logger.debug(`Determining insertion range for position: ${position}`);
+
+        if (position === 'selection') {
+            insertionRange = wordApp.Selection.Range;
+            if (!insertionRange) {
+                throw new Error("Cannot insert at selection: No selection found.");
+            }
+            logger.debug('Insertion range set to current selection.');
+        } else if (position.startsWith('paragraph:')) {
+            const parts = position.split(':');
+            const paragraphIndex = parseInt(parts[1], 10);
+            if (isNaN(paragraphIndex) || paragraphIndex <= 0) {
+                throw new Error(`Invalid paragraph index: ${parts[1]}. Must be a positive integer.`);
+            }
+            if (paragraphIndex > doc.Paragraphs.Count) {
+                 throw new Error(`Paragraph index ${paragraphIndex} out of bounds. Document has ${doc.Paragraphs.Count} paragraphs.`);
+            }
+            insertionRange = doc.Paragraphs(paragraphIndex).Range;
+            insertionRange.Collapse(1); // Collapse to the start of the paragraph range (wdCollapseStart = 1)
+            logger.debug(`Insertion range set before paragraph ${paragraphIndex}.`);
+        } else if (position.startsWith('bookmark:')) {
+             const bookmarkName = position.substring('bookmark:'.length);
+             try {
+                 insertionRange = doc.Bookmarks(bookmarkName).Range;
+                 insertionRange.Collapse(1); // Collapse to the start of the bookmark range
+                 logger.debug(`Insertion range set at bookmark: ${bookmarkName}`);
+             } catch (bookmarkError: any) {
+                 throw new Error(`Bookmark "${bookmarkName}" not found.`);
+             }
+        }
+        else { // Default to 'end'
+            insertionRange = doc.Range(doc.Content.End, doc.Content.End);
+             if (insertionRange.Start > 0) {
+                 insertionRange.Start = insertionRange.Start -1;
+                 insertionRange.End = insertionRange.Start;
+                 insertionRange.InsertParagraphAfter();
+                 insertionRange.Collapse(0);
+             } else {
+                 insertionRange = doc.Range(0, 0);
+             }
+            logger.debug('Insertion range set to the end of the document.');
+        }
+
+        if (!insertionRange) {
+             throw new Error("Could not determine a valid insertion range.");
+        }
+
+        // 5. Insert the Table and Populate Data
+        const rows = validatedParams.data.length;
+        const columns = validatedParams.data[0].length;
+        logger.debug(`Attempting to add table with ${rows} rows and ${columns} columns and populate data.`);
+
+        // DefaultTableBehavior = wdWord9TableBehavior (0), AutoFitBehavior = wdAutoFitFixed (0)
+        table = doc.Tables.Add(insertionRange, rows, columns, 0, 0);
+        if (!table) {
+            throw new Error('Failed to insert table.');
+        }
+        logger.debug(`Table inserted successfully. Table index: ${table?.Index ?? 'N/A'}`);
+
+        // Populate table cells
+        for (let i = 0; i < rows; i++) {
+            for (let j = 0; j < columns; j++) {
+                // Word table cells are 1-based index
+                table.Cell(i + 1, j + 1).Range.Text = validatedParams.data[i][j]?.toString() ?? '';
+            }
+        }
+        logger.debug('Table populated with data.');
+
+        // 6. Apply Style (Optional)
+        if (validatedParams.styleName) {
+            logger.debug(`Attempting to apply style: ${validatedParams.styleName}`);
+            try {
+                table.Style = validatedParams.styleName;
+                logger.debug(`Style "${validatedParams.styleName}" applied successfully.`);
+
+                // Apply style options if style was applied
+                if (validatedParams.styleOptions) {
+                    logger.debug(`Applying style options: ${JSON.stringify(validatedParams.styleOptions)}`);
+                    // These properties control which parts of the table the style formatting is applied to
+                    table.AllowFormatting = true; // Ensure formatting is allowed
+                    table.ApplyStyleHeadingRows = validatedParams.styleOptions.headerRow ?? true; // Default to true as per schema default
+                    table.ApplyStyleFirstColumn = validatedParams.styleOptions.firstColumn ?? false; // Default to false
+                    table.ApplyStyleLastRow = false; // Assuming no last row formatting needed by default
+                    table.ApplyStyleLastColumn = false; // Assuming no last column formatting needed by default
+                    table.ApplyStyleBandedRows = validatedParams.styleOptions.bandedRows ?? false; // Default to false
+                    table.ApplyStyleBandedColumns = validatedParams.styleOptions.bandedColumns ?? false; // Default to false
+                    logger.debug('Table style options applied.');
+                }
+
+            } catch (styleError: any) {
+                logger.warn(`Failed to apply style "${validatedParams.styleName}" or style options: ${styleError.message}. Table inserted without style/options.`);
+                // Continue without style/options
+            }
+        } else if (validatedParams.styleOptions) {
+             logger.warn('styleOptions were provided but no styleName was specified. styleOptions will not be applied.');
+        }
+
+
+        // 7. Save the Document
+        logger.debug('Saving document...');
+        doc.Save();
+        logger.debug('Document saved successfully.');
+
+        return { success: true, data: { message: `Table (${rows}x${columns}) inserted and populated successfully.` } };
+
+    } catch (error: any) {
+        errorOccurred = true;
+        logger.error(`Error in word/tables/insertFromArray: ${error.message}`, { stack: error.stack });
+        if (doc) {
+            try {
+                 if (typeof doc.Close === 'function') {
+                     doc.Close(false); // wdDoNotSaveChanges = 0
+                     logger.debug('Document closed without saving changes due to error.');
+                 } else {
+                     logger.debug('Document object seems invalid or already closed, skipping close attempt.');
+                 }
+            } catch (closeError: any) {
+                if (!error.message?.toLowerCase().includes('object invalid')) {
+                   logger.error(`Error closing document after initial error: ${closeError.message}`);
+                }
+            }
+        }
+        if (wordApp) {
+            releaseObject(wordApp);
+            logger.debug('Word application released in catch block.');
+            wordApp = null;
+        }
+        return handleToolError(error, 'WORD_TABLE_INSERT_FROM_ARRAY_FAILED');
+    } finally {
+        releaseObject(table);
+        if (doc && typeof doc.Close === 'function' && !errorOccurred) {
+             try {
+                 doc.Close(false);
+                 logger.debug('Document closed in finally block (success path).');
+             } catch (finalCloseError: any) {
+                 logger.warn(`Error during final document close: ${finalCloseError.message}`);
+             } finally {
+                 releaseObject(doc);
+             }
+        } else if (doc) {
+             releaseObject(doc);
+        }
+        if (!errorOccurred && wordApp) {
+             releaseObject(wordApp);
+        }
+        logger.debug('COM objects released.');
+    }
+}
+
 
 // --- Tool Definition ---
 export const wordTablesTool: McpResource[] = [
@@ -200,6 +399,14 @@ export const wordTablesTool: McpResource[] = [
         // Add OpenAPI schema generation for better documentation if openapi-zod-converter is available
         // inputSchema: insertTableSchema.openapi('InsertTableInput'),
         // outputSchema: z.object({ message: z.string() }).openapi('InsertTableOutput'),
+    },
+    {
+        path: 'word/tables/insertFromArray',
+        handler: insertTableFromArray,
+        schema: insertTableFromArraySchema,
+        description: 'Inserts a new table into a Word document from a 2D array, with optional styling.',
+        // inputSchema: insertTableFromArraySchema.openapi('InsertTableFromArrayInput'),
+        // outputSchema: z.object({ message: z.string() }).openapi('InsertTableFromArrayOutput'),
     },
     // --- Placeholders for other table operations ---
     {

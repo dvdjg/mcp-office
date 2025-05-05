@@ -7,6 +7,7 @@ Welcome to the **Office MCP Server**, your go-to tool for automating Microsoft O
 - **Archive Handling**: Easily manage files within ZIP, 7z, and other archive formats (listing, extracting, creating for ZIP/7z).
 - **Intelligent Language Detection**: Automatically detect programming languages in code snippets for accurate formatting.
 - **Granular Control**: Fine-tune every paragraph, table, or embedded object.
+- **Structured Data Insertion**: Easily insert data from arrays into Word tables with styling options (`word/tables/insertFromArray`).
 - **Cross-Platform**: Supports Office 365, desktop Office, and Power Automate.
 - **Developer-Friendly**: Type-safe, modular, and well-documented for easy integration.
 - **Rock-Solid**: >90% test coverage ensures reliability for your automation adventures.
