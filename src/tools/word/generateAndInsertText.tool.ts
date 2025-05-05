@@ -206,7 +206,7 @@ async function generateAndInsertText(
 
         // Insert and format the main content using the utility
         if (mainContentInsertionRange) {
-             await applyMarkdownFormattingToWord(mainContentInsertionRange, mainContent, wordApp);
+             await applyMarkdownFormattingToWord(mainContentInsertionRange, mainContent, wordApp, doc); // Pass doc object
              logger.debug('Main content inserted and formatted.');
         } else {
              logger.error('Could not determine a valid range for main content insertion.');

@@ -23,7 +23,7 @@ const getSchema = textOpBaseSchema.extend({
 const insertSchema = textOpBaseSchema.extend({
   text: z.string(),
   position: z.string().min(1, 'Position specifier is required (e.g., "start", "end", "paragraph:N:start", "paragraph:N:end", "selection", or natural language like "after the heading \'Introduction\'").'),
-  format: z.enum(['plaintext', 'markdown']).default('plaintext').optional().describe("Format of the text to insert ('plaintext' or 'markdown'). Defaults to 'plaintext'."),
+  format: z.enum(['plaintext', 'markdown']).default('markdown').optional().describe("Format of the text to insert ('plaintext' or 'markdown'). Defaults to 'markdown'."),
 });
 
 const modifySchema = textOpBaseSchema.extend({
@@ -237,7 +237,7 @@ export async function insertText(requestParams: ToolRequestParams, context?: Fas
         // Insert and format text based on the specified format
         if (params.format === 'markdown') {
             logger.debug('Inserting and formatting text as Markdown.');
-            await applyMarkdownFormattingToWord(insertionRange, params.text, wordApp);
+            await applyMarkdownFormattingToWord(insertionRange, params.text, wordApp, doc); // Pass doc object
         } else { // Default to plaintext
             logger.debug('Inserting text as plaintext.');
             insertionRange.Text = params.text;

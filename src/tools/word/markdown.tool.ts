@@ -1051,7 +1051,7 @@ async function importFromMarkdown(params: ToolRequestParams, context?: FastMCPCo
        log.info("Applying Markdown formatting using the utility.");
        const docContentRange = newDoc.Content;
        docContentRange.Collapse(1); // wdCollapseStart - Ensure we start from the beginning
-       await applyMarkdownFormattingToWord(docContentRange, markdownContent, wordApp);
+       await applyMarkdownFormattingToWord(docContentRange, markdownContent, wordApp, newDoc); // Pass newDoc object
        reportProgress?.({ progress: 3, total: totalSteps }); // Step 3: Text Inserted and Formatted
 
        // Save the new document
