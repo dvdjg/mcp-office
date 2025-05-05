@@ -2,6 +2,8 @@ import { z } from 'zod';
 import * as path from 'path'; // Importar el módulo path
 import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types'; // Import FastMCPContext, remove ToolContext
 import { getOfficeApplication, releaseObject } from '../../utils/officeInterop'; // Removed getRangeFromSpecifier import
+import { resolveNaturalLanguageRange } from '../../utils/wordRangeResolver'; // Import the new range resolver utility
+import { applyMarkdownFormattingToWord } from '../../utils/markdownToOffice'; // Import the Markdown formatting utility
 import { validateFilePath } from '../../utils/security';
 import logger from '../../utils/logger';
 import { saveResource } from '../dynamic/resources.tool'; // Importar saveResource
@@ -15,12 +17,13 @@ const textOpBaseSchema = z.object({
 });
 
 const getSchema = textOpBaseSchema.extend({
-  range: z.string().min(1, 'Range specifier is required (e.g., "paragraph:N", "document", "selection").'),
+  range: z.string().min(1, 'Range specifier is required (e.g., "paragraph:N", "document", "selection", or natural language like "the third paragraph" or "the section \'Introduction\'").'),
 });
 
 const insertSchema = textOpBaseSchema.extend({
   text: z.string(),
-  position: z.string().min(1, 'Position specifier is required (e.g., "start", "end", "paragraph:N:start", "paragraph:N:end", "selection").'),
+  position: z.string().min(1, 'Position specifier is required (e.g., "start", "end", "paragraph:N:start", "paragraph:N:end", "selection", or natural language like "after the heading \'Introduction\'").'),
+  format: z.enum(['plaintext', 'markdown']).default('plaintext').optional().describe("Format of the text to insert ('plaintext' or 'markdown'). Defaults to 'plaintext'."),
 });
 
 const modifySchema = textOpBaseSchema.extend({
@@ -113,7 +116,18 @@ export async function getText(requestParams: ToolRequestParams, context?: FastMC
       return createErrorResponse(`Failed to open document: ${params.filePath}`, 'FILE_OPEN_FAILED');
     }
 
-    selectedRange = getRangeFromSpecifier(doc, params.range, wordApp); // Use local helper
+    // Attempt to resolve natural language range first
+    selectedRange = resolveNaturalLanguageRange(doc, params.range, wordApp);
+
+    if (!selectedRange) {
+        // If natural language resolution failed, try specific formats
+        selectedRange = getRangeFromSpecifier(doc, params.range, wordApp); // Use local helper
+    }
+
+    if (!selectedRange) {
+        // If neither resolution method worked
+        return createErrorResponse(`Could not determine range for extraction based on specifier: ${params.range}`, 'RANGE_ERROR');
+    }
 
     const textContent = selectedRange.Text || '';
 
@@ -125,7 +139,7 @@ export async function getText(requestParams: ToolRequestParams, context?: FastMC
      if (error instanceof z.ZodError) {
         return createErrorResponse('Input validation failed', 'VALIDATION_ERROR', error.errors);
     }
-    // Catch errors from getRangeFromSpecifier too
+    // Catch errors from getRangeFromSpecifier and resolveNaturalLanguageRange too
     return createErrorResponse(`Failed to get text: ${error.message}`, 'GET_TEXT_FAILED', error);
   } finally {
     releaseObject(selectedRange); // Release range obtained from helper
@@ -158,65 +172,80 @@ export async function insertText(requestParams: ToolRequestParams, context?: Fas
              return createErrorResponse(`Failed to open document: ${params.filePath}`, 'FILE_OPEN_FAILED');
         }
 
-        const positionLower = params.position.toLowerCase();
+        // Attempt to resolve natural language position first
+        insertionRange = resolveNaturalLanguageRange(doc, params.position, wordApp);
 
-        if (positionLower === 'start') {
-            insertionRange = doc.Range(0, 0);
-        } else if (positionLower === 'end') {
-            const endPos = doc.Content.End;
-            insertionRange = doc.Range(endPos, endPos);
-        } else if (positionLower === 'selection') {
-             if (!wordApp.Selection) return createErrorResponse("Cannot insert at selection: No selection found.", 'NO_SELECTION');
-             insertionRange = wordApp.Selection.Range;
-             if (wordApp.Selection.Type !== 2 /* wdSelectionIP = 2 */) {
-                  insertionRange.Collapse(1); // wdCollapseStart = 1
-             }
-        } else if (positionLower.startsWith('paragraph:')) {
-            const parts = positionLower.split(':');
-            if (parts.length < 2 || parts.length > 3) return createErrorResponse(`Invalid paragraph position format: ${params.position}`, 'INVALID_POSITION');
+        if (!insertionRange) {
+            // If natural language resolution failed, try specific formats
+            const positionLower = params.position.toLowerCase();
 
-            const indexStr = parts[1];
-            const paraIndex = parseInt(indexStr, 10);
-             if (isNaN(paraIndex) || paraIndex <= 0) {
-                return createErrorResponse(`Invalid paragraph index format: '${indexStr}'. Use 'paragraph:N' where N is a positive integer.`, 'INVALID_PARAM');
-            }
-             if (!doc || !doc.Paragraphs || typeof doc.Paragraphs.Count === 'undefined') {
-                 return createErrorResponse("Could not access document paragraphs collection.", 'COM_ERROR');
-            }
-            const paraCount = doc.Paragraphs.Count;
-            if (paraIndex > paraCount) {
-                return createErrorResponse(`Paragraph index ${paraIndex} is out of bounds. Document has ${paraCount} paragraphs.`, 'INVALID_PARAM');
-            }
+            if (positionLower === 'start') {
+                insertionRange = doc.Range(0, 0);
+            } else if (positionLower === 'end') {
+                const endPos = doc.Content.End;
+                insertionRange = doc.Range(endPos, endPos);
+            } else if (positionLower === 'selection') {
+                 if (!wordApp.Selection) return createErrorResponse("Cannot insert at selection: No selection found.", 'NO_SELECTION');
+                 insertionRange = wordApp.Selection.Range;
+                 if (wordApp.Selection.Type !== 2 /* wdSelectionIP = 2 */) {
+                      insertionRange.Collapse(1); // wdCollapseStart = 1
+                 }
+            } else if (positionLower.startsWith('paragraph:')) {
+                const parts = positionLower.split(':');
+                if (parts.length < 2 || parts.length > 3) return createErrorResponse(`Invalid paragraph position format: ${params.position}`, 'INVALID_POSITION');
 
-            paraRange = doc.Paragraphs(paraIndex).Range; // Get the paragraph range
-
-            if (parts.length === 3) { // Position specified (start/end)
-                if (parts[2] === 'start') {
-                    insertionRange = doc.Range(paraRange.Start, paraRange.Start);
-                } else if (parts[2] === 'end') {
-                    const endPos = paraRange.End > paraRange.Start ? paraRange.End - 1 : paraRange.Start; // Adjust for para mark
-                    insertionRange = doc.Range(endPos, endPos);
-                } else {
-                    releaseObject(paraRange); // Release paraRange before throwing
-                    return createErrorResponse(`Invalid paragraph position specifier: ${parts[2]}`, 'INVALID_POSITION');
+                const indexStr = parts[1];
+                const paraIndex = parseInt(indexStr, 10);
+                 if (isNaN(paraIndex) || paraIndex <= 0) {
+                    return createErrorResponse(`Invalid paragraph index format: '${indexStr}'. Use 'paragraph:N' where N is a positive integer.`, 'INVALID_PARAM');
                 }
-            } else { // Default to start of paragraph
-                 insertionRange = doc.Range(paraRange.Start, paraRange.Start);
+                 if (!doc || !doc.Paragraphs || typeof doc.Paragraphs.Count === 'undefined') {
+                     return createErrorResponse("Could not access document paragraphs collection.", 'COM_ERROR');
+                }
+                const paraCount = doc.Paragraphs.Count;
+                if (paraIndex > paraCount) {
+                    return createErrorResponse(`Paragraph index ${paraIndex} is out of bounds. Document has ${paraCount} paragraphs.`, 'INVALID_PARAM');
+                }
+
+                paraRange = doc.Paragraphs(paraIndex).Range; // Get the paragraph range
+
+                if (parts.length === 3) { // Position specified (start/end)
+                    if (parts[2] === 'start') {
+                        insertionRange = doc.Range(paraRange.Start, paraRange.Start);
+                    } else if (parts[2] === 'end') {
+                        const endPos = paraRange.End > paraRange.Start ? paraRange.End - 1 : paraRange.Start; // Adjust for para mark
+                        insertionRange = doc.Range(endPos, endPos);
+                    } else {
+                        releaseObject(paraRange); // Release paraRange before throwing
+                        return createErrorResponse(`Invalid paragraph position specifier: ${parts[2]}`, 'INVALID_POSITION');
+                    }
+                } else { // Default to start of paragraph
+                     insertionRange = doc.Range(paraRange.Start, paraRange.Start);
+                }
+                // paraRange is released in the finally block now
+            } else {
+                return createErrorResponse(`Unsupported position specifier: ${params.position}`, 'INVALID_POSITION');
             }
-            // paraRange is released in the finally block now
-        } else {
-            return createErrorResponse(`Unsupported position specifier: ${params.position}`, 'INVALID_POSITION');
         }
+
 
         if (!insertionRange) {
              // Should be caught earlier, but safeguard
              return createErrorResponse(`Could not determine insertion range for position: ${params.position}`, 'RANGE_ERROR');
         }
 
-        insertionRange.Text = params.text;
+        // Insert and format text based on the specified format
+        if (params.format === 'markdown') {
+            logger.debug('Inserting and formatting text as Markdown.');
+            await applyMarkdownFormattingToWord(insertionRange, params.text, wordApp);
+        } else { // Default to plaintext
+            logger.debug('Inserting text as plaintext.');
+            insertionRange.Text = params.text;
+        }
+
 
         doc.Save();
-        logger.info(`Successfully inserted text at position "${params.position}" and saved ${params.filePath}`);
+        logger.info(`Successfully inserted text at position "${params.position}" with format "${params.format}" and saved ${params.filePath}`);
 
         // Guardar el documento modificado como un recurso dinámico
         try {

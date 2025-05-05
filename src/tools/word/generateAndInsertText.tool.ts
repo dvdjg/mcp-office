@@ -15,6 +15,7 @@ import { validateFilePath } from '../../utils/security'; // Normalized relative 
 import { UserError } from 'fastmcp'; // Import UserError for sampling errors
 import { generateText } from '../../utils/llmClient'; // Import the server-side LLM utility
 import { applyMarkdownFormattingToWord } from '../../utils/markdownToOffice'; // Import the Markdown formatting utility
+import { resolveNaturalLanguageRange } from '../../utils/wordRangeResolver'; // Import the range resolver utility
 
 // Define the session data type expected by this tool's context
 // If authentication is required and provides session data:
@@ -35,8 +36,8 @@ const generateAndInsertSchema = z.object({
   filePath: z.string().min(1, 'File path is required.').refine(validateFilePath, {
     message: "Invalid or potentially unsafe file path provided.",
   }),
-  /** The position within the document where the text should be inserted (e.g., "start", "end", "paragraph:N:start", "selection"). */
-  position: z.string().min(1, 'Position specifier is required (e.g., "start", "end", "paragraph:N:start", "selection").'),
+  /** The position within the document where the text should be inserted (e.g., "start", "end", "paragraph:N:start", "selection", or natural language like "after the heading 'Introduction'"). */
+  position: z.string().min(1, 'Position specifier is required (e.g., "start", "end", "paragraph:N:start", "selection", or natural language like "after the heading \'Introduction\'").'),
   /** The prompt to use for generating text with the LLM. */
   prompt: z.string().min(1, 'A prompt for text generation is required.'),
   // Optional sampling parameters (add more as needed from FastMCP spec)
@@ -106,45 +107,51 @@ async function generateAndInsertText(
 
 
         // 3. Determine Insertion Range (similar logic to word/text/insert)
-        const positionLower = validatedParams.position.toLowerCase(); // Use validatedParams
-        logger.debug(`Determining insertion range for position: ${positionLower}`);
+        logger.debug(`Determining insertion range for position: ${validatedParams.position}`);
 
-        // Simplified range logic - adapt from word/text/insert if needed
-        if (positionLower === 'start') {
-            insertionRange = doc.Range(0, 0);
-            logger.debug('Insertion position set to start of document.');
-        } else if (positionLower === 'end') {
-            const endPos = doc.Content.End;
-            insertionRange = doc.Range(endPos, endPos);
-            logger.debug('Insertion position set to end of document.');
-        } else if (positionLower === 'selection') {
-             if (!wordApp.Selection) {
-                 logger.warn('Cannot insert at selection: No selection found.');
-                 return createErrorResponse("Cannot insert at selection: No selection found.", 'NO_SELECTION');
-             }
-             insertionRange = wordApp.Selection.Range;
-             // Collapse if it's not an insertion point
-             if (wordApp.Selection.Type !== 2 /* wdSelectionIP */) {
-                  insertionRange.Collapse(1); // wdCollapseStart
-                  logger.debug('Insertion position set to start of current selection.');
-             } else {
-                 logger.debug('Insertion position set to current insertion point.');
-             }
-        } else if (positionLower.startsWith('paragraph:')) {
-            // Simplified - inserts at the start of the paragraph
-            const parts = positionLower.split(':');
-            const indexStr = parts[1];
-            const paraIndex = parseInt(indexStr, 10);
-            if (isNaN(paraIndex) || paraIndex <= 0 || paraIndex > doc.Paragraphs.Count) {
-                logger.warn(`Invalid or out-of-bounds paragraph index: ${indexStr}`);
-                return createErrorResponse(`Invalid or out-of-bounds paragraph index: ${indexStr}`, 'INVALID_PARAM');
+        // Attempt to resolve natural language position first
+        insertionRange = resolveNaturalLanguageRange(doc, validatedParams.position, wordApp);
+
+        if (!insertionRange) {
+            // If natural language resolution failed, try specific formats
+            const positionLower = validatedParams.position.toLowerCase();
+
+            if (positionLower === 'start') {
+                insertionRange = doc.Range(0, 0);
+                logger.debug('Insertion position set to start of document.');
+            } else if (positionLower === 'end') {
+                const endPos = doc.Content.End;
+                insertionRange = doc.Range(endPos, endPos);
+                logger.debug('Insertion position set to end of document.');
+            } else if (positionLower === 'selection') {
+                 if (!wordApp.Selection) {
+                     logger.warn('Cannot insert at selection: No selection found.');
+                     return createErrorResponse("Cannot insert at selection: No selection found.", 'NO_SELECTION');
+                 }
+                 insertionRange = wordApp.Selection.Range;
+                 // Collapse if it's not an insertion point
+                 if (wordApp.Selection.Type !== 2 /* wdSelectionIP */) {
+                      insertionRange.Collapse(1); // wdCollapseStart
+                      logger.debug('Insertion position set to start of current selection.');
+                 } else {
+                     logger.debug('Insertion position set to current insertion point.');
+                 }
+            } else if (positionLower.startsWith('paragraph:')) {
+                // Simplified - inserts at the start of the paragraph
+                const parts = positionLower.split(':');
+                const indexStr = parts[1];
+                const paraIndex = parseInt(indexStr, 10);
+                if (isNaN(paraIndex) || paraIndex <= 0 || paraIndex > doc.Paragraphs.Count) {
+                    logger.warn(`Invalid or out-of-bounds paragraph index: ${indexStr}`);
+                    return createErrorResponse(`Invalid or out-of-bounds paragraph index: ${indexStr}`, 'INVALID_PARAM');
+                }
+                paraRange = doc.Paragraphs(paraIndex).Range;
+                insertionRange = doc.Range(paraRange.Start, paraRange.Start); // Insert at start
+                logger.debug(`Insertion position set to start of paragraph ${paraIndex}.`);
+            } else {
+                logger.warn(`Unsupported position specifier: ${validatedParams.position}`);
+                return createErrorResponse(`Unsupported position specifier: ${validatedParams.position}`, 'INVALID_POSITION'); // Use validatedParams
             }
-            paraRange = doc.Paragraphs(paraIndex).Range;
-            insertionRange = doc.Range(paraRange.Start, paraRange.Start); // Insert at start
-            logger.debug(`Insertion position set to start of paragraph ${paraIndex}.`);
-        } else {
-            logger.warn(`Unsupported position specifier: ${validatedParams.position}`);
-            return createErrorResponse(`Unsupported position specifier: ${validatedParams.position}`, 'INVALID_POSITION'); // Use validatedParams
         }
 
         if (!insertionRange) {
@@ -152,8 +159,6 @@ async function generateAndInsertText(
              return createErrorResponse(`Could not determine insertion range for position: ${validatedParams.position}`, 'RANGE_ERROR'); // Use validatedParams
         }
 
-        // 4. Insert Generated Text
-        logger.debug(`Inserting generated text (length: ${generatedText.length})`);
         // 4. Process and Insert Generated Text
         logger.debug(`Processing and inserting generated text (length: ${generatedText.length})`);
 
