@@ -1,18 +1,18 @@
 import { z } from 'zod';
-import * as path from 'path'; // Importar el módulo path
-import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types'; // Import FastMCPContext, remove ToolContext
-import { getOfficeApplication, releaseObject } from '../../utils/officeInterop'; // Removed getRangeFromSpecifier import
-import { resolveNaturalLanguageRange } from '../../utils/wordRangeResolver'; // Import the new range resolver utility
-import { applyMarkdownFormattingToWord } from '../../utils/markdownToOffice'; // Import the Markdown formatting utility
+import * as path from 'path';
+import * as fs from 'fs-extra'; // Added fs import
+import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types';
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
+import { resolveNaturalLanguageRange } from '../../utils/wordRangeResolver';
+import { applyMarkdownFormattingToWord } from '../../utils/markdownToOffice';
 import { validateFilePath } from '../../utils/security';
 import logger from '../../utils/logger';
-import { saveResource } from '../dynamic/resources.tool'; // Importar saveResource
+import { saveResource } from '../dynamic/resources.tool';
 
-// --- Schemas ---
-
+// --- Schemas --- (Keep existing schemas)
 const textOpBaseSchema = z.object({
   filePath: z.string().min(1, 'File path is required.').refine(validateFilePath, {
-    message: "Invalid or potentially unsafe file path provided.", // Added validation refine
+    message: "Invalid or potentially unsafe file path provided.",
   }),
 });
 
@@ -35,23 +35,13 @@ const deleteSchema = textOpBaseSchema.extend({
   range: z.string().min(1, 'Range specifier is required.'),
 });
 
-// --- Helper Functions ---
 
-// Helper to create standard error responses
+// --- Helper Functions --- (Keep existing helpers)
 const createErrorResponse = (message: string, code = 'TOOL_EXECUTION_ERROR', details?: unknown): ApiResponse<never> => ({
     success: false,
     error: { code, message, details },
 });
 
-/**
- * Gets a COM Range object based on a string specifier.
- * Adapted from word/styles/applyStyle logic.
- * @param doc The Word Document COM object.
- * @param rangeSpecifier String like 'selection', 'document', 'paragraph:N'.
- * @param wordApp The Word Application COM object (needed for 'selection').
- * @returns The COM Range object.
- * @throws Error if the specifier is invalid or the range cannot be obtained.
- */
 export function getRangeFromSpecifier(doc: any, rangeSpecifier: string, wordApp: any): any {
     const rangeStringLower = rangeSpecifier.toLowerCase();
     let selectedRange: any = null;
@@ -98,7 +88,8 @@ export function getRangeFromSpecifier(doc: any, rangeSpecifier: string, wordApp:
 
 // --- Handlers ---
 
-export async function getText(requestParams: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<string>> { // Use FastMCPContext<undefined>
+// getText function remains unchanged
+export async function getText(requestParams: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<string>> {
   let wordApp: any = null;
   let doc: any = null;
   let selectedRange: any = null;
@@ -111,6 +102,12 @@ export async function getText(requestParams: ToolRequestParams, context?: FastMC
     // File path validated by Zod refine
     wordApp = await getOfficeApplication('Word.Application');
     const absoluteFilePath = path.resolve(params.filePath);
+
+    // Check if file exists before opening read-only
+    if (!await fs.pathExists(absoluteFilePath)) {
+        return createErrorResponse(`File not found: ${params.filePath}`, 'FILE_NOT_FOUND');
+    }
+
     doc = wordApp.Documents.Open(absoluteFilePath, false, true, false, "", "", false, "", "", 0, false); // Open read-only, not visible
     if (!doc) {
       return createErrorResponse(`Failed to open document: ${params.filePath}`, 'FILE_OPEN_FAILED');
@@ -153,12 +150,13 @@ export async function getText(requestParams: ToolRequestParams, context?: FastMC
   }
 }
 
-export async function insertText(requestParams: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> { // Use FastMCPContext<undefined>
+// Modified insertText function
+export async function insertText(requestParams: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> {
     let wordApp: any = null;
     let doc: any = null;
     let insertionRange: any = null;
-    let officeAppInstance: any = null;
     let paraRange: any = null; // Specific range for paragraph logic
+    let fileCreated = false; // Flag to track if the file was created
 
     try {
         const params = insertSchema.parse(requestParams);
@@ -167,9 +165,30 @@ export async function insertText(requestParams: ToolRequestParams, context?: Fas
         // File path validated by Zod refine
         wordApp = await getOfficeApplication('Word.Application');
         const absoluteFilePath = path.resolve(params.filePath);
-        doc = wordApp.Documents.Open(absoluteFilePath, false, false); // Open read/write using standard COM API
+
+        // --- Create if not exists logic ---
+        try {
+            if (await fs.pathExists(absoluteFilePath)) {
+                logger.info(`Opening existing document: ${absoluteFilePath}`);
+                doc = wordApp.Documents.Open(absoluteFilePath, false, false); // Open read/write
+            } else {
+                logger.info(`File not found. Creating new document at: ${absoluteFilePath}`);
+                doc = wordApp.Documents.Add(); // Create new document
+                // Save the new document immediately to the target path
+                const wdFormatDocumentDefault = 16; // .docx format
+                doc.SaveAs2(absoluteFilePath, wdFormatDocumentDefault);
+                fileCreated = true;
+                logger.info(`Successfully created and saved new document: ${absoluteFilePath}`);
+            }
+        } catch (fileError: any) {
+             logger.error(`Error opening or creating document '${absoluteFilePath}': ${fileError.message}`, { error: fileError });
+             return createErrorResponse(`Failed to open or create document: ${fileError.message}`, 'FILE_OPERATION_FAILED', fileError);
+        }
+        // --- End create if not exists logic ---
+
         if (!doc) {
-             return createErrorResponse(`Failed to open document: ${params.filePath}`, 'FILE_OPEN_FAILED');
+             // This check might be redundant if the try/catch above handles errors, but good as a safeguard
+             return createErrorResponse(`Failed to obtain document object for: ${params.filePath}`, 'FILE_OPEN_FAILED');
         }
 
         // Attempt to resolve natural language position first
@@ -244,8 +263,14 @@ export async function insertText(requestParams: ToolRequestParams, context?: Fas
         }
 
 
-        doc.Save();
-        logger.info(`Successfully inserted text at position "${params.position}" with format "${params.format}" and saved ${params.filePath}`);
+        // Save only if the file wasn't just created (SaveAs already saved it)
+        if (!fileCreated) {
+            doc.Save();
+            logger.info(`Successfully inserted text at position "${params.position}" with format "${params.format}" and saved ${params.filePath}`);
+        } else {
+             logger.info(`Successfully inserted text at position "${params.position}" with format "${params.format}" into newly created file ${params.filePath}`);
+        }
+
 
         // Guardar el documento modificado como un recurso dinámico
         try {
@@ -273,16 +298,19 @@ export async function insertText(requestParams: ToolRequestParams, context?: Fas
         releaseObject(insertionRange);
         releaseObject(paraRange); // Release the paragraph range if it was obtained
         if (doc) {
+            // Close without saving changes if we just created it (already saved by SaveAs)
+            // Otherwise, close normally (changes should have been saved by doc.Save())
             try { doc.Close(false); } catch (e) { logger.warn('Error closing document after insert', e); }
             releaseObject(doc);
         }
-        if (wordApp) { // Changed from officeAppInstance
+        if (wordApp) {
             releaseObject(wordApp); // Release the application object
         }
     }
 }
 
-export async function modifyText(requestParams: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> { // Use FastMCPContext<undefined>
+// modifyText function remains unchanged
+export async function modifyText(requestParams: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> {
     let wordApp: any = null;
     let doc: any = null;
     let selectedRange: any = null;
@@ -295,6 +323,12 @@ export async function modifyText(requestParams: ToolRequestParams, context?: Fas
         // File path validated by Zod refine
         wordApp = await getOfficeApplication('Word.Application');
         const absoluteFilePath = path.resolve(params.filePath);
+
+        // Check if file exists before opening
+        if (!await fs.pathExists(absoluteFilePath)) {
+            return createErrorResponse(`File not found: ${params.filePath}`, 'FILE_NOT_FOUND');
+        }
+
         doc = wordApp.Documents.Open(absoluteFilePath, false, false); // Open read/write
         if (!doc) {
             return createErrorResponse(`Failed to open document: ${params.filePath}`, 'FILE_OPEN_FAILED');
@@ -335,13 +369,14 @@ export async function modifyText(requestParams: ToolRequestParams, context?: Fas
              try { doc.Close(false); } catch (e) { logger.warn('Error closing document after modify', e); }
             releaseObject(doc);
         }
-        if (wordApp) { // Changed from officeAppInstance
+        if (wordApp) {
             releaseObject(wordApp); // Release the application object
         }
     }
 }
 
-export async function deleteText(requestParams: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> { // Use FastMCPContext<undefined>
+// deleteText function remains unchanged
+export async function deleteText(requestParams: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> {
     let wordApp: any = null;
     let doc: any = null;
     let selectedRange: any = null;
@@ -354,6 +389,12 @@ export async function deleteText(requestParams: ToolRequestParams, context?: Fas
         // File path validated by Zod refine
         wordApp = await getOfficeApplication('Word.Application');
         const absoluteFilePath = path.resolve(params.filePath);
+
+        // Check if file exists before opening
+        if (!await fs.pathExists(absoluteFilePath)) {
+            return createErrorResponse(`File not found: ${params.filePath}`, 'FILE_NOT_FOUND');
+        }
+
         doc = wordApp.Documents.Open(absoluteFilePath, false, false); // Open read/write
         if (!doc) {
             return createErrorResponse(`Failed to open document: ${params.filePath}`, 'FILE_OPEN_FAILED');
@@ -394,42 +435,41 @@ export async function deleteText(requestParams: ToolRequestParams, context?: Fas
              try { doc.Close(false); } catch (e) { logger.warn('Error closing document after delete', e); }
             releaseObject(doc);
         }
-        if (wordApp) { // Changed from officeAppInstance
+        if (wordApp) {
             releaseObject(wordApp); // Release the application object
         }
     }
 }
 
 
-// --- Resource Definitions ---
-
+// --- Resource Definitions --- (Keep existing definitions)
 export const wordTextTool: McpResource[] = [
   {
-    path: 'word/text/get', // Use 'path'
+    path: 'word/text/get',
     description: 'Gets text content from a specified range within a Word document (e.g., specific paragraph, whole document, current selection).',
     // icon: '📄', // Icon not part of McpResource definition
-    schema: getSchema, // Use 'schema'
+    schema: getSchema,
     handler: getText,
   },
   {
-    path: 'word/text/insert', // Use 'path'
-    description: 'Inserts text at a specified position within a Word document (e.g., start, end, start/end of a paragraph, current selection). Saves the document after insertion.',
+    path: 'word/text/insert',
+    description: 'Inserts text at a specified position within a Word document (e.g., start, end, start/end of a paragraph, current selection). Creates the file if it does not exist. Saves the document after insertion.', // Updated description
     // icon: '➕📄',
-    schema: insertSchema, // Use 'schema'
+    schema: insertSchema,
     handler: insertText,
   },
   {
-    path: 'word/text/modify', // Use 'path'
+    path: 'word/text/modify',
     description: 'Replaces the text content of a specified range within a Word document with new text. Saves the document after modification.',
     // icon: '✏️📄',
-    schema: modifySchema, // Use 'schema'
+    schema: modifySchema,
     handler: modifyText,
   },
   {
-    path: 'word/text/delete', // Use 'path'
+    path: 'word/text/delete',
     description: 'Deletes the text content of a specified range within a Word document. Saves the document after deletion.',
     // icon: '🗑️📄',
-    schema: deleteSchema, // Use 'schema'
+    schema: deleteSchema,
     handler: deleteText,
   },
 ];
