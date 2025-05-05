@@ -240,6 +240,24 @@ Two teammates sent conflicting drafts of `MejorasDeProducto.docx`. Merging them 
 - **AI Infers**: The user wants to extract structured data from a Word table. The new `word/tables/extractData` tool is the perfect data miner.
 - **AI Action**: Uses `word/tables/extractData` with `filePath=/docs/DatosTabla.docx` and `tableIndex=1` (assuming it's the first table). The tool will read the table content, correctly handle merged cells by representing spanned cells as `null`, and return the data as a 2D array.
 - **Interaction**: AI asks for the Word document path and the index of the table to extract (1-based).
+### Use Case 24: The DOCX-to-Markdown Metamorphosis (with Image Wrangling!) - Future Capability
+
+**Scenario**: You've unearthed a magnificent DOCX (`AncientScroll.docx`), brimming with profound text, intricate tables, and... oh heavens, more embedded images than a cat meme subreddit! The high council (your boss) demands it in Markdown *now* for the sacred company wiki. But there's a catch! The images must be banished to their own `img` folder, the tables must retain their sacred structure (in Markdown format, naturally), and the whole shebang needs to be zipped tighter than a drum. Attempting this manually? You'd sooner decipher actual ancient scrolls while juggling angry badgers! 😵‍💫📜➡️📦
+
+**Solution**:
+
+*   **User Tells AI**: "Transmute `AncientScroll.docx` into Markdown! Cast the images into an 'img' folder, preserve the tables' essence, and bind everything in a ZIP file of holding!"
+*   **AI Infers**: The user seeks a complex alchemy: DOCX to MD conversion, image extraction and relocation, faithful table transformation, and final compression. This quest requires a fellowship of tools: `word/markdown/export` (with significant enhancements), potentially `word/image/extractAll`, and `fs/archive/create`. The key challenge lies in ensuring the Markdown correctly links to the extracted images in their new home.
+*   **AI Action (Planned Workflow - Requires Tool Enhancement)**:
+    1.  Enhance `word/markdown/export` to traverse the DOCX structure, converting formatting, headings, and lists to Markdown.
+    2.  Within the enhanced tool, detect and extract images, saving them to the specified `imageDir`.
+    3.  Generate correct relative Markdown image links in the output MD file.
+    4.  Convert Word tables to Markdown or HTML based on the `tableFormat` parameter.
+    5.  Optionally, use `fs/archive/create` to bundle the generated Markdown file and the `imageDir` into a ZIP archive.
+*   **Interaction**: AI will confirm the source DOCX, desired output path, image directory, table format, and whether to zip the output.
+
+**Current Status**: The `word/markdown/export` tool currently only extracts plain text and does not handle formatting, tables, or images. This use case requires significant enhancement of the tool as detailed in the [Plan: Enhance `word/markdown/export` Tool for Rich DOCX-to-Markdown Conversion](docs/plan_docx_to_markdown_enhancement.md).
+
 ## Excel Use Cases (with a Smile)
 
 No more tears over spreadsheets! Office MCP brings joy (and efficiency) to your life with Excel.

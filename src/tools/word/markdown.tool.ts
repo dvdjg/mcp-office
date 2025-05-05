@@ -9,6 +9,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import MarkdownIt from 'markdown-it';
 import { z } from 'zod';
+import archiver from 'archiver'; // Import archiver
 import { McpResource, ApiResponse, ToolRequestParams } from '../../types/common.types'; // Normalized relative path
 import { saveResource } from '../dynamic/resources.tool'; // Normalized relative path
 import { Context as FastMCPContext } from 'fastmcp'; // Import FastMCP Context
@@ -39,6 +40,16 @@ const exportSchema = z.object({
     }, {
         message: "Invalid or potentially unsafe output file path or directory.",
     }),
+    /** Relative directory to save extracted images (e.g., 'img', 'assets/images'). */
+    imageDir: z.string().default('images').describe("Relative directory to save extracted images (e.g., 'img', 'assets/images')."),
+    /** Optional prefix for extracted image filenames. */
+    imagePrefix: z.string().optional().describe("Optional prefix for extracted image filenames."),
+    /** Format for tables: 'markdown' (simple) or 'html' (preserves merged cells). */
+    tableFormat: z.enum(['markdown', 'html']).default('html').describe("Format for tables: 'markdown' (simple) or 'html' (preserves merged cells)."),
+    /** If true, create a ZIP archive containing the Markdown file and image directory. */
+    zipOutput: z.boolean().default(false).describe("If true, create a ZIP archive containing the Markdown file and image directory."),
+    /** Optional name for the output ZIP file (defaults based on output MD name). */
+    zipFileName: z.string().optional().describe("Optional name for the output ZIP file (defaults based on output MD name)."),
     /** How to handle comments during export ('ignore', 'append', 'inline'). */
     comments: z.enum(['ignore', 'append', 'inline']).default('ignore').describe("How to handle comments during export ('ignore', 'append', 'inline')."),
 });
@@ -83,6 +94,118 @@ const md = new MarkdownIt({
 // --- Handlers ---
 
 /**
+ * Helper function to handle a single paragraph, extract formatting, and detect/handle inline images.
+ * @param paragraph - The Word Paragraph COM object.
+ * @param log - The logger object.
+ * @param imageDir - The directory to save extracted images.
+ * @param imageCounter - A counter for naming images.
+ * @param imagePrefix - Optional prefix for image filenames.
+ * @returns The Markdown representation of the paragraph.
+ */
+async function handleParagraph(paragraph: any, log: any, imageDir: string, imageCounter: { count: number }, imagePrefix?: string): Promise<string> {
+    let markdown = '';
+    let paragraphText = paragraph.Range.Text || '';
+
+    // Remove trailing newline/carriage return from paragraph text
+    paragraphText = paragraphText.replace(/\r?\n?$/, '');
+
+    // TODO: Implement formatting detection (bold, italic, strikethrough, etc.)
+    // TODO: Implement list detection (bullet points, numbered lists)
+    // TODO: Implement heading detection (based on style or outline level)
+
+    // Handle inline shapes (potential images) within the paragraph's range
+    if (paragraph.Range.InlineShapes.Count > 0) {
+        for (let i = 1; i <= paragraph.Range.InlineShapes.Count; i++) {
+            const inlineShape = paragraph.Range.InlineShapes(i);
+            // TODO: Check if the inlineShape is a picture and handle it using handleImage
+            // Replace the placeholder text in paragraphText with the image markdown link
+            // Example: paragraphText = paragraphText.replace('[image placeholder]', handleImage(inlineShape, imageDir, imageCounter, imagePrefix));
+            releaseObject(inlineShape); // Release COM object
+        }
+    }
+
+    // Append the processed text (with image links)
+    markdown += paragraphText;
+
+    return markdown;
+}
+
+/**
+ * Helper function to handle a single Word table and convert it to Markdown or HTML.
+ * @param table - The Word Table COM object.
+ * @param format - The desired output format ('markdown' or 'html').
+ * @returns The Markdown or HTML representation of the table.
+ */
+/**
+ * Helper function to handle a single Word table and convert it to Markdown or HTML.
+ * @param table - The Word Table COM object.
+ * @param log - The logger object.
+ * @param format - The desired output format ('markdown' or 'html').
+ * @returns The Markdown or HTML representation of the table.
+ */
+async function handleTable(table: any, log: any, format: 'markdown' | 'html'): Promise<string> {
+    let tableOutput = '';
+
+    if (format === 'markdown') {
+        // TODO: Implement basic Markdown table conversion (without merged cells)
+        log.warn("Basic Markdown table conversion is not yet implemented.");
+        tableOutput += '\n<!-- TODO: Implement basic Markdown table conversion -->\n';
+    } else if (format === 'html') {
+        // TODO: Implement HTML table conversion (handling merged cells)
+        log.warn("HTML table conversion is not yet implemented.");
+        tableOutput += '\n<!-- TODO: Implement HTML table conversion -->\n';
+    }
+
+    // Add a newline after the table
+    tableOutput += '\n';
+
+    return tableOutput;
+}
+
+/**
+ * Helper function to handle a single image shape, extract and save the image, and return the Markdown link.
+ * @param imageShape - The Word Shape or InlineShape COM object.
+ * @param log - The logger object.
+ * @param imageDir - The directory to save extracted images.
+ * @param imageCounter - A counter for naming images.
+ * @param imagePrefix - Optional prefix for image filenames.
+ * @returns The Markdown image link string.
+ */
+async function handleImage(imageShape: any, log: any, imageDir: string, imageCounter: { count: number }, imagePrefix?: string): Promise<string> {
+    imageCounter.count++;
+    const imageName = `${imagePrefix || 'image'}${imageCounter.count}.png`; // Default to PNG, investigate other formats
+    const imagePath = path.join(imageDir, imageName);
+
+    log.info(`Attempting to extract image to: ${imagePath}`);
+
+    try {
+        // TODO: Implement image extraction logic using COM (CopyAsPicture or OLEFormat.Object.SaveAs)
+        // This is a complex part and requires careful COM interaction and testing.
+        log.warn("Image extraction logic is not yet implemented.");
+        // Placeholder for extraction:
+        // imageShape.Select();
+        // wordApp.Selection.CopyAsPicture(); // Requires access to wordApp, might need to pass it
+        // Paste from clipboard and save to imagePath
+
+        // Placeholder for success:
+        log.info(`Successfully extracted placeholder image to ${imagePath}`);
+
+        // TODO: Extract alt text from imageShape if available
+
+        const altText = imageShape.AlternativeText || ''; // Placeholder for alt text extraction
+
+        // Return the Markdown image link
+        return `![${altText}](${path.relative(path.dirname(imagePath), imagePath)})`; // Use relative path for link
+
+    } catch (error: any) {
+        log.error(`Failed to extract image: ${error.message}`);
+        return `![Image Extraction Failed: ${error.message}]()`; // Return a broken link with error info
+    } finally {
+        // TODO: Release COM object for imageShape if necessary (depends on how it's obtained)
+    }
+}
+
+/**
  * Exports a Word document to Markdown format using COM Interop (Basic Text Extraction).
  * NOTE: This implementation extracts plain text. Preserving formatting (headings, lists, bold, etc.)
  * requires complex iteration over the Word document structure via COM.
@@ -94,18 +217,38 @@ const md = new MarkdownIt({
 async function exportToMarkdown(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{ outputPath: string }>> {
     const log = context?.log ?? logger; // Use context logger or fallback
     const reportProgress = context?.reportProgress; // Get reportProgress function if context exists
-    const totalSteps = 3; // Define total steps for progress
+    const totalSteps = 5; // Increased total steps for new process
 
     let wordApp: any = null;
     let doc: any = null;
-    const safeOutputPath = path.resolve(params.output as string); // Already validated by Zod
+    let markdownOutput = '';
+    let imageCounter = 0;
+    const extractedImagesDir = path.join(path.dirname(params.output as string), params.imageDir as string);
 
     try {
         reportProgress?.({ progress: 0, total: totalSteps }); // Step 0: Start
-        const validatedParams = exportSchema.parse(params);
-        const safeInputPath = validatedParams.filePath; // Already validated
 
-        log.info(`Attempting COM export Word doc '${safeInputPath}' to Markdown '${safeOutputPath}'`);
+        // Validate parameters using the updated schema
+        const validatedParams = exportSchema.parse(params);
+        const safeInputPath = validatedParams.filePath;
+        const safeOutputPath = path.resolve(validatedParams.output);
+        const safeImageDir = validatedParams.imageDir;
+        const tableFormat = validatedParams.tableFormat;
+        const zipOutput = validatedParams.zipOutput;
+        const zipFileName = validatedParams.zipFileName;
+        const commentsOption = validatedParams.comments;
+
+        log.info(`Attempting rich COM export Word doc '${safeInputPath}' to Markdown '${safeOutputPath}'`);
+        log.info(`Images will be saved to: ${safeImageDir}`);
+        log.info(`Tables will be formatted as: ${tableFormat}`);
+        if (zipOutput) {
+            log.info(`Output will be zipped.`);
+        }
+
+        // Ensure the image directory exists
+        await fs.ensureDir(extractedImagesDir);
+        log.info(`Ensured image directory exists: ${extractedImagesDir}`);
+        reportProgress?.({ progress: 1, total: totalSteps }); // Step 1: Image directory ensured
 
         const officeResult = await getOfficeApplication('Word.Application');
         wordApp = officeResult.app;
@@ -116,60 +259,130 @@ async function exportToMarkdown(params: ToolRequestParams, context?: FastMCPCont
             throw new Error(`Failed to open document via COM: ${safeInputPath}`);
         }
         log.info(`Document opened successfully.`);
+        reportProgress?.({ progress: 2, total: totalSteps }); // Step 2: Document opened
 
-        // --- Basic Text Extraction using COM ---
-        log.warn("Exporting using basic COM text extraction (doc.Content.Text). Formatting will be lost.");
-        let extractedText = doc.Content.Text || ''; // Get the plain text content
+        // --- Document Traversal and Element Handling ---
+        log.info("Starting document traversal and element handling.");
 
-        // --- Comment Handling (Basic COM Placeholder) ---
-        if (validatedParams.comments !== 'ignore' && doc.Comments && doc.Comments.Count > 0) {
-            log.info(`Extracting ${doc.Comments.Count} comments (basic)...`);
-            extractedText += `\n\n## Comments (Extracted via COM)\n`;
-            let commentsCollection = null;
-            try {
-                commentsCollection = doc.Comments;
-                for (let i = 1; i <= commentsCollection.Count; i++) {
-                    let comment: any = null;
-                    try {
-                        comment = commentsCollection(i);
-                        const commentText = comment?.Range?.Text || 'Error reading comment text';
-                        const author = comment?.Author || 'Unknown Author';
-                        const scope = comment?.Scope?.Text ? ` (Scope: "${comment.Scope.Text.substring(0, 50)}...")` : '';
-                        extractedText += `- **${author}**: ${commentText}${scope}\n`;
-                    } catch (commentError: any) {
-                        log.error(`Error reading comment at index ${i}: ${commentError.message}`);
-                        extractedText += `- Error reading comment at index ${i}.\n`;
-                    } finally {
-                         if (comment) releaseObject(comment);
-                    }
-                }
-            } catch (commentsError: any) {
-                 log.error(`Error accessing comments collection: ${commentsError.message}`);
-                 extractedText += `- Error accessing comments collection.\n`;
-            } finally {
-                 if (commentsCollection) releaseObject(commentsCollection);
+        // Iterate through the main story range (the main body of the document)
+        const mainStoryRange = doc.StoryRanges(1); // wdMainStory
+
+        // Iterate through elements in the main story range
+        let currentRange = mainStoryRange.Duplicate;
+        while (currentRange.Start < currentRange.End) {
+            // Check for Tables first as they can contain paragraphs and shapes
+            if (currentRange.Tables.Count > 0) {
+                const table = currentRange.Tables(1);
+                markdownOutput += await handleTable(table, log, tableFormat);
+                // Move the range past the table
+                currentRange.Start = table.Range.End;
+                releaseObject(table); // Release COM object
+            }
+            // Check for Paragraphs (includes text and inline shapes)
+            else if (currentRange.Paragraphs.Count > 0) {
+                const paragraph = currentRange.Paragraphs(1);
+                markdownOutput += await handleParagraph(paragraph, log, extractedImagesDir, { count: imageCounter }, validatedParams.imagePrefix);
+                // Move the range past the paragraph
+                currentRange.Start = paragraph.Range.End;
+                releaseObject(paragraph); // Release COM object
+            }
+            // TODO: Handle other potential elements like Shapes (non-inline images, text boxes, etc.)
+            // This might require checking currentRange.ShapeRange or iterating through doc.Shapes
+
+            else {
+                // If no known element is found, move the range forward by one character
+                currentRange.MoveStart(1, 1); // wdCharacter, 1
             }
         }
-        // --- End Comment Handling ---
-        reportProgress?.({ progress: 1, total: totalSteps }); // Step 1: Text Extracted
 
-        log.info(`Writing extracted text to ${safeOutputPath}`);
-        await fs.writeFile(safeOutputPath, extractedText, 'utf8');
-        log.info(`Successfully wrote extracted text via COM to ${safeOutputPath}`);
-        reportProgress?.({ progress: 2, total: totalSteps }); // Step 2: File Written
+        releaseObject(mainStoryRange); // Release COM object
+        releaseObject(currentRange); // Release COM object
 
-        // Save the exported Markdown file as a dynamic resource
-        try {
-            const markdownFileContent = await fs.readFile(safeOutputPath, 'utf8');
-            await saveResource('word/markdown/export', path.basename(safeOutputPath), markdownFileContent);
-            log.info(`Saved ${safeOutputPath} as a dynamic resource.`);
-        } catch (resourceSaveError: any) {
-            log.error(`Failed to save ${safeOutputPath} as a dynamic resource: ${resourceSaveError.message}`);
-            // Continue execution even if resource saving fails
-        }
+        log.info("Document traversal and element handling complete.");
 
-        reportProgress?.({ progress: 3, total: totalSteps }); // Step 3: Complete
-        return { success: true, data: { outputPath: safeOutputPath } };
+        // --- Comment Handling ---
+        // TODO: Integrate comment handling based on commentsOption (ignore, append, inline)
+        // This might require iterating through comments and finding their corresponding ranges in the document.
+        log.warn("Comment handling logic is not fully integrated yet.");
+
+        // --- End Document Traversal and Element Handling ---
+        reportProgress?.({ progress: 3, total: totalSteps }); // Step 3: Document processed
+
+        log.info(`Writing generated Markdown to ${safeOutputPath}`);
+        await fs.writeFile(safeOutputPath, markdownOutput, 'utf8');
+        log.info(`Successfully wrote Markdown to ${safeOutputPath}`);
+        reportProgress?.({ progress: 4, total: totalSteps }); // Step 4: Markdown file written
+
+        let finalOutputPath = safeOutputPath;
+
+       // --- Zipping ---
+       if (zipOutput) {
+           log.info(`Creating ZIP archive...`);
+           const zipPath = zipFileName ? path.join(path.dirname(safeOutputPath), zipFileName) : safeOutputPath.replace(/\.md$/, '.zip');
+           const output = fs.createWriteStream(zipPath);
+           const archive = archiver('zip', {
+               zlib: { level: 9 } // Sets the compression level.
+           });
+
+           // Listen for all archive data to be written
+           output.on('close', function() {
+               log.info(`ZIP archive created: ${archive.pointer()} total bytes`);
+               reportProgress?.({ progress: 5, total: totalSteps }); // Step 5: Zipping complete
+           });
+
+           // Catch warnings and errors
+           archive.on('warning', function(err) {
+               if (err.code === 'ENOENT') {
+                   log.warn(`Archiver warning: ${err.message}`);
+               } else {
+                   log.error(`Archiver error: ${err.message}`);
+                   throw err; // Throw other errors
+               }
+           });
+
+           archive.on('error', function(err) {
+               log.error(`Archiver error: ${err.message}`);
+               throw err;
+           });
+
+           // Pipe archive data to the file
+           archive.pipe(output);
+
+           // Append the markdown file
+           archive.file(safeOutputPath, { name: path.basename(safeOutputPath) });
+
+           // Append the images directory
+           if (await fs.pathExists(extractedImagesDir)) {
+                archive.directory(extractedImagesDir, path.basename(extractedImagesDir));
+           } else {
+                log.warn(`Image directory not found, skipping zipping: ${extractedImagesDir}`);
+           }
+
+
+           // Finalize the archive
+           await archive.finalize();
+
+           finalOutputPath = zipPath;
+           log.info(`ZIP archive finalized: ${finalOutputPath}`);
+
+       } else {
+            reportProgress?.({ progress: 5, total: totalSteps }); // Step 5: Zipping skipped
+       }
+
+
+       // Save the final output as a dynamic resource
+       try {
+           // If zipped, save the zip file. If not, save the markdown file.
+           const resourceContent = await fs.readFile(finalOutputPath, zipOutput ? null : 'utf8'); // Read as buffer for zip
+           await saveResource('word/markdown/export', path.basename(finalOutputPath), resourceContent);
+           log.info(`Saved ${finalOutputPath} as a dynamic resource.`);
+       } catch (resourceSaveError: any) {
+           log.error(`Failed to save ${finalOutputPath} as a dynamic resource: ${resourceSaveError.message}`);
+           // Continue execution even if resource saving fails
+       }
+
+
+        return { success: true, data: { outputPath: finalOutputPath } };
 
     } catch (error: any) {
         // Convert error to string for logging

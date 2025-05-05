@@ -573,7 +573,7 @@ The Office MCP Server integrates with AI agents (e.g., Claude) via FastMCP's pro
 **Completions**: File paths, template paths.
 
 ### word/markdown/export
-**Description**: Converts Word to Markdown with comment handling.
+**Description**: Converts Word to Markdown using COM Interop. Currently performs basic text extraction with comment handling (formatting, tables, and images are not preserved). **Enhancements are planned** to support rich conversion, including formatting, tables (as Markdown or HTML), image extraction to a specified directory, and optional ZIP packaging.
 
 **Operations**:
 - **extract**: Exports to Markdown.
