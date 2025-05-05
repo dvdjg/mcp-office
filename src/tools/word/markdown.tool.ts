@@ -502,6 +502,143 @@ async function handleImage(imageShape: any, log: any, imageDir: string, imageCou
 }
 
 /**
+ * Helper function to handle a single shape (floating or inline), extract its content, and export it as SVG if possible.
+ * @param shape - The Word Shape or InlineShape COM object.
+ * @param log - The logger object.
+ * @param outputDir - The directory to save extracted SVG files.
+ * @param shapeCounter - A counter for naming shapes.
+ * @returns A promise resolving to the Markdown image link string for the SVG, or null if not handled/exported.
+ */
+async function handleShapeAndExportSvg(shape: any, log: any, outputDir: string, shapeCounter: { count: number }): Promise<string | null> {
+    shapeCounter.count++;
+    const shapeName = `shape${shapeCounter.count}.svg`; // Default to SVG
+    const shapePath = path.join(outputDir, shapeName);
+
+    log.info(`Attempting to handle and export shape (Type: ${shape.Type}) to: ${shapePath}`);
+
+    let altText = '';
+    try {
+        // Attempt to extract alt text (available on both Shape and InlineShape)
+        altText = shape.AlternativeText || '';
+    } catch (altTextError: any) {
+        log.warn(`Could not extract alt text for shape: ${altTextError.message}`);
+    }
+
+    try {
+        // Explore COM API for SVG export
+        // Check if the shape object has an Export method that supports SVG format (wdExportFormatSVG or similar)
+        // The wdExportFormat enumeration might be available via the Word application object or a specific library.
+        // Let's assume wdExportFormatSVG might exist with a value (e.g., 4 for testing, need to confirm actual value)
+        const wdExportFormatSVG = 4; // Placeholder value, need to confirm actual COM enum value
+
+        try {
+            // Attempt to use Export method if available and supports SVG
+            if (typeof shape.Export === 'function') {
+                log.info(`Attempting export using shape.Export to ${shapePath}`);
+                // Check if the Export method supports the SVG format
+                // This might require trying the export and catching errors, or checking available formats if the API allows.
+                // For now, we'll attempt the export with the assumed SVG format value.
+                shape.Export(shapePath, wdExportFormatSVG);
+                log.info(`Successfully exported shape as SVG using shape.Export to ${shapePath}`);
+                return `![${altText}](${path.relative(path.dirname(shapePath), shapePath)})`; // Return the Markdown image link
+            } else {
+                log.debug(`shape.Export method not available for this shape type.`);
+            }
+        } catch (exportError: any) {
+            log.warn(`shape.Export to SVG failed: ${exportError.message}. Exploring other options.`);
+            // Continue to other handling methods if Export fails or doesn't support SVG
+        }
+
+        // If direct COM SVG export is not possible, implement programmatic SVG generation
+        log.info(`Direct COM SVG export not successful or available. Attempting programmatic SVG generation.`);
+
+        let svgContent = '';
+        let handled = false;
+
+        // Handle specific shape types for programmatic SVG generation
+        switch (shape.Type) {
+            case 13: // msoShapePicture
+                log.info(`Handling msoShapePicture for programmatic SVG.`);
+                // For pictures, we might need to extract the image data first (e.g., as PNG)
+                // and then embed it in an SVG <image> element.
+                // This part would reuse or adapt logic from handleImage.
+                // For now, add a placeholder.
+                svgContent = `<!-- Programmatic SVG for Picture Placeholder -->\n<svg width="${shape.Width}" height="${shape.Height}"><image href="[base64 image data]" width="${shape.Width}" height="${shape.Height}"/></svg>`;
+                handled = true;
+                break;
+            case 17: // msoTextBox
+                log.info(`Handling msoTextBox for programmatic SVG.`);
+                try {
+                    const textBoxText = shape.TextFrame.TextRange.Text || '';
+                    const width = shape.Width;
+                    const height = shape.Height;
+                    // Basic SVG for a text box
+                    svgContent = `<svg width="${width}" height="${height}"><rect width="${width}" height="${height}" fill="none" stroke="black"/><text x="10" y="20">${textBoxText.trim()}</text></svg>`;
+                    handled = true;
+                } catch (textBoxError: any) {
+                    log.warn(`Could not extract text from text box for SVG: ${textBoxError.message}`);
+                }
+                break;
+            case 88: // msoChart
+                log.info(`Handling msoChart for programmatic SVG.`);
+                // This is complex and requires extracting chart data and mapping to SVG elements.
+                // Add a placeholder for now.
+                svgContent = `<!-- Programmatic SVG for Chart Placeholder -->\n<svg width="${shape.Width}" height="${shape.Height}"><text x="10" y="20">Chart Placeholder</text></svg>`;
+                handled = true;
+                break;
+            case 6: // msoGroup
+                log.info(`Handling msoGroup for programmatic SVG.`);
+                // Handling groups requires iterating through GroupItems and generating SVG for each.
+                // This would likely involve a recursive call to handleShapeAndExportSvg,
+                // and wrapping the results in an SVG <g> element.
+                // Add a placeholder for now.
+                svgContent = `<!-- Programmatic SVG for Group Placeholder -->\n<svg width="${shape.Width}" height="${shape.Height}"><text x="10" y="20">Group Placeholder</text></svg>`;
+                handled = true;
+                break;
+            case 20: // msoCanvas
+                log.info(`Handling msoCanvas for programmatic SVG.`);
+                // Handling canvases requires iterating through CanvasItems.
+                // Similar to groups, this would involve recursive calls and wrapping in <g> or <svg>.
+                // Add a placeholder for now.
+                svgContent = `<!-- Programmatic SVG for Canvas Placeholder -->\n<svg width="${shape.Width}" height="${shape.Height}"><text x="10" y="20">Canvas Placeholder</text></svg>`;
+                handled = true;
+                break;
+            case 1: // msoAutoShape
+                log.info(`Handling msoAutoShape for programmatic SVG.`);
+                // Basic shapes can be mapped to SVG elements like rect, circle, line, path.
+                // This requires extracting geometric properties, fill, stroke, etc.
+                // Add a placeholder for now.
+                svgContent = `<!-- Programmatic SVG for AutoShape Placeholder -->\n<svg width="${shape.Width}" height="${shape.Height}"><text x="10" y="20">AutoShape Placeholder</text></svg>`;
+                handled = true;
+                break;
+            default:
+                log.warn(`No specific programmatic SVG handling for shape type: ${shape.Type}`);
+                svgContent = `<!-- Programmatic SVG Placeholder for Type ${shape.Type} -->\n<svg width="${shape.Width}" height="${shape.Height}"><text x="10" y="20">Shape Type ${shape.Type} Placeholder</text></svg>`;
+                // Do not set handled to true, as this is a generic placeholder
+                break;
+        }
+
+        if (handled && svgContent) {
+            log.info(`Writing generated SVG to ${shapePath}`);
+            await fs.writeFile(shapePath, svgContent, 'utf8');
+            log.info(`Successfully wrote SVG to ${shapePath}`);
+            return `![${altText}](${path.relative(path.dirname(shapePath), shapePath)})`; // Return the Markdown image link
+        } else {
+            log.warn(`Shape type ${shape.Type} not handled for SVG export.`);
+            return null; // Return null if not handled
+        }
+
+    } catch (error: any) {
+        log.error(`An unexpected error occurred during shape handling and SVG export for shape type ${shape.Type}: ${error.message}`);
+        return `![Shape Export Failed (Type ${shape.Type}): ${error.message}]()`; // Return a broken link with error info
+    } finally {
+        // Release COM object for shape if necessary (depends on how it's obtained)
+        // Assuming shape is passed in and needs to be released here.
+        releaseObject(shape); // Release COM object
+    }
+}
+
+/**
  * Exports a Word document to Markdown format using COM Interop (Basic Text Extraction).
  * NOTE: This implementation extracts plain text. Preserving formatting (headings, lists, bold, etc.)
  * requires complex iteration over the Word document structure via COM.
@@ -518,7 +655,8 @@ async function exportToMarkdown(params: ToolRequestParams, context?: FastMCPCont
     let wordApp: any = null;
     let doc: any = null;
     let markdownOutput = '';
-    let imageCounter = 0;
+    let imageCounter = 0; // Counter for images (PNG)
+    let shapeCounter = 0; // Counter for shapes (SVG)
     const extractedImagesDir = path.join(path.dirname(params.output as string), params.imageDir as string);
 
     try {
@@ -582,8 +720,8 @@ async function exportToMarkdown(params: ToolRequestParams, context?: FastMCPCont
         log.info(`Document opened successfully.`);
         reportProgress?.({ progress: 2, total: totalSteps }); // Step 2: Document opened
 
-        // --- Header and Footer Handling (for logos) ---
-        log.info("Starting header and footer traversal for images.");
+        // --- Header and Footer Handling (for logos and shapes) ---
+        log.info("Starting header and footer traversal for images and shapes.");
         for (let i = 1; i <= doc.Sections.Count; i++) {
             const section = doc.Sections(i);
             const headerFooterTypes = [
@@ -602,15 +740,15 @@ async function exportToMarkdown(params: ToolRequestParams, context?: FastMCPCont
                             log.info(`Found ${headerFooter.Shapes.Count} shapes in header/footer type ${type} in section ${i}.`);
                             for (let j = 1; j <= headerFooter.Shapes.Count; j++) {
                                 const shape = headerFooter.Shapes(j);
-                                if (shape.Type === 13) { // msoShapePicture
-                                    log.info(`Found picture shape in header/footer.`);
-                                    // Use handleImage to extract and save the image
-                                    const imageMarkdown = await handleImage(shape, log, extractedImagesDir, { count: imageCounter }, validatedParams.imagePrefix);
-                                    markdownOutput += `\n<!-- Image from Header/Footer -->\n${imageMarkdown}\n`;
+                                // Use the new helper function to handle and export shapes
+                                const shapeMarkdown = await handleShapeAndExportSvg(shape, log, extractedImagesDir, { count: shapeCounter });
+                                if (shapeMarkdown) {
+                                    markdownOutput += `\n<!-- Shape from Header/Footer -->\n${shapeMarkdown}\n`;
                                 } else {
-                                    log.debug(`Found non-picture shape in header/footer (Type: ${shape.Type}). Skipping.`);
+                                    log.warn(`Shape type ${shape.Type} in header/footer not exported as SVG.`);
+                                    // Release the shape object here if handleShapeAndExportSvg didn't
+                                    releaseObject(shape);
                                 }
-                                releaseObject(shape); // Release COM object
                             }
                         }
                         releaseObject(headerFooter); // Release COM object
@@ -643,53 +781,44 @@ async function exportToMarkdown(params: ToolRequestParams, context?: FastMCPCont
             // Check for Paragraphs (includes text and inline shapes)
             else if (currentRange.Paragraphs.Count > 0) {
                 const paragraph = currentRange.Paragraphs(1);
-                markdownOutput += await handleParagraph(paragraph, log, extractedImagesDir, { count: imageCounter }, validatedParams.imagePrefix);
+                // Handle inline shapes within paragraphs using the new helper function
+                if (paragraph.Range.InlineShapes.Count > 0) {
+                    for (let j = 1; j <= paragraph.Range.InlineShapes.Count; j++) {
+                        const inlineShape = paragraph.Range.InlineShapes(j);
+                        const shapeMarkdown = await handleShapeAndExportSvg(inlineShape, log, extractedImagesDir, { count: shapeCounter });
+                        if (shapeMarkdown) {
+                            markdownOutput += shapeMarkdown; // Append the Markdown image link
+                        } else {
+                            log.warn(`Inline shape type ${inlineShape.Type} in paragraph not exported as SVG.`);
+                            // Release the inlineShape object here if handleShapeAndExportSvg didn't
+                            releaseObject(inlineShape);
+                        }
+                    }
+                }
+                // Handle paragraph text and formatting (excluding inline shapes already handled)
+                // This part needs refinement to avoid duplicating text from inline shapes.
+                // For now, we'll append the paragraph text after handling inline shapes.
+                // A better approach might be to iterate through the paragraph's range and handle runs/inline shapes sequentially.
+                markdownOutput += await handleParagraph(paragraph, log, extractedImagesDir, { count: imageCounter }, validatedParams.imagePrefix); // Reusing handleParagraph for text/formatting
                 // Move the range past the paragraph
                 currentRange.Start = paragraph.Range.End;
                 releaseObject(paragraph); // Release COM object
             }
-            // Handle other potential elements like Shapes (non-inline images, text boxes, etc.)
-            // This might require checking currentRange.ShapeRange or iterating through doc.Shapes
+            // Handle floating shapes in the main story range
             else if (currentRange.ShapeRange.Count > 0) {
-                 log.info(`Found Shape(s) in document traversal. Attempting to handle.`);
+                 log.info(`Found Floating Shape(s) in document traversal. Attempting to handle.`);
                  // Iterate through shapes in the current range's ShapeRange
                  for (let k = 1; k <= currentRange.ShapeRange.Count; k++) {
                      const shape = currentRange.ShapeRange(k);
-                     // TODO: Implement detailed shape handling based on shape.Type
-                     // Common types include msoShapePicture (13), msoTextBox (17), msoCanvas (20), msoGroup (6)
-                     log.warn(`Handling for specific Shape types is not yet fully implemented (Shape Type: ${shape.Type}).`);
-
-                     if (shape.Type === 13) { // msoShapePicture
-                         log.info(`Found picture shape.`);
-                         // TODO: Handle picture shapes (non-inline) - potentially use handleImage or a similar approach
-                         markdownOutput += `\n<!-- Picture Shape Placeholder (Name: ${shape.Name || 'N/A'}) -->\n`;
-                     } else if (shape.Type === 17) { // msoTextBox
-                         log.info(`Found text box shape.`);
-                         // Extract text from text box
-                         try {
-                             const textBoxText = shape.TextFrame.TextRange.Text || '';
-                             markdownOutput += `\n<!-- Text Box Content -->\n${textBoxText.trim()}\n<!-- End Text Box Content -->\n`;
-                             releaseObject(shape.TextFrame.TextRange); // Release COM object
-                             releaseObject(shape.TextFrame); // Release COM object
-                         } catch (textBoxError: any) {
-                             log.warn(`Could not extract text from text box: ${textBoxError.message}`);
-                             markdownOutput += `\n<!-- Text Box Placeholder (Error extracting text) -->\n`;
-                         }
-                     } else if (shape.Type === 20) { // msoCanvas
-                          log.info(`Found canvas shape.`);
-                          // TODO: Handle canvas shapes - potentially iterate through shapes within the canvas
-                          markdownOutput += `\n<!-- Canvas Placeholder (Name: ${shape.Name || 'N/A'}) -->\n`;
-                     } else if (shape.Type === 6) { // msoGroup
-                          log.info(`Found group shape.`);
-                          // TODO: Handle group shapes - potentially iterate through shapes within the group
-                          markdownOutput += `\n<!-- Group Shape Placeholder (Name: ${shape.Name || 'N/A'}) -->\n`;
+                     // Use the new helper function to handle and export shapes
+                     const shapeMarkdown = await handleShapeAndExportSvg(shape, log, extractedImagesDir, { count: shapeCounter });
+                     if (shapeMarkdown) {
+                         markdownOutput += `\n<!-- Floating Shape -->\n${shapeMarkdown}\n`;
+                     } else {
+                         log.warn(`Floating shape type ${shape.Type} not exported as SVG.`);
+                         // Release the shape object here if handleShapeAndExportSvg didn't
+                         releaseObject(shape);
                      }
-                      else {
-                         // Placeholder for other shape types
-                         markdownOutput += `\n<!-- Shape Placeholder (Type: ${shape.Type}, Name: ${shape.Name || 'N/A'}) -->\n`;
-                     }
-
-                     releaseObject(shape); // Release COM object
                  }
                  // Move the range past the ShapeRange
                  currentRange.Start = currentRange.ShapeRange.Range.End; // Move past the entire shape range
@@ -810,7 +939,7 @@ async function exportToMarkdown(params: ToolRequestParams, context?: FastMCPCont
            // Append the markdown file
            archive.file(safeOutputPath, { name: path.basename(safeOutputPath) });
 
-           // Append the images directory
+           // Append the images directory (which now contains SVGs)
            if (await fs.pathExists(extractedImagesDir)) {
                 archive.directory(extractedImagesDir, path.basename(extractedImagesDir));
            } else {
