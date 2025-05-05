@@ -109,23 +109,169 @@ async function handleParagraph(paragraph: any, log: any, imageDir: string, image
     // Remove trailing newline/carriage return from paragraph text
     paragraphText = paragraphText.replace(/\r?\n?$/, '');
 
-    // TODO: Implement formatting detection (bold, italic, strikethrough, etc.)
-    // TODO: Implement list detection (bullet points, numbered lists)
-    // TODO: Implement heading detection (based on style or outline level)
+    // Implement formatting detection (bold, italic, strikethrough, etc.)
+    // Iterate through runs to preserve formatting within the paragraph
+    if (paragraph.Range.Runs.Count > 0) {
+        for (let i = 1; i <= paragraph.Range.Runs.Count; i++) {
+            const run = paragraph.Range.Runs(i);
+            let runText = run.Text || '';
 
-    // Handle inline shapes (potential images) within the paragraph's range
-    if (paragraph.Range.InlineShapes.Count > 0) {
-        for (let i = 1; i <= paragraph.Range.InlineShapes.Count; i++) {
-            const inlineShape = paragraph.Range.InlineShapes(i);
-            // TODO: Check if the inlineShape is a picture and handle it using handleImage
-            // Replace the placeholder text in paragraphText with the image markdown link
-            // Example: paragraphText = paragraphText.replace('[image placeholder]', handleImage(inlineShape, imageDir, imageCounter, imagePrefix));
-            releaseObject(inlineShape); // Release COM object
+            // Remove trailing newline/carriage return from run text if it's the last run
+            if (i === paragraph.Range.Runs.Count) {
+                 runText = runText.replace(/\r?\n?$/, '');
+            }
+
+
+            // Apply Markdown formatting based on run properties
+            if (run.Font.Bold) {
+                runText = `**${runText}**`;
+            }
+            if (run.Font.Italic) {
+                runText = `*${runText}*`;
+            }
+            if (run.Font.StrikeThrough) {
+                runText = `~~${runText}~~`;
+            }
+
+            // TODO: Implement list detection (bullet points, numbered lists) - This might need to be handled at the paragraph level based on ListFormat
+            // TODO: Implement heading detection (based on style or outline level) - This should be handled at the paragraph level based on Style
+
+            // Handle inline shapes (potential images) within the run's range
+            if (run.InlineShapes.Count > 0) {
+                for (let j = 1; j <= run.InlineShapes.Count; j++) {
+                    const inlineShape = run.InlineShapes(j);
+                    // Check if the inlineShape is a picture (wdInlineShapePicture = 3)
+                    if (inlineShape.Type === 3) { // wdInlineShapePicture
+                        log.info(`Found inline picture shape.`);
+                        const imageMarkdown = await handleImage(inlineShape, log, imageDir, imageCounter, imagePrefix);
+                        markdown += imageMarkdown; // Append the Markdown image link
+                    } else {
+                        // Handle other types of inline shapes if necessary, or add a placeholder
+                        log.warn(`Found non-picture inline shape (Type: ${inlineShape.Type}). Handling not implemented.`);
+                        markdown += `[Inline Shape Placeholder (Type: ${inlineShape.Type})]`;
+                    }
+                    releaseObject(inlineShape); // Release COM object
+                }
+            }
+
+            markdown += runText;
+            releaseObject(run); // Release COM object
         }
+    } else {
+        // If no runs, just append the paragraph text (shouldn't happen often for non-empty paragraphs)
+        markdown += paragraphText;
     }
 
-    // Append the processed text (with image links)
-    markdown += paragraphText;
+
+    // TODO: Implement list detection (bullet points, numbered lists) - This will likely involve checking paragraph.ListFormat
+    // TODO: Implement heading detection (based on style or outline level) - This will likely involve checking paragraph.Style.NameLocal or paragraph.OutlineLevel
+
+    // Add a newline after the paragraph, unless it's the last paragraph in the document or part of a list/heading handled separately
+    // This basic approach might need refinement when lists and headings are implemented.
+    // Implement heading detection (based on style or outline level)
+    let headingPrefix = '';
+    const styleName = paragraph.Style.NameLocal;
+    const outlineLevel = paragraph.OutlineLevel; // wdOutlineLevel enumeration
+
+    if (styleName) {
+        if (styleName.includes('Heading 1')) {
+            headingPrefix = '# ';
+        } else if (styleName.includes('Heading 2')) {
+            headingPrefix = '## ';
+        } else if (styleName.includes('Heading 3')) {
+            headingPrefix = '### ';
+        } else if (styleName.includes('Heading 4')) {
+            headingPrefix = '#### ';
+        } else if (styleName.includes('Heading 5')) {
+            headingPrefix = '##### ';
+        } else if (styleName.includes('Heading 6')) {
+            headingPrefix = '###### ';
+        }
+    } else if (outlineLevel >= 1 && outlineLevel <= 9) { // wdOutlineLevel 1 to 9 correspond to heading levels
+         // Use outline level as a fallback if no standard heading style is applied
+         headingPrefix = '#'.repeat(outlineLevel) + ' ';
+    }
+
+    // Append the heading prefix if it's a heading
+    markdown += headingPrefix;
+
+    // Implement formatting detection (bold, italic, strikethrough, etc.)
+    // Iterate through runs to preserve formatting within the paragraph
+    if (paragraph.Range.Runs.Count > 0) {
+        for (let i = 1; i <= paragraph.Range.Runs.Count; i++) {
+            const run = paragraph.Range.Runs(i);
+            let runText = run.Text || '';
+
+            // Remove trailing newline/carriage return from run text if it's the last run
+            if (i === paragraph.Range.Runs.Count) {
+                 runText = runText.replace(/\r?\n?$/, '');
+            }
+
+
+            // Apply Markdown formatting based on run properties
+            if (run.Font.Bold) {
+                runText = `**${runText}**`;
+            }
+            if (run.Font.Italic) {
+                runText = `*${runText}*`;
+            }
+            if (run.Font.StrikeThrough) {
+                runText = `~~${runText}~~`;
+            }
+
+            // Implement list detection (bullet points, numbered lists)
+            let listPrefix = '';
+            if (paragraph.ListFormat.ListType !== 0) { // wdListNoNumbering = 0
+                try {
+                    const listType = paragraph.ListFormat.ListType;
+                    const listLevel = paragraph.ListFormat.ListLevelNumber;
+                    const indentation = '  '.repeat(listLevel - 1); // 2 spaces per level for indentation
+
+                    if (listType === 1) { // wdListBullet
+                        listPrefix = `${indentation}* `; // Bullet point with indentation
+                    } else if (listType === 2 || listType === 4) { // wdListNumbering or wdListOutlineNumbering
+                         // Use the actual list string for numbering, but add indentation
+                         const listString = paragraph.ListFormat.ListString.trim();
+                         listPrefix = `${indentation}${listString} `;
+                    }
+                    // TODO: Refine list prefix generation for better Markdown compatibility and indentation (e.g. handling different numbering styles a, i, etc.)
+
+                } catch (listError: any) {
+                    log.warn(`Error detecting list format: ${listError.message}`);
+                    listPrefix = '- '; // Fallback to a simple bullet point on error
+                }
+            }
+
+            // Append the list prefix if it's a list item
+            markdown += listPrefix;
+
+            // Handle inline shapes (potential images) within the run's range
+            if (run.InlineShapes.Count > 0) {
+                for (let j = 1; j <= run.InlineShapes.Count; j++) {
+                    const inlineShape = run.InlineShapes(j);
+                    // TODO: Check if the inlineShape is a picture and handle it using handleImage
+                    // For now, just add a placeholder or basic handling
+                    log.warn(`Found inline shape in run. Image handling not fully implemented.`);
+                    runText += `[Inline Shape Placeholder]`; // Add a placeholder for now
+                    releaseObject(inlineShape); // Release COM object
+                }
+            }
+
+            markdown += runText;
+            releaseObject(run); // Release COM object
+        }
+    } else {
+        // If no runs, just append the paragraph text (shouldn't happen often for non-empty paragraphs)
+        markdown += paragraphText;
+    }
+
+
+    // TODO: Implement list detection (bullet points, numbered lists) - This will likely involve checking paragraph.ListFormat
+
+    // Add a newline after the paragraph, unless it's the last paragraph in the document or part of a list/heading handled separately
+    // This basic approach might need refinement when lists and headings are implemented.
+    markdown += '\n';
+
 
     return markdown;
 }
@@ -145,16 +291,105 @@ async function handleParagraph(paragraph: any, log: any, imageDir: string, image
  */
 async function handleTable(table: any, log: any, format: 'markdown' | 'html'): Promise<string> {
     let tableOutput = '';
+    let isSimpleTable = true; // Declare isSimpleTable here
+
+    // Check if it's a simple table (no merged cells) before attempting Markdown
+    // A table is simple if no cell is part of a merged range.
+    try {
+        isSimpleTable = true; // Assume simple initially
+        for (let i = 1; i <= table.Rows.Count; i++) {
+            for (let j = 1; j <= table.Columns.Count; j++) {
+                const cell = table.Cell(i, j);
+                // Check if the cell is part of a horizontally or vertically merged range
+                if (cell.MergeInfo.IsMerged || cell.MergeInfo.IsVerticalMerged) {
+                    isSimpleTable = false;
+                    releaseObject(cell); // Release COM object
+                    throw new Error("Merged cell found"); // Exit loops early
+                }
+                releaseObject(cell); // Release COM object
+            }
+        }
+    } catch (checkError: any) {
+         if (checkError.message !== "Merged cell found") {
+            log.warn(`Error checking table for merged cells: ${checkError.message}. Assuming complex.`);
+         }
+         isSimpleTable = false;
+    }
 
     if (format === 'markdown') {
-        // TODO: Implement basic Markdown table conversion (without merged cells)
-        log.warn("Basic Markdown table conversion is not yet implemented.");
-        tableOutput += '\n<!-- TODO: Implement basic Markdown table conversion -->\n';
+        // Implement basic Markdown table conversion (without merged cells)
+        log.info("Attempting basic Markdown table conversion.");
+        if (isSimpleTable) {
+            // Header row
+            tableOutput += '| ';
+            for (let j = 1; j <= table.Columns.Count; j++) {
+                tableOutput += (table.Cell(1, j).Range.Text || '').replace(/[\r\n]/g, '').trim() + ' |';
+            }
+            tableOutput += '\n';
+
+            // Separator line
+            tableOutput += '|';
+            for (let j = 1; j <= table.Columns.Count; j++) {
+                tableOutput += '---|';
+            }
+            tableOutput += '\n';
+
+            // Data rows
+            for (let i = 2; i <= table.Rows.Count; i++) {
+                tableOutput += '| ';
+                for (let j = 1; j <= table.Columns.Count; j++) {
+                    tableOutput += (table.Cell(i, j).Range.Text || '').replace(/[\r\n]/g, '').trim() + ' |';
+                }
+                tableOutput += '\n';
+            }
+        } else {
+             log.warn("Table is not simple (likely has merged cells). Cannot convert to basic Markdown.");
+             tableOutput += '\n<!-- Table has merged cells or is complex, basic Markdown conversion skipped -->\n';
+             tableOutput += '\n<!-- Please use tableFormat: "html" for this table -->\n';
+        }
     } else if (format === 'html') {
-        // TODO: Implement HTML table conversion (handling merged cells)
-        log.warn("HTML table conversion is not yet implemented.");
-        tableOutput += '\n<!-- TODO: Implement HTML table conversion -->\n';
+        // Implement HTML table conversion (handling merged cells)
+        log.info("Attempting HTML table conversion.");
+        tableOutput += '<table>\n';
+
+        for (let i = 1; i <= table.Rows.Count; i++) {
+            tableOutput += '  <tr>\n';
+            for (let j = 1; j <= table.Columns.Count; j++) {
+                const cell = table.Cell(i, j);
+                // Check if this cell is part of a merged range and is NOT the top-left cell of that range.
+                // If it's not the top-left cell, we skip it as it will be covered by the colspan/rowspan of the starting cell.
+                if (cell.MergeInfo.IsMerged && (!cell.MergeInfo.IsFirst || !cell.MergeInfo.IsVerticalMerged)) {
+                    releaseObject(cell); // Release COM object for the skipped cell
+                    continue; // Skip this cell
+                }
+
+                let cellContent = (cell.Range.Text || '').replace(/[\r\n]/g, '').trim();
+                let tdAttributes = '';
+
+                // If the cell is the start of a merged range, calculate colspan and rowspan
+                if (cell.MergeInfo.IsMerged && cell.MergeInfo.IsFirst) {
+                    const columnSpan = cell.MergeInfo.ColumnSpan;
+                    const rowSpan = cell.MergeInfo.RowSpan;
+                    if (columnSpan > 1) {
+                        tdAttributes += ` colspan="${columnSpan}"`;
+                    }
+                    if (rowSpan > 1) {
+                        tdAttributes += ` rowspan="${rowSpan}"`;
+                    }
+                    log.debug(`Detected merged cell at (${i}, ${j}) with colspan=${columnSpan}, rowspan=${rowSpan}`);
+                }
+
+
+                tableOutput += `    <td${tdAttributes}>${cellContent}</td>\n`;
+                releaseObject(cell); // Release COM object
+            }
+            tableOutput += '  </tr>\n';
+        }
+
+        tableOutput += '</table>\n';
+        log.info("HTML table conversion attempted.");
     }
+
 
     // Add a newline after the table
     tableOutput += '\n';
@@ -179,29 +414,90 @@ async function handleImage(imageShape: any, log: any, imageDir: string, imageCou
     log.info(`Attempting to extract image to: ${imagePath}`);
 
     try {
-        // TODO: Implement image extraction logic using COM (CopyAsPicture or OLEFormat.Object.SaveAs)
+        // Implement image extraction logic using COM (CopyAsPicture or OLEFormat.Object.SaveAs)
         // This is a complex part and requires careful COM interaction and testing.
-        log.warn("Image extraction logic is not yet implemented.");
-        // Placeholder for extraction:
-        // imageShape.Select();
-        // wordApp.Selection.CopyAsPicture(); // Requires access to wordApp, might need to pass it
-        // Paste from clipboard and save to imagePath
 
-        // Placeholder for success:
-        log.info(`Successfully extracted placeholder image to ${imagePath}`);
+        let altText = '';
+        try {
+            // Attempt to extract alt text
+            altText = imageShape.AlternativeText || '';
+        } catch (altTextError: any) {
+            log.warn(`Could not extract alt text for image: ${altTextError.message}`);
+        }
 
-        // TODO: Extract alt text from imageShape if available
 
-        const altText = imageShape.AlternativeText || ''; // Placeholder for alt text extraction
+        // Prioritize OLEFormat.Object.SaveAs if available
+        if (imageShape.OLEFormat && imageShape.OLEFormat.Object && typeof imageShape.OLEFormat.Object.SaveAs === 'function') {
+            try {
+                log.info(`Attempting extraction using OLEFormat.Object.SaveAs to ${imagePath}`);
+                imageShape.OLEFormat.Object.SaveAs(imagePath);
+                log.info(`Successfully extracted image using OLEFormat.Object.SaveAs to ${imagePath}`);
+                // Return the Markdown image link
+                return `![${altText}](${path.relative(path.dirname(imagePath), imagePath)})`; // Use relative path for link
 
-        // Return the Markdown image link
-        return `![${altText}](${path.relative(path.dirname(imagePath), imagePath)})`; // Use relative path for link
+            } catch (oleSaveError: any) {
+                log.warn(`OLEFormat.Object.SaveAs failed: ${oleSaveError.message}. Falling back or logging.`);
+                // Fallback to other methods or log failure
+                // TODO: Implement CopyAsPicture fallback if OLEFormat.Object.SaveAs fails or is not available
+                log.error(`Image extraction failed for ${imageName} using OLEFormat.Object.SaveAs. CopyAsPicture fallback not yet implemented.`);
+                return `![Image Extraction Failed (OLE Save): ${oleSaveError.message}]()`; // Return a broken link with error info
+            }
+        } else {
+             log.warn(`OLEFormat.Object.SaveAs not available for image ${imageName}. Attempting CopyAsPicture fallback.`);
+             try {
+                 // Attempt CopyAsPicture fallback
+                 imageShape.Select(); // Select the shape to copy it
+                 imageShape.CopyAsPicture(); // Copy the shape as a picture to the clipboard
+
+                 // Create a temporary chart or document to paste into
+                 // Using a temporary document might be more reliable
+                 let tempDoc: any = null;
+                 try {
+                     tempDoc = imageShape.Application.Documents.Add(); // Use the same Word application instance
+                     tempDoc.Content.Paste(); // Paste the picture from the clipboard
+
+                     // Save the pasted picture as a file
+                     // Assuming the pasted item is the first inline shape in the temp doc
+                     if (tempDoc.InlineShapes.Count > 0) {
+                         const pastedShape = tempDoc.InlineShapes(1);
+                         // Use Export method for InlineShape
+                         pastedShape.Export(imagePath, 1); // wdExportFormatPNG = 1
+                         log.info(`Successfully extracted image using CopyAsPicture fallback to ${imagePath}`);
+                         releaseObject(pastedShape); // Release COM object
+                          // Return the Markdown image link
+                         return `![${altText}](${path.relative(path.dirname(imagePath), imagePath)})`; // Use relative path for link
+                     } else {
+                         log.error(`CopyAsPicture fallback failed: No inline shape found after pasting.`);
+                         return `![Image Extraction Failed (CopyAsPicture Paste Failed)]()`; // Return a broken link
+                     }
+                 } finally {
+                     // Close the temporary document without saving
+                     if (tempDoc) {
+                         try {
+                             tempDoc.Close(false);
+                             log.debug("Closed temporary document for CopyAsPicture.");
+                         } catch (closeError: any) {
+                             log.error(`Error closing temporary document: ${closeError.message}`);
+                         }
+                         releaseObject(tempDoc);
+                     }
+                 }
+             } catch (copyPasteError: any) {
+                 log.error(`CopyAsPicture fallback failed: ${copyPasteError.message}`);
+                 return `![Image Extraction Failed (CopyAsPicture Error): ${copyPasteError.message}]()`; // Return a broken link with error info
+             }
+        }
+
 
     } catch (error: any) {
-        log.error(`Failed to extract image: ${error.message}`);
-        return `![Image Extraction Failed: ${error.message}]()`; // Return a broken link with error info
+        log.error(`An unexpected error occurred during image extraction for ${imageName}: ${error.message}`);
+        return `![Image Extraction Failed (Unexpected Error): ${error.message}]()`; // Return a broken link with error info
     } finally {
-        // TODO: Release COM object for imageShape if necessary (depends on how it's obtained)
+        // Release COM object for imageShape if necessary (depends on how it's obtained)
+        // In handleParagraph, the inlineShape is released after the loop.
+        // If handleImage is called with a Shape object directly, it might need release here.
+        // For now, assuming it's called with an InlineShape from a paragraph run.
+        // TODO: Confirm COM object release strategy for imageShape.
     }
 }
 
@@ -245,6 +541,31 @@ async function exportToMarkdown(params: ToolRequestParams, context?: FastMCPCont
             log.info(`Output will be zipped.`);
         }
 
+        // --- Background Handling ---
+        log.info("Attempting to handle document background.");
+        try {
+            // Investigate document background properties
+            // The background might be a color, a gradient, a texture, or a picture.
+            // Accessing this via COM can be complex and might not be directly supported for image extraction.
+            // Checking the document's background properties might involve:
+            // doc.Background.Fill.Visible
+            // doc.Background.Fill.Type (msoFillPicture, msoFillGradient, etc.)
+            // doc.Background.Fill.Picture.Shape.PictureFormat (if type is msoFillPicture)
+
+            // For now, add a placeholder indicating background handling needs implementation/investigation
+            log.warn("Document background handling is not yet implemented/fully investigated via COM.");
+            markdownOutput += '\n<!-- TODO: Document background extraction not implemented/investigated. -->\n';
+
+            // TODO: Further investigate COM properties for document background and implement extraction if feasible.
+            // If a background image is found and extractable, use handleImage or similar logic.
+
+        } catch (bgError: any) {
+            log.warn(`Error attempting to access document background properties: ${bgError.message}`);
+            markdownOutput += `\n<!-- Document background handling failed: ${bgError.message} -->\n`;
+        }
+        log.info("Document background handling attempt complete.");
+
+
         // Ensure the image directory exists
         await fs.ensureDir(extractedImagesDir);
         log.info(`Ensured image directory exists: ${extractedImagesDir}`);
@@ -261,8 +582,49 @@ async function exportToMarkdown(params: ToolRequestParams, context?: FastMCPCont
         log.info(`Document opened successfully.`);
         reportProgress?.({ progress: 2, total: totalSteps }); // Step 2: Document opened
 
-        // --- Document Traversal and Element Handling ---
-        log.info("Starting document traversal and element handling.");
+        // --- Header and Footer Handling (for logos) ---
+        log.info("Starting header and footer traversal for images.");
+        for (let i = 1; i <= doc.Sections.Count; i++) {
+            const section = doc.Sections(i);
+            const headerFooterTypes = [
+                1, // wdHeaderFooterPrimary
+                2, // wdHeaderFooterFirstPage
+                3  // wdHeaderFooterEvenPages
+            ];
+
+            for (const type of headerFooterTypes) {
+                try {
+                    const headerFooter = section.Headers(type) || section.Footers(type);
+                    if (headerFooter) {
+                        log.debug(`Checking header/footer type ${type} in section ${i}`);
+                        // Check for shapes (including images) in the header/footer range
+                        if (headerFooter.Shapes.Count > 0) {
+                            log.info(`Found ${headerFooter.Shapes.Count} shapes in header/footer type ${type} in section ${i}.`);
+                            for (let j = 1; j <= headerFooter.Shapes.Count; j++) {
+                                const shape = headerFooter.Shapes(j);
+                                if (shape.Type === 13) { // msoShapePicture
+                                    log.info(`Found picture shape in header/footer.`);
+                                    // Use handleImage to extract and save the image
+                                    const imageMarkdown = await handleImage(shape, log, extractedImagesDir, { count: imageCounter }, validatedParams.imagePrefix);
+                                    markdownOutput += `\n<!-- Image from Header/Footer -->\n${imageMarkdown}\n`;
+                                } else {
+                                    log.debug(`Found non-picture shape in header/footer (Type: ${shape.Type}). Skipping.`);
+                                }
+                                releaseObject(shape); // Release COM object
+                            }
+                        }
+                        releaseObject(headerFooter); // Release COM object
+                    }
+                } catch (hfError: any) {
+                    log.warn(`Error accessing header/footer type ${type} in section ${i}: ${hfError.message}`);
+                }
+            }
+            releaseObject(section); // Release COM object
+        }
+        log.info("Header and footer traversal complete.");
+
+        // --- Document Traversal and Element Handling (Main Story) ---
+        log.info("Starting main document traversal and element handling.");
 
         // Iterate through the main story range (the main body of the document)
         const mainStoryRange = doc.StoryRanges(1); // wdMainStory
@@ -286,8 +648,52 @@ async function exportToMarkdown(params: ToolRequestParams, context?: FastMCPCont
                 currentRange.Start = paragraph.Range.End;
                 releaseObject(paragraph); // Release COM object
             }
-            // TODO: Handle other potential elements like Shapes (non-inline images, text boxes, etc.)
+            // Handle other potential elements like Shapes (non-inline images, text boxes, etc.)
             // This might require checking currentRange.ShapeRange or iterating through doc.Shapes
+            else if (currentRange.ShapeRange.Count > 0) {
+                 log.info(`Found Shape(s) in document traversal. Attempting to handle.`);
+                 // Iterate through shapes in the current range's ShapeRange
+                 for (let k = 1; k <= currentRange.ShapeRange.Count; k++) {
+                     const shape = currentRange.ShapeRange(k);
+                     // TODO: Implement detailed shape handling based on shape.Type
+                     // Common types include msoShapePicture (13), msoTextBox (17), msoCanvas (20), msoGroup (6)
+                     log.warn(`Handling for specific Shape types is not yet fully implemented (Shape Type: ${shape.Type}).`);
+
+                     if (shape.Type === 13) { // msoShapePicture
+                         log.info(`Found picture shape.`);
+                         // TODO: Handle picture shapes (non-inline) - potentially use handleImage or a similar approach
+                         markdownOutput += `\n<!-- Picture Shape Placeholder (Name: ${shape.Name || 'N/A'}) -->\n`;
+                     } else if (shape.Type === 17) { // msoTextBox
+                         log.info(`Found text box shape.`);
+                         // Extract text from text box
+                         try {
+                             const textBoxText = shape.TextFrame.TextRange.Text || '';
+                             markdownOutput += `\n<!-- Text Box Content -->\n${textBoxText.trim()}\n<!-- End Text Box Content -->\n`;
+                             releaseObject(shape.TextFrame.TextRange); // Release COM object
+                             releaseObject(shape.TextFrame); // Release COM object
+                         } catch (textBoxError: any) {
+                             log.warn(`Could not extract text from text box: ${textBoxError.message}`);
+                             markdownOutput += `\n<!-- Text Box Placeholder (Error extracting text) -->\n`;
+                         }
+                     } else if (shape.Type === 20) { // msoCanvas
+                          log.info(`Found canvas shape.`);
+                          // TODO: Handle canvas shapes - potentially iterate through shapes within the canvas
+                          markdownOutput += `\n<!-- Canvas Placeholder (Name: ${shape.Name || 'N/A'}) -->\n`;
+                     } else if (shape.Type === 6) { // msoGroup
+                          log.info(`Found group shape.`);
+                          // TODO: Handle group shapes - potentially iterate through shapes within the group
+                          markdownOutput += `\n<!-- Group Shape Placeholder (Name: ${shape.Name || 'N/A'}) -->\n`;
+                     }
+                      else {
+                         // Placeholder for other shape types
+                         markdownOutput += `\n<!-- Shape Placeholder (Type: ${shape.Type}, Name: ${shape.Name || 'N/A'}) -->\n`;
+                     }
+
+                     releaseObject(shape); // Release COM object
+                 }
+                 // Move the range past the ShapeRange
+                 currentRange.Start = currentRange.ShapeRange.Range.End; // Move past the entire shape range
+            }
 
             else {
                 // If no known element is found, move the range forward by one character
@@ -301,9 +707,62 @@ async function exportToMarkdown(params: ToolRequestParams, context?: FastMCPCont
         log.info("Document traversal and element handling complete.");
 
         // --- Comment Handling ---
-        // TODO: Integrate comment handling based on commentsOption (ignore, append, inline)
-        // This might require iterating through comments and finding their corresponding ranges in the document.
-        log.warn("Comment handling logic is not fully integrated yet.");
+        // --- Comment Handling ---
+        log.info(`Handling comments with option: ${commentsOption}`);
+        if (commentsOption === 'append') {
+            if (doc.Comments.Count > 0) {
+                markdownOutput += '\n\n## Comments\n\n';
+                for (let i = 1; i <= doc.Comments.Count; i++) {
+                    const comment = doc.Comments(i);
+                    // Basic extraction of comment author and text
+                    const author = comment.Author || 'Unknown Author';
+                    const commentText = comment.Range.Text || '';
+                    markdownOutput += `**Comment from ${author}:** ${commentText.trim()}\n\n`;
+                    releaseObject(comment); // Release COM object
+                }
+                log.info(`Appended ${doc.Comments.Count} comments to Markdown output.`);
+            } else {
+                log.info("No comments found to append.");
+            }
+        } else if (commentsOption === 'inline') {
+            log.info("Attempting inline comment handling.");
+            // This is a simplified approach and may not perfectly map comments to text in all cases.
+            // A more robust solution would require detailed range mapping during document traversal.
+            if (doc.Comments.Count > 0) {
+                for (let i = 1; i <= doc.Comments.Count; i++) {
+                    const comment = doc.Comments(i);
+                    const commentText = comment.Range.Text || '';
+                    const commentedTextRange = comment.Parent.Range; // Get the range the comment is attached to
+
+                    // Find the text corresponding to the commented range in the markdownOutput
+                    // This is a basic text search and might not be accurate for complex documents
+                    const commentedText = (commentedTextRange.Text || '').replace(/[\r\n]/g, '').trim();
+                    const commentMarkdown = ` (${commentText.trim()})`; // Simple inline representation
+
+                    // Attempt to find and insert the comment after the commented text
+                    // This is a naive approach and needs refinement
+                    const findIndex = markdownOutput.indexOf(commentedText);
+                    if (findIndex !== -1) {
+                        // Insert the comment markdown after the commented text
+                        markdownOutput = markdownOutput.substring(0, findIndex + commentedText.length) + commentMarkdown + markdownOutput.substring(findIndex + commentedText.length);
+                        log.debug(`Inserted inline comment after "${commentedText}"`);
+                    } else {
+                        log.warn(`Could not find commented text "${commentedText}" in Markdown output for inline comment.`);
+                        // Append the comment at the end if the text is not found
+                        markdownOutput += `\n<!-- Inline Comment not found for text: "${commentedText}" -->\n${commentMarkdown}\n`;
+                    }
+
+                    releaseObject(comment); // Release COM object
+                    releaseObject(commentedTextRange); // Release COM object
+                }
+                log.info(`Attempted inline handling for ${doc.Comments.Count} comments.`);
+            } else {
+                log.info("No comments found for inline handling.");
+            }
+        } else { // commentsOption === 'ignore'
+            log.info("Comments are ignored as per option.");
+        }
+
 
         // --- End Document Traversal and Element Handling ---
         reportProgress?.({ progress: 3, total: totalSteps }); // Step 3: Document processed
