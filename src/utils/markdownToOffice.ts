@@ -147,35 +147,34 @@ export async function applyMarkdownFormattingToWord(range: any, markdownText: st
                 const headingLevel = parseInt(token.tag.substring(1), 10);
                 const headingTextToken = tokens[i + 1];
                 if (headingTextToken && headingTextToken.type === 'inline') {
-                    currentRange.Text = headingTextToken.content;
-                    currentRange.Collapse(0); // wdCollapseEnd
-                    currentRange.InsertParagraphAfter();
-                    currentRange.Collapse(0); // wdCollapseEnd
+                    currentRange.Text = headingTextToken.content; // Insert text
 
-                    let paragraph = null;
+                    let headingParagraph = null;
                     try {
-                         paragraph = currentRange.Paragraphs(1);
-                         if (paragraph) {
-                              try {
-                                  paragraph.Style = `Heading ${headingLevel}`;
-                                  logger.debug(`Applied style 'Heading ${headingLevel}'`);
-                              } catch (styleError: any) {
-                                  logger.warn(`Could not apply style 'Heading ${headingLevel}': ${styleError.message}`);
-                              }
-                         }
+                        // Get the paragraph containing the inserted text *before* moving the range
+                        headingParagraph = currentRange.Paragraphs(1);
+                        if (headingParagraph) {
+                            try {
+                                headingParagraph.Style = `Heading ${headingLevel}`;
+                                logger.debug(`Applied style 'Heading ${headingLevel}' to paragraph ${headingParagraph.Range.Start}-${headingParagraph.Range.End}`);
+                            } catch (styleError: any) {
+                                logger.warn(`Could not apply style 'Heading ${headingLevel}': ${styleError.message}`);
+                            }
+                        } else {
+                             logger.warn('Could not get paragraph reference for heading styling.');
+                        }
                     } catch (paraError: any) {
-                         logger.error(`Error getting paragraph for heading: ${paraError.message}`);
+                        logger.error(`Error getting paragraph for heading styling: ${paraError.message}`);
                     } finally {
-                         if (paragraph) releaseObject(paragraph);
+                        if (headingParagraph) releaseObject(headingParagraph); // Release the paragraph object
                     }
 
-                    currentRange = currentRange.Next(6 /* wdParagraph */);
-                    if (currentRange) {
-                         currentRange.Collapse(1); // wdCollapseStart
-                    } else {
-                         currentRange = wordApp.ActiveDocument.Content;
-                         currentRange.Collapse(0); // wdCollapseEnd
-                    }
+                    // Now, insert the paragraph break *after* styling
+                    currentRange.Collapse(0); // Collapse to end of heading text
+                    currentRange.InsertParagraphAfter();
+                    currentRange.Collapse(0); // Collapse to the start of the new paragraph
+
+                    // Range is already positioned correctly after the collapse.
                     i += 2; // Skip inline and heading_close
                 }
                 break;

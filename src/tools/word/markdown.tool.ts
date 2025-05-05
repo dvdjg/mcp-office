@@ -1033,7 +1033,7 @@ async function importFromMarkdown(params: ToolRequestParams, context?: FastMCPCo
         reportProgress?.({ progress: 1, total: totalSteps }); // Step 1: Markdown Read
 
         const officeResult = await getOfficeApplication('Word.Application');
-        wordApp = officeResult.app;
+        wordApp = officeResult; // Correctly assign the returned application object
 
         // Create new document
         log.info(`Creating new Word document (using template: ${!!safeTemplatePath})`);
