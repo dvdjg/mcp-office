@@ -1,3 +1,4 @@
+import * as path from 'path'; // Importar el módulo path
 /**
  * @file Implements the 'word/generate-and-insert-text' tool using server-side LLM and COM Interop.
  * @author David Jurado
@@ -89,10 +90,10 @@ async function generateAndInsertText(
 
         // 2. Open Word Document (Read/Write)
         // Use validatedParams.filePath
-        officeAppInstance = await getOfficeApplication('Word.Application');
-        wordApp = officeAppInstance.app;
+        wordApp = await getOfficeApplication('Word.Application');
+        const absoluteFilePath = path.resolve(validatedParams.filePath);
         // Open the document in read/write mode (ReadOnly = false) and visible (Visible = true)
-        doc = officeAppInstance.openDocument(validatedParams.filePath, false, true); // Open read/write, Visible = true
+        doc = wordApp.Documents.Open(absoluteFilePath, false, false, false, "", "", false, "", "", 0, true); // Open read/write, Visible = true
         if (!doc) {
             logger.error(`[word/generate-and-insert-text] Failed to open document: ${validatedParams.filePath}`);
             return createErrorResponse(`Failed to open document: ${validatedParams.filePath}`, 'FILE_OPEN_FAILED');
@@ -172,8 +173,8 @@ async function generateAndInsertText(
             try { doc.Close(false); } catch (e: any) { logger.warn(`Error closing document ${validatedParams?.filePath || 'unknown'}: ${e.message}`); } // Log error message
             releaseObject(doc);
         }
-        if (officeAppInstance) {
-            officeAppInstance.release();
+        if (wordApp) { // Changed from officeAppInstance
+            releaseObject(wordApp); // Release the application object
         }
         logger.debug('generateAndInsertText finished, COM objects released.');
     }

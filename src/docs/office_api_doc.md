@@ -27,7 +27,11 @@
    - [Accessing the VBA Editor](#accessing-the-vba-editor)
    - [Basic Structure of a Macro](#basic-structure-of-a-macro)
    - [Common Pitfalls](#common-pitfalls-1)
-5. [Office MCP Use Case Examples](#mcp-use-case-examples)
+5. [Working with Office COM Objects via winax (Office MCP Implementation Detail)](#working-with-office-com-objects-via-winax-office-mcp-implementation-detail)
+   - [Microsoft Word](#microsoft-word)
+   - [Microsoft Excel](#microsoft-excel)
+   - [Microsoft PowerPoint](#microsoft-powerpoint)
+6. [Office MCP Use Case Examples](#mcp-use-case-examples)
    - [Use Case 1: Convert Word to Markdown with Comments](#use-case-1-convert-word-to-markdown-with-comments)
    - [Use Case 2: Merge Two Word Documents](#use-case-2-merge-two-word-documents)
    - [Use Case 3: Create Template with Placeholders](#use-case-3-create-template-with-placeholders)
@@ -38,12 +42,12 @@
    - [Use Case 8: Export Mermaid Diagram](#use-case-8-export-mermaid-diagram)
    - [Use Case 9: Analyze Document and Add Comments](#use-case-9-analyze-document-and-add-comments)
    - [Use Case 10: Format Code with Syntax Highlighting](#use-case-10-format-code-with-syntax-highlighting)
-6. [Additional Tips for AI Agents](#additional-tips-for-ai-agents)
+7. [Additional Tips for AI Agents](#additional-tips-for-ai-agents)
    - [Understanding Office MCP API Responses](#understanding-mcp-api-responses)
    - [Querying Document State](#querying-document-state)
    - [Using Completions](#using-completions)
    - [Debugging Tips](#debugging-tips)
-7. [Resources and Further Learning](#resources-and-further-learning)
+8. [Resources and Further Learning](#resources-and-further-learning)
 
 ---
 
@@ -213,6 +217,102 @@ The Office MCP Server acts like a friendly translator between you (the AI) and O
 
 ---
 
+## Working with Office COM Objects via winax (Office MCP Implementation Detail)
+
+Office MCP leverages the `winax` library in Node.js to interact directly with the COM (Component Object Model) automation interfaces of Microsoft Office applications on Windows. This allows for powerful control over Office features, similar to what can be achieved with VBA, but from a Node.js environment.
+
+When you use Office MCP tools, behind the scenes, `winax` is often used to:
+- Create instances of Office applications (e.g., `Word.Application`).
+- Open and save documents.
+- Access and manipulate document content, properties, styles, tables, charts, etc.
+
+Understanding how `winax` interacts with the Office COM object model is key to understanding how Office MCP works and for debugging issues. The basic pattern involves creating a `winax.Object` for the application and then accessing its properties and methods according to the Office COM hierarchy (e.g., `Application.Documents.Open()`).
+
+Here are examples demonstrating common operations using `winax` in TypeScript, as used internally by Office MCP:
+
+### **Microsoft Word**
+```typescript
+const winax = require("winax");
+
+// Crear una instancia de Word
+const wordApp = new winax.Object("Word.Application", { activate: true });
+wordApp.Visible = true;
+
+// Crear un nuevo documento
+const doc = wordApp.Documents.Add();
+doc.Content.Text = "Este es un nuevo documento de Word.";
+doc.SaveAs("C:\\ruta\\nuevo_documento.docx");
+
+// Abrir un documento existente
+const existingDoc = wordApp.Documents.Open("C:\\ruta\\documento_existente.docx");
+
+// Editar el documento
+existingDoc.Content.Text += "\nTexto adicional agregado.";
+
+// Guardar cambios
+existingDoc.Save();
+
+// Cerrar el documento
+existingDoc.Close();
+wordApp.Quit();
+```
+
+### **Microsoft Excel**
+```typescript
+const excelApp = new winax.Object("Excel.Application", { activate: true });
+excelApp.Visible = true;
+
+// Crear un nuevo libro de Excel
+const workbook = excelApp.Workbooks.Add();
+const sheet = workbook.Sheets(1);
+sheet.Cells(1, 1).Value = "Hola, Excel!";
+workbook.SaveAs("C:\\ruta\\nuevo_libro.xlsx");
+
+// Abrir un libro existente
+const existingWorkbook = excelApp.Workbooks.Open("C:\\ruta\\libro_existente.xlsx");
+
+// Editar el libro
+existingWorkbook.Sheets(1).Cells(2, 1).Value = "Nuevo dato agregado";
+
+// Guardar cambios
+existingWorkbook.Save();
+
+// Cerrar el libro
+existingWorkbook.Close();
+excelApp.Quit();
+```
+
+### **Microsoft PowerPoint**
+```typescript
+const pptApp = new winax.Object("PowerPoint.Application", { activate: true });
+pptApp.Visible = true;
+
+// Crear una nueva presentación
+const presentation = pptApp.Presentations.Add();
+const slide = presentation.Slides.Add(1, 1);
+slide.Shapes.Title.TextFrame.TextRange.Text = "Bienvenido a PowerPoint!";
+presentation.SaveAs("C:\\ruta\\nueva_presentacion.pptx");
+
+// Abrir una presentación existente
+const existingPresentation = pptApp.Presentations.Open("C:\\ruta\\presentacion_existente.pptx");
+
+// Editar la presentación
+existingPresentation.Slides(1).Shapes.Title.TextFrame.TextRange.Text = "Texto actualizado";
+
+// Guardar cambios
+existingPresentation.Save();
+
+// Cerrar la presentación
+existingPresentation.Close();
+pptApp.Quit();
+```
+
+These examples demonstrate the fundamental operations of creating, opening, editing, and closing documents using `winax` and the standard Office COM object model. This is the underlying mechanism used by many of the Office MCP tools.
+
+You can find more details on the Office COM object model in the [Microsoft documentation](https://learn.microsoft.com/en-us/office/vba/word/Concepts/Working-with-Word/working-with-document-objects) and on the [winax npm page](https://www.npmjs.com/package/winax?activeTab=readme).
+
+---
+
 ## Office MCP Use Case Examples
 
 Below are code examples for the 10 Word-specific Office MCP use cases, showing how MCP’s API calls map to Office JavaScript APIs and VBA. Each includes:
@@ -256,18 +356,18 @@ async function exportToMarkdown() {
 Sub ExportToMarkdown()
     Dim doc As Document
     Set doc = ActiveDocument
-    Dim markdown As String
-    
+
     ' Extract text
+    Dim markdown As String
     markdown = doc.Content.Text
-    
+
     ' Append comments
     Dim comment As Comment
     markdown = markdown & vbCrLf & vbCrLf & "## Comments" & vbCrLf
     For Each comment In doc.Comments
         markdown = markdown & "> " & comment.Author & ": " & comment.Range.Text & vbCrLf
     Next comment
-    
+
     ' Office MCP saves to file
     Debug.Print markdown
 End Sub
@@ -291,15 +391,15 @@ curl -X POST "http://localhost:3000/word/merge?docs=/docs/doc1.docx,/docs/doc2.d
 async function mergeDocuments() {
   await Word.run(async (context) => {
     const doc = context.document;
-    
+
     // Office MCP opens doc1.docx and doc2.docx, but here’s how to append content
     const doc1Content = await fetchDocumentContent("/docs/doc1.docx"); // Office MCP handles this
     const doc2Content = await fetchDocumentContent("/docs/doc2.docx");
-    
+
     // Insert content from doc2 at the end of doc1
     doc.body.insertContentControl().insertText(doc2Content, "End");
     await context.sync();
-    
+
     // Office MCP uses AI to resolve conflicts (e.g., duplicate headings)
     console.log("Merged document saved as /docs/merged.docx");
   });
@@ -317,10 +417,10 @@ Sub MergeDocuments()
     Dim doc1 As Document, doc2 As Document
     Set doc1 = Documents.Open("C:\docs\doc1.docx")
     Set doc2 = Documents.Open("C:\docs\doc2.docx")
-    
+
     ' Append doc2 content to doc1
     doc1.Content.InsertAfter doc2.Content.Text
-    
+
     ' Office MCP handles conflict resolution
     doc1.SaveAs "C:\docs\merged.docx"
     doc2.Close
@@ -348,13 +448,13 @@ async function createTemplate() {
     const body = context.document.body;
     body.load("text");
     await context.sync();
-    
+
     // Find sensitive text (Office MCP uses AI)
     const sensitiveText = "Acme Corp"; // Example
     const range = body.search(sensitiveText, { matchCase: true });
     range.load("text");
     await context.sync();
-    
+
     // Replace with placeholder
     range.items.forEach((item) => {
       item.insertText("[CompanyName]", "Replace");
@@ -369,13 +469,13 @@ async function createTemplate() {
 Sub CreateTemplate()
     Dim doc As Document
     Set doc = ActiveDocument
-    
+
     ' Find and replace sensitive text
     With doc.Content.Find
         .Text = "Acme Corp"
         .Execute ReplaceWith:="[CompanyName]", Replace:=wdReplaceAll
     End With
-    
+
     ' Save as template (Office MCP handles this)
     doc.SaveAs "C:\docs\template.docx"
 End Sub
@@ -399,18 +499,18 @@ curl -X POST "http://localhost:3000/word/markdown/import?path=/docs/input.md&tem
 async function importMarkdown() {
   await Word.run(async (context) => {
     const doc = context.document;
-    
+
     // Office MCP parses input.md using markdown-it
     const markdown = "# Title\nText"; // Example
     const paragraphs = markdown.split("\n").filter((line) => line);
-    
+
     // Insert content with template styles
     paragraphs.forEach((line, index) => {
       const style = line.startsWith("#") ? "Heading1" : "Normal";
       doc.body.insertParagraph(line.replace("# ", ""), "End").style = style;
     });
     await context.sync();
-    
+
     // Office MCP applies template.docx styles
   });
 }
@@ -421,11 +521,11 @@ async function importMarkdown() {
 Sub ImportMarkdown()
     Dim doc As Document
     Set doc = Documents.Open("C:\docs\template.docx")
-    
+
     ' Office MCP parses Markdown
     Dim markdown As String
     markdown = "# Title" & vbCrLf & "Text"
-    
+
     ' Insert content
     If InStr(markdown, "#") Then
         doc.Content.InsertAfter "Title"
@@ -433,7 +533,7 @@ Sub ImportMarkdown()
     End If
     doc.Content.InsertAfter "Text"
     doc.Paragraphs.Last.Style = "Normal"
-    
+
     doc.SaveAs "C:\docs\output.docx"
 End Sub
 ```
@@ -458,7 +558,7 @@ async function reformatDocument() {
     const paragraphs = context.document.body.paragraphs;
     paragraphs.load("style, text");
     await context.sync();
-    
+
     // Apply professional styles (Office MCP defines "Professional" set)
     paragraphs.items.forEach((paragraph, index) => {
       paragraph.style = index === 0 ? "Title" : "Normal";
@@ -474,7 +574,7 @@ Sub ReformatDocument()
     Dim doc As Document
     Set doc = ActiveDocument
     Dim para As Paragraph
-    
+
     ' Apply styles
     Dim i As Integer
     i = 1
@@ -486,7 +586,7 @@ Sub ReformatDocument()
         End If
         i = i + 1
     Next para
-    
+
     doc.SaveAs "C:\docs\Formatted.docx"
 End Sub
 ```
@@ -511,7 +611,7 @@ async function extractEmbedded() {
     const objects = context.document.body.inlinePictures; // Simplified
     objects.load("source");
     await context.sync();
-    
+
     // Office MCP saves objects to /docs/extracted
     objects.items.forEach((obj, index) => {
       console.log(`Saving object ${index + 1} to /docs/extracted/embedded_${index + 1}.pdf`);
@@ -526,7 +626,7 @@ Sub ExtractEmbedded()
     Dim doc As Document
     Set doc = ActiveDocument
     Dim ole As OLEFormat
-    
+
     ' Extract OLE objects
     Dim i As Integer
     i = 1
@@ -560,7 +660,7 @@ async function importMermaid() {
     const paragraph = context.document.body.paragraphs.getRange("paragraph:5");
     paragraph.load("range");
     await context.sync();
-    
+
     // Office MCP renders Mermaid as SVG
     const svg = "<svg>...</svg>"; // Mock SVG from Mermaid
     paragraph.insertInlinePictureFromBase64(svgToBase64(svg), "After");
@@ -578,11 +678,11 @@ function svgToBase64(svg) {
 Sub ImportMermaid()
     Dim doc As Document
     Set doc = ActiveDocument
-    
+
     ' Insert at paragraph 5
     Dim para As Paragraph
     Set para = doc.Paragraphs(5)
-    
+
     ' Office MCP renders SVG
     para.Range.InlineShapes.AddPicture "C:\docs\mermaid.svg"
 End Sub
@@ -608,7 +708,7 @@ async function exportMermaid() {
     const pictures = context.document.body.inlinePictures;
     pictures.load("source");
     await context.sync();
-    
+
     // Office MCP identifies Mermaid diagram (first picture)
     const diagram = pictures.items[0];
     console.log("Exporting diagram as /docs/diagram.png");
@@ -622,11 +722,11 @@ async function exportMermaid() {
 Sub ExportMermaid()
     Dim doc As Document
     Set doc = ActiveDocument
-    
+
     ' First inline picture (Office MCP identifies Mermaid)
     Dim shape As InlineShape
     Set shape = doc.InlineShapes(1)
-    
+
     ' Office MCP saves as PNG
     Debug.Print "Exporting to /docs/diagram.png"
 End Sub
@@ -652,7 +752,7 @@ async function analyzeDocument() {
     const paragraphs = context.document.body.paragraphs;
     paragraphs.load("text");
     await context.sync();
-    
+
     // Office MCP uses AI to analyze
     paragraphs.items.forEach((para, index) => {
       if (para.text.includes("jargon")) { // Simplified AI check
@@ -670,14 +770,14 @@ Sub AnalyzeDocument()
     Dim doc As Document
     Set doc = ActiveDocument
     Dim para As Paragraph
-    
+
     ' Office MCP uses AI
     For Each para In doc.Paragraphs
         If InStr(para.Range.Text, "jargon") Then
             doc.Comments.Add para.Range, "Simplify this jargon"
         End If
     Next para
-    
+
     doc.SaveAs "C:\docs\Commented.docx"
 End Sub
 ```
@@ -702,7 +802,7 @@ async function formatCode() {
     const paragraphs = context.document.body.paragraphs;
     paragraphs.load("text, font");
     await context.sync();
-    
+
     // Office MCP uses highlight.js for syntax highlighting
     paragraphs.items.forEach((para) => {
       if (para.text.includes("function")) { // Simplified code detection
@@ -721,7 +821,7 @@ Sub FormatCode()
     Dim doc As Document
     Set doc = ActiveDocument
     Dim para As Paragraph
-    
+
     ' Office MCP uses highlight.js
     For Each para In doc.Paragraphs
         If InStr(para.Range.Text, "function") Then
@@ -729,7 +829,7 @@ Sub FormatCode()
             para.Range.Font.Color = wdColorBlue
         End If
     Next para
-    
+
     doc.SaveAs "C:\docs\Formatted.docx"
 End Sub
 ```

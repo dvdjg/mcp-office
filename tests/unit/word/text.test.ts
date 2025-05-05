@@ -81,14 +81,7 @@ describe('word/text unit tests', () => {
             Quit: jest.fn(),
         };
 
-        // Mock the OfficeAppInstance structure
-        mockOfficeAppInstance = {
-            app: mockWordApp,
-            openDocument: jest.fn().mockReturnValue(mockDoc),
-            release: jest.fn(),
-        };
-
-        mockGetOfficeApplication.mockResolvedValue(mockOfficeAppInstance);
+        mockGetOfficeApplication.mockResolvedValue(mockWordApp); // Return the raw app object
         mockValidateFilePath.mockReturnValue(true); // Asumir que la validación de ruta es exitosa por defecto
     });
 
@@ -103,12 +96,12 @@ describe('word/text unit tests', () => {
 
             expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
             expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath);
+            expect(mockWordApp.Documents.Open).toHaveBeenCalledWith(expect.any(String), false, true, false, "", "", false, "", "", 0, false); // Check Documents.Open call
             // getRangeFromSpecifier is called internally, we check its effect
             expect(mockSelection.Range).toBe(mockRange);
             expect(result).toEqual({ success: true, data: 'Sample text' });
             expect(mockDoc.Close).toHaveBeenCalledWith(false); // Cerrar sin guardar
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
+            expect(mockReleaseObject).toHaveBeenCalledWith(mockWordApp); // Release the app object
             expect(mockReleaseObject).toHaveBeenCalledWith(mockRange); // Range obtained from getRangeFromSpecifier
             expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Successfully retrieved text'));
         });
@@ -119,12 +112,12 @@ describe('word/text unit tests', () => {
 
             expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
             expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath);
+            expect(mockWordApp.Documents.Open).toHaveBeenCalledWith(expect.any(String), false, true, false, "", "", false, "", "", 0, false); // Check Documents.Open call
             // getRangeFromSpecifier is called internally
             expect(mockDoc.Content.Text).toBe('Document content');
             expect(result).toEqual({ success: true, data: 'Document content' });
             expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
+            expect(mockReleaseObject).toHaveBeenCalledWith(mockWordApp); // Release the app object
             // Note: doc.Content is not explicitly released in the tool's finally block,
             // as it's part of the document object itself.
             expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Successfully retrieved text'));
@@ -136,12 +129,12 @@ describe('word/text unit tests', () => {
 
             expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
             expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath);
+            expect(mockWordApp.Documents.Open).toHaveBeenCalledWith(expect.any(String), false, true, false, "", "", false, "", "", 0, false); // Check Documents.Open call
             expect(mockParagraphs.Item).toHaveBeenCalledWith(2);
             // getRangeFromSpecifier is called internally
             expect(result).toEqual({ success: true, data: 'Paragraph 2' });
             expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
+            expect(mockReleaseObject).toHaveBeenCalledWith(mockWordApp); // Release the app object
             // The range returned by Paragraphs.Item().Range is released
             expect(mockReleaseObject).toHaveBeenCalled(); // Check if releaseObject was called at least once
             expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Successfully retrieved text'));
@@ -164,11 +157,11 @@ describe('word/text unit tests', () => {
 
             expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
             expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath);
+            expect(mockWordApp.Documents.Open).toHaveBeenCalledWith(expect.any(String), false, true, false, "", "", false, "", "", 0, false); // Check Documents.Open call
             expect(result.success).toBe(false);
             expect(result.error?.message).toContain('Unsupported range format');
             expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
+            expect(mockReleaseObject).toHaveBeenCalledWith(mockWordApp); // Release the app object
         });
 
         test('debería manejar un índice de párrafo fuera de límites', async () => {
@@ -177,27 +170,27 @@ describe('word/text unit tests', () => {
 
             expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
             expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath);
+            expect(mockWordApp.Documents.Open).toHaveBeenCalledWith(expect.any(String), false, true, false, "", "", false, "", "", 0, false); // Check Documents.Open call
             expect(mockParagraphs.Item).toHaveBeenCalledWith(10);
             expect(result.success).toBe(false);
             expect(result.error?.message).toContain('Paragraph index 10 is out of bounds');
             expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
+            expect(mockReleaseObject).toHaveBeenCalledWith(mockWordApp); // Release the app object
         });
 
          test('debería manejar un error al abrir el documento', async () => {
-            mockOfficeAppInstance.openDocument.mockReturnValue(null); // Simular fallo al abrir
+            mockWordApp.Documents.Open.mockReturnValue(null); // Simular fallo al abrir
             const params = { ...baseParams, range: 'document' };
             const result = await getText(params);
 
             expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
             expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath);
+            expect(mockWordApp.Documents.Open).toHaveBeenCalledWith(expect.any(String), false, true, false, "", "", false, "", "", 0, false); // Check Documents.Open call
             expect(result.success).toBe(false);
             expect(result.error?.message).toContain('Failed to open document');
             // No debería intentar cerrar doc si es null
             expect(mockDoc.Close).not.toHaveBeenCalled();
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
+            expect(mockReleaseObject).toHaveBeenCalledWith(mockWordApp); // Release the app object
         });
     });
 
@@ -212,12 +205,12 @@ describe('word/text unit tests', () => {
 
             expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
             expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath, false, false);
+            expect(mockWordApp.Documents.Open).toHaveBeenCalledWith(expect.any(String), false, false); // Check Documents.Open call
             expect(mockDoc.Range).toHaveBeenCalledWith(0, 0);
             expect(mockRange.Text).toBe(params.text); // Check the setter was called
             expect(mockDoc.Save).toHaveBeenCalled();
             expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
+            expect(mockReleaseObject).toHaveBeenCalledWith(mockWordApp); // Release the app object
             expect(mockReleaseObject).toHaveBeenCalledWith(mockRange); // insertionRange
             expect(mockReleaseObject).toHaveBeenCalledWith(undefined); // paraRange (should be undefined)
             expect(result).toEqual({ success: true, data: {} });
@@ -230,13 +223,13 @@ describe('word/text unit tests', () => {
 
             expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
             expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath, false, false);
+            expect(mockWordApp.Documents.Open).toHaveBeenCalledWith(expect.any(String), false, false); // Check Documents.Open call
             expect(mockDoc.Content.End).toBe(16); // Mocked end position
             expect(mockDoc.Range).toHaveBeenCalledWith(16, 16);
             expect(mockRange.Text).toBe(params.text);
             expect(mockDoc.Save).toHaveBeenCalled();
             expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
+            expect(mockReleaseObject).toHaveBeenCalledWith(mockWordApp); // Release the app object
             expect(mockReleaseObject).toHaveBeenCalledWith(mockRange); // insertionRange
             expect(mockReleaseObject).toHaveBeenCalledWith(undefined); // paraRange
             expect(result).toEqual({ success: true, data: {} });
