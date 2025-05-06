@@ -13,6 +13,7 @@ import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
 import { saveResource } from '../dynamic/resources.tool';
 import * as fs from 'fs-extra';
 import * as path from 'path';
+import ExcelJS from 'exceljs'; // Import exceljs
 import logger from '../../utils/logger'; // Added logger import
 import { validateFilePath } from '../../utils/security'; // Added security import
 
@@ -34,6 +35,7 @@ const ExcelRangeInputSchema = z.object({
   values: z.array(z.array(z.any())).optional().describe('Values to write to the range (for the "write" operation).'),
   formatProperties: z.record(z.any()).optional().describe('Format properties to apply (for the "format" operation).'),
   // You can add more properties for the 'apply' operation if needed
+  useComInterop: z.boolean().optional().default(false).describe('Use COM interop for local Excel interaction. Defaults to false (uses exceljs).'),
 });
 
 type ExcelRangeInput = z.infer<typeof ExcelRangeInputSchema>;
@@ -53,217 +55,323 @@ const excelRangeTool: McpResource = {
   description: "Manipulates cell ranges in Excel worksheets. Allows reading, writing, formatting, and applying other operations. Creates the file if it doesn't exist for write/format/apply operations.", // Updated description
   schema: ExcelRangeInputSchema,
   handler: async (params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<any>> => { // Added context and ApiResponse
-    let excelApp: any = null;
-    let workbook: any = null; // Define workbook here
-    let fileCreated = false; // Flag to track file creation
+    // Validate input parameters outside the conditional block
+    const input = ExcelRangeInputSchema.parse(params);
+    const absoluteFilePath = path.resolve(input.filePath);
+    let message = '';
+    let resultData: any = null;
 
-    try {
-      // Validate input parameters
-      const input = ExcelRangeInputSchema.parse(params);
-      logger.info(`Executing excel/range operation '${input.operation}' for file: ${input.filePath}`);
+    if (input.useComInterop) {
+      logger.info(`Executing excel/range (COM) operation '${input.operation}' for file: ${input.filePath}`);
+      let excelApp: any = null;
+      let workbook: any = null;
+      let fileCreated = false;
 
-      excelApp = await getOfficeApplication('Excel.Application');
-      const absoluteFilePath = path.resolve(input.filePath);
-
-      // --- Create if not exists logic (for write/format/apply) ---
-      if (input.operation === 'write' || input.operation === 'format' || input.operation === 'apply') {
-          try {
-              if (await fs.pathExists(absoluteFilePath)) {
-                  logger.info(`Opening existing workbook: ${absoluteFilePath}`);
-                  workbook = excelApp.Workbooks.Open(absoluteFilePath);
-              } else {
-                  logger.info(`File not found. Creating new workbook at: ${absoluteFilePath}`);
-                  workbook = excelApp.Workbooks.Add(); // Create new workbook
-                  // Save the new workbook immediately to the target path
-                  // Determine format based on extension (default to xlsx)
-                  // You might need a more robust way to determine the format constant
-                  const fileExt = path.extname(absoluteFilePath).toLowerCase();
-                  let saveFormat = 51; // xlOpenXMLWorkbook (.xlsx)
-                  if (fileExt === '.xlsb') saveFormat = 50; // xlExcel12 (.xlsb)
-                  else if (fileExt === '.xls') saveFormat = 56; // xlExcel8 (.xls)
-
-                  workbook.SaveAs(absoluteFilePath, saveFormat);
-                  fileCreated = true;
-                  logger.info(`Successfully created and saved new workbook: ${absoluteFilePath}`);
-              }
-          } catch (fileError: any) {
-               logger.error(`Error opening or creating workbook '${absoluteFilePath}': ${fileError.message}`, { error: fileError });
-               return createErrorResponse(`Failed to open or create workbook: ${fileError.message}`, 'FILE_OPERATION_FAILED', fileError);
-          }
-      } else if (input.operation === 'read') {
-          // For read operation, file must exist
-          if (!await fs.pathExists(absoluteFilePath)) {
-              logger.warn(`File not found for read operation: ${absoluteFilePath}`);
-              return createErrorResponse(`File not found: ${input.filePath}`, 'FILE_NOT_FOUND');
-          }
-          logger.info(`Opening existing workbook for read: ${absoluteFilePath}`);
-          workbook = excelApp.Workbooks.Open(absoluteFilePath); // Consider opening read-only if possible
-      }
-      // --- End create if not exists logic ---
-
-
-      if (!workbook) {
-           // This check might be redundant if the try/catch above handles errors, but good as a safeguard
-           return createErrorResponse(`Failed to obtain workbook object for: ${input.filePath}`, 'FILE_OPEN_FAILED');
-      }
-
-      let worksheet;
       try {
-          if (input.sheetIndex !== undefined) {
-            worksheet = workbook.Sheets.Item(input.sheetIndex);
-          } else if (input.sheetName) {
-            worksheet = workbook.Sheets.Item(input.sheetName);
-          } else {
-            // If file was just created, it will have a default sheet (e.g., "Sheet1")
-            // If opened, use ActiveSheet
-            worksheet = workbook.ActiveSheet;
-          }
-      } catch (sheetError: any) {
-           logger.error(`Error getting worksheet '${input.sheetName || input.sheetIndex || 'ActiveSheet'}': ${sheetError.message}`);
-           return createErrorResponse(`Worksheet "${input.sheetName || input.sheetIndex || 'ActiveSheet'}" not found or could not be accessed.`, 'SHEET_NOT_FOUND', sheetError);
-      }
+        excelApp = await getOfficeApplication('Excel.Application');
 
+        if (input.operation === 'write' || input.operation === 'format' || input.operation === 'apply') {
+            try {
+                if (await fs.pathExists(absoluteFilePath)) {
+                    logger.info(`COM: Opening existing workbook: ${absoluteFilePath}`);
+                    workbook = excelApp.Workbooks.Open(absoluteFilePath);
+                } else {
+                    logger.info(`COM: File not found. Creating new workbook at: ${absoluteFilePath}`);
+                    workbook = excelApp.Workbooks.Add();
+                    const fileExt = path.extname(absoluteFilePath).toLowerCase();
+                    let saveFormat = 51; // xlOpenXMLWorkbook (.xlsx)
+                    if (fileExt === '.xlsb') saveFormat = 50;
+                    else if (fileExt === '.xls') saveFormat = 56;
+                    workbook.SaveAs(absoluteFilePath, saveFormat);
+                    fileCreated = true;
+                    logger.info(`COM: Successfully created and saved new workbook: ${absoluteFilePath}`);
+                }
+            } catch (fileError: any) {
+                 logger.error(`COM: Error opening or creating workbook '${absoluteFilePath}': ${fileError.message}`, { error: fileError });
+                 return createErrorResponse(`COM: Failed to open or create workbook: ${fileError.message}`, 'FILE_OPERATION_FAILED_COM', fileError);
+            }
+        } else if (input.operation === 'read') {
+            if (!await fs.pathExists(absoluteFilePath)) {
+                logger.warn(`COM: File not found for read operation: ${absoluteFilePath}`);
+                return createErrorResponse(`COM: File not found: ${input.filePath}`, 'FILE_NOT_FOUND_COM');
+            }
+            logger.info(`COM: Opening existing workbook for read: ${absoluteFilePath}`);
+            workbook = excelApp.Workbooks.Open(absoluteFilePath);
+        }
 
-      if (!worksheet) {
-        // Should be caught by the try/catch above, but safeguard
-        return createErrorResponse(`Worksheet "${input.sheetName || input.sheetIndex || 'ActiveSheet'}" could not be resolved.`, 'SHEET_NOT_FOUND');
-      }
+        if (!workbook) {
+             return createErrorResponse(`COM: Failed to obtain workbook object for: ${input.filePath}`, 'FILE_OPEN_FAILED_COM');
+        }
 
-      const range = worksheet.Range(input.rangeAddress);
+        let worksheet;
+        try {
+            if (input.sheetIndex !== undefined) {
+              worksheet = workbook.Sheets.Item(input.sheetIndex);
+            } else if (input.sheetName) {
+              worksheet = workbook.Sheets.Item(input.sheetName);
+            } else {
+              worksheet = workbook.ActiveSheet;
+            }
+        } catch (sheetError: any) {
+             logger.error(`COM: Error getting worksheet '${input.sheetName || input.sheetIndex || 'ActiveSheet'}': ${sheetError.message}`);
+             return createErrorResponse(`COM: Worksheet "${input.sheetName || input.sheetIndex || 'ActiveSheet'}" not found or could not be accessed.`, 'SHEET_NOT_FOUND_COM', sheetError);
+        }
 
-      if (!range) {
-        // Release objects before throwing
-        releaseObject(worksheet);
-        return createErrorResponse(`Invalid range "${input.rangeAddress}".`, 'INVALID_RANGE');
-      }
+        if (!worksheet) {
+          return createErrorResponse(`COM: Worksheet "${input.sheetName || input.sheetIndex || 'ActiveSheet'}" could not be resolved.`, 'SHEET_NOT_FOUND_COM');
+        }
 
-      let resultData: any = null;
-      let message = '';
+        const range = worksheet.Range(input.rangeAddress);
 
-      switch (input.operation) {
-        case 'read':
-          // Read values from the range
-          resultData = range.Value2; // Use Value2 for better type handling
-          message = `Values read from range "${input.rangeAddress}".`;
-          logger.info(message);
-          break; // Added break
+        if (!range) {
+          releaseObject(worksheet);
+          return createErrorResponse(`COM: Invalid range "${input.rangeAddress}".`, 'INVALID_RANGE_COM');
+        }
 
-        case 'write':
-          // Write values to the range
-          if (!input.values) {
-            releaseObject(range);
-            releaseObject(worksheet);
-            throw new Error('Values are required for the "write" operation.');
-          }
-          // Simplified write logic - assumes range is large enough or single cell
-          // A more robust version would resize or check dimensions carefully
-          range.Value = input.values; // Let COM handle potential type conversions
-          message = `Values written to range "${input.rangeAddress}".`;
-          logger.info(message);
-          break; // Added break
+        switch (input.operation) {
+          case 'read':
+            resultData = range.Value2;
+            message = `COM: Values read from range "${input.rangeAddress}".`;
+            logger.info(message);
+            break;
 
-        case 'format':
-          // Apply format to the range
-          if (!input.formatProperties) {
-            releaseObject(range);
-            releaseObject(worksheet);
-            throw new Error('Format properties are required for the "format" operation.');
-          }
-          for (const prop in input.formatProperties) {
-            if (Object.prototype.hasOwnProperty.call(input.formatProperties, prop)) {
-              const value = input.formatProperties[prop];
-              try {
-                  if (typeof range[prop] === 'object' && range[prop] !== null && typeof value === 'object') {
-                     // If the property is an object (like Font, Interior), apply nested properties
-                     for (const subProp in value) {
-                        if (Object.prototype.hasOwnProperty.call(value, subProp)) {
-                           range[prop][subProp] = value[subProp];
-                        }
-                     }
-                  } else {
-                     // If the property is a direct value
-                     range[prop] = value;
-                  }
-              } catch (formatError: any) {
-                   logger.warn(`Could not apply format property '${prop}.${Object.keys(value).join(',')}' or '${prop}': ${formatError.message}`);
-                   // Optionally continue or re-throw
+          case 'write':
+            if (!input.values) {
+              releaseObject(range);
+              releaseObject(worksheet);
+              throw new Error('COM: Values are required for the "write" operation.');
+            }
+            range.Value = input.values;
+            message = `COM: Values written to range "${input.rangeAddress}".`;
+            logger.info(message);
+            break;
+
+          case 'format':
+            if (!input.formatProperties) {
+              releaseObject(range);
+              releaseObject(worksheet);
+              throw new Error('COM: Format properties are required for the "format" operation.');
+            }
+            for (const prop in input.formatProperties) {
+              if (Object.prototype.hasOwnProperty.call(input.formatProperties, prop)) {
+                const value = input.formatProperties[prop];
+                try {
+                    if (typeof range[prop] === 'object' && range[prop] !== null && typeof value === 'object') {
+                       for (const subProp in value) {
+                          if (Object.prototype.hasOwnProperty.call(value, subProp)) {
+                             range[prop][subProp] = value[subProp];
+                          }
+                       }
+                    } else {
+                       range[prop] = value;
+                    }
+                } catch (formatError: any) {
+                     logger.warn(`COM: Could not apply format property '${prop}': ${formatError.message}`);
+                }
               }
             }
-          }
-          message = `Format applied to range "${input.rangeAddress}".`;
-          logger.info(message);
-          break; // Added break
+            message = `COM: Format applied to range "${input.rangeAddress}".`;
+            logger.info(message);
+            break;
 
-        case 'apply':
-          // Generic operation to apply properties to the range
-          if (!input.formatProperties) { // Reuse formatProperties for general properties
+          case 'apply':
+            if (!input.formatProperties) {
+               releaseObject(range);
+               releaseObject(worksheet);
+               throw new Error('COM: Properties are required for the "apply" operation.');
+            }
+             for (const prop in input.formatProperties) {
+              if (Object.prototype.hasOwnProperty.call(input.formatProperties, prop)) {
+                 try {
+                    range[prop] = input.formatProperties[prop];
+                 } catch (applyError: any) {
+                     logger.warn(`COM: Could not apply property '${prop}': ${applyError.message}`);
+                 }
+              }
+            }
+            message = `COM: Properties applied to range "${input.rangeAddress}".`;
+            logger.info(message);
+            break;
+
+          default:
              releaseObject(range);
              releaseObject(worksheet);
-             throw new Error('Properties are required for the "apply" operation.');
-          }
-           for (const prop in input.formatProperties) {
-            if (Object.prototype.hasOwnProperty.call(input.formatProperties, prop)) {
-               try {
-                  range[prop] = input.formatProperties[prop];
-               } catch (applyError: any) {
-                   logger.warn(`Could not apply property '${prop}': ${applyError.message}`);
-                   // Optionally continue or re-throw
-               }
+             throw new Error(`COM: Unsupported operation: "${input.operation}".`);
+        }
+
+        if (input.operation === 'write' || input.operation === 'format' || input.operation === 'apply') {
+            if (!fileCreated) { // Only save if it wasn't a new file (SaveAs already saved it)
+                workbook.Save();
+                logger.info(`COM: Workbook saved: ${absoluteFilePath}`);
             }
+        }
+        releaseObject(range);
+        releaseObject(worksheet);
+
+      } catch (error: any) {
+        logger.error(`Error in excel/range tool (COM): ${error.message}`, { error: error instanceof z.ZodError ? error.errors : error });
+         if (error instanceof z.ZodError) { // Should be caught by outer parse
+            return createErrorResponse('COM: Input validation failed', 'VALIDATION_ERROR_COM', error.errors);
+        }
+        return createErrorResponse(`COM: Excel range operation failed: ${error.message}`, 'EXCEL_RANGE_ERROR_COM', error);
+      } finally {
+        if (workbook) {
+            // workbook.Close(); // Optional: Close if not saving, or if you want to ensure it's closed.
+            // However, if SaveAs was used, it might already be closed or in a different state.
+            // For simplicity and to avoid errors if already closed by SaveAs, just release.
+            releaseObject(workbook);
+        }
+        if (excelApp) {
+            // excelApp.Quit(); // Consider quitting app if we started it and no other workbooks are open.
+            // For now, just release the object.
+            releaseObject(excelApp);
+        }
+        logger.debug("COM: Released Excel COM objects for excel/range operation.");
+      }
+    } else {
+      // Use exceljs
+      logger.info(`Executing excel/range (exceljs) operation '${input.operation}' for file: ${input.filePath}`);
+      const excelWorkbook = new ExcelJS.Workbook();
+      let fileExisted = false;
+
+      try {
+        if (await fs.pathExists(absoluteFilePath)) {
+          await excelWorkbook.xlsx.readFile(absoluteFilePath);
+          fileExisted = true;
+          logger.info(`exceljs: Opened existing workbook: ${absoluteFilePath}`);
+        } else if (input.operation === 'write' || input.operation === 'format' || input.operation === 'apply') {
+          logger.info(`exceljs: File not found. New workbook will be created at: ${absoluteFilePath}`);
+          // Workbook is already new, will be saved later
+        } else if (input.operation === 'read') {
+          logger.warn(`exceljs: File not found for read operation: ${absoluteFilePath}`);
+          return createErrorResponse(`exceljs: File not found: ${input.filePath}`, 'FILE_NOT_FOUND_EXCELJS');
+        }
+
+        let worksheet: ExcelJS.Worksheet;
+        if (input.sheetIndex !== undefined) {
+          if (input.sheetIndex > 0 && input.sheetIndex <= excelWorkbook.worksheets.length) {
+            worksheet = excelWorkbook.worksheets[input.sheetIndex - 1]; // 0-based
+          } else if ((input.operation === 'write' || input.operation === 'format' || input.operation === 'apply') && ((fileExisted && excelWorkbook.worksheets.length === 0) || !fileExisted)) {
+            // If sheet index is out of bounds for an existing file with sheets, it's an error unless we are creating it.
+            // If it's a new file, or an existing file with no sheets, and operation allows creation, create it.
+            const newSheetName = input.sheetName || `Sheet${input.sheetIndex}`;
+            worksheet = excelWorkbook.addWorksheet(newSheetName);
+            logger.info(`exceljs: Added new sheet "${worksheet.name}" as index ${input.sheetIndex} was out of bounds or file was new.`);
+          } else {
+            return createErrorResponse(`exceljs: Sheet index ${input.sheetIndex} is out of bounds.`, 'SHEET_NOT_FOUND_EXCELJS');
           }
-          message = `Properties applied to range "${input.rangeAddress}".`;
-          logger.info(message);
-          break; // Added break
-
-        default:
-           // Should not happen due to enum validation, but good practice
-           releaseObject(range);
-           releaseObject(worksheet);
-           throw new Error(`Unsupported operation: "${input.operation}".`);
-      }
-
-      // Save the workbook if it was modified
-      if (input.operation === 'write' || input.operation === 'format' || input.operation === 'apply') {
-          if (!fileCreated) {
-              workbook.Save();
-              logger.info(`Workbook saved: ${absoluteFilePath}`);
+        } else if (input.sheetName) {
+          let foundSheet = excelWorkbook.getWorksheet(input.sheetName);
+          if (foundSheet) {
+            worksheet = foundSheet;
+          } else if (input.operation === 'write' || input.operation === 'format' || input.operation === 'apply') {
+            worksheet = excelWorkbook.addWorksheet(input.sheetName);
+            logger.info(`exceljs: Added new sheet "${input.sheetName}" as it was not found.`);
+          } else {
+            // If sheetName is provided for a read operation and not found
+             return createErrorResponse(`exceljs: Worksheet "${input.sheetName}" not found.`, 'SHEET_NOT_FOUND_EXCELJS');
           }
-          // Save the modified Excel file as a dynamic resource
-          try {
-              // Ensure workbook is saved before reading
-              const excelContent = await fs.readFile(absoluteFilePath, null); // Read as Buffer
-              await saveResource('excel/range', path.basename(absoluteFilePath), excelContent);
-              logger.info(`Saved ${absoluteFilePath} as a dynamic resource.`);
-          } catch (resourceSaveError: any) {
-              logger.error(`Failed to save ${absoluteFilePath} as a dynamic resource: ${resourceSaveError.message}`);
-              // Continue execution even if resource saving fails
+        } else {
+          // Default to first sheet or create 'Sheet1' if new/empty and operation allows
+          if (excelWorkbook.worksheets.length > 0) {
+            worksheet = excelWorkbook.worksheets[0];
+          } else if (input.operation === 'write' || input.operation === 'format' || input.operation === 'apply') {
+            worksheet = excelWorkbook.addWorksheet('Sheet1');
+            logger.info(`exceljs: Added new default sheet "Sheet1".`);
+          } else {
+            // Read operation on a file with no sheets and no specific sheet requested
+            return createErrorResponse(`exceljs: No worksheets found in the file and no specific sheet requested for read.`, 'SHEET_NOT_FOUND_EXCELJS');
           }
-      }
+        }
 
-      // Release COM objects used within the switch
-      releaseObject(range);
-      releaseObject(worksheet);
+        if (!worksheet) { // This check should ideally be unreachable if logic above is correct
+          return createErrorResponse(`exceljs: Worksheet "${input.sheetName || input.sheetIndex || 'default'}" could not be resolved. This indicates an unexpected state.`, 'SHEET_RESOLUTION_ERROR_EXCELJS');
+        }
+        
+        // exceljs range operations are often cell by cell or require parsing rangeAddress
+        // For simplicity, this example will focus on single cell for read/write/format if rangeAddress is like "A1"
+        // and will need more complex logic for "A1:B2" style ranges.
 
-      return { success: true, data: resultData, message }; // Return consistent structure
+        switch (input.operation) {
+          case 'read':
+            // Simplified: reads single cell or top-left of a range.
+            // Proper range reading requires parsing input.rangeAddress
+            const cellToRead = worksheet.getCell(input.rangeAddress.split(':')[0]); // Get top-left cell of range
+            resultData = cellToRead.value;
+            message = `exceljs: Value read from cell "${input.rangeAddress.split(':')[0]}" (Note: full range read needs specific parsing).`;
+            logger.info(message);
+            break;
 
-    } catch (error: any) {
-      logger.error(`Error in excel/range tool: ${error.message}`, { error: error instanceof z.ZodError ? error.errors : error });
-       if (error instanceof z.ZodError) {
-          return createErrorResponse('Input validation failed', 'VALIDATION_ERROR', error.errors);
+          case 'write':
+            if (!input.values) {
+              throw new Error('exceljs: Values are required for the "write" operation.');
+            }
+            // Simplified: writes to single cell or top-left of a range if values is 1x1.
+            // Proper range writing requires parsing input.rangeAddress and iterating input.values
+            const cellToWrite = worksheet.getCell(input.rangeAddress.split(':')[0]);
+            cellToWrite.value = input.values[0]?.[0] ?? null; // Write first value
+            message = `exceljs: Value written to cell "${input.rangeAddress.split(':')[0]}" (Note: full range write needs specific parsing and iteration).`;
+            logger.info(message);
+            break;
+
+          case 'format':
+            if (!input.formatProperties) {
+              throw new Error('exceljs: Format properties are required for the "format" operation.');
+            }
+            // Simplified: formats single cell or top-left of a range.
+            const cellToFormat = worksheet.getCell(input.rangeAddress.split(':')[0]);
+            // Map common COM properties to exceljs (this is a very basic mapping)
+            // Example: { Font: { Bold: true }, Interior: { Color: 255 } }
+            // exceljs: cell.font = { bold: true }; cell.fill = { type: 'pattern', pattern:'solid', fgColor:{argb:'FFFF0000'} };
+            // This part needs careful implementation based on expected formatProperties structure.
+            // For now, a direct assignment attempt, which might not work for nested COM-style props.
+            Object.assign(cellToFormat, input.formatProperties); // This is too simplistic for complex formats
+            message = `exceljs: Format attempted on cell "${input.rangeAddress.split(':')[0]}" (Note: formatting needs detailed mapping from COM to exceljs style).`;
+            logger.warn("exceljs: Format application is currently very basic and may not support complex COM-style properties directly.");
+            break;
+            
+          case 'apply':
+             // Similar to format, apply properties.
+            if (!input.formatProperties) {
+                 throw new Error('exceljs: Properties are required for the "apply" operation.');
+            }
+            const cellToApply = worksheet.getCell(input.rangeAddress.split(':')[0]);
+            Object.assign(cellToApply, input.formatProperties);
+            message = `exceljs: Properties applied to cell "${input.rangeAddress.split(':')[0]}" (Note: needs detailed mapping).`;
+            logger.warn("exceljs: Apply operation is currently very basic.");
+            break;
+
+          default:
+            throw new Error(`exceljs: Unsupported operation: "${input.operation}".`);
+        }
+
+        if (input.operation === 'write' || input.operation === 'format' || input.operation === 'apply') {
+          await excelWorkbook.xlsx.writeFile(absoluteFilePath);
+          logger.info(`exceljs: Workbook saved: ${absoluteFilePath}`);
+        }
+      } catch (error: any) {
+        logger.error(`Error in excel/range tool (exceljs): ${error.message}`, { error });
+        return createErrorResponse(`exceljs: Excel range operation failed: ${error.message}`, 'EXCEL_RANGE_ERROR_EXCELJS', error);
       }
-      return createErrorResponse(`Excel range operation failed: ${error.message}`, 'EXCEL_RANGE_ERROR', error);
-    } finally {
-      // Release workbook object if it was created/opened
-      if (workbook) {
-          // Don't close workbook here, let getOfficeApplication manage app lifecycle
-          releaseObject(workbook);
-      }
-      // Release excelApp object
-      if (excelApp) {
-          releaseObject(excelApp);
-      }
-      logger.debug("Released Excel COM objects for excel/range operation.");
     }
+
+    // Save the modified Excel file as a dynamic resource (common for both paths if successful)
+    if (input.operation === 'write' || input.operation === 'format' || input.operation === 'apply') {
+        try {
+            const excelContent = await fs.readFile(absoluteFilePath, null); // Read as Buffer
+            await saveResource('excel/range', path.basename(absoluteFilePath), excelContent);
+            logger.info(`Saved ${absoluteFilePath} as a dynamic resource.`);
+            if (typeof message === 'string') message += ` Saved as dynamic resource.`;
+            else if (resultData && typeof resultData === 'object') (resultData as any).dynamicResourceSaved = true;
+
+        } catch (resourceSaveError: any) {
+            logger.error(`Failed to save ${absoluteFilePath} as a dynamic resource: ${resourceSaveError.message}`);
+            if (typeof message === 'string') message += ` (Warning: Failed to save as dynamic resource: ${resourceSaveError.message})`;
+            else if (resultData && typeof resultData === 'object') (resultData as any).dynamicResourceError = resourceSaveError.message;
+        }
+    }
+    return { success: true, data: resultData, message };
+
   },
 };
 

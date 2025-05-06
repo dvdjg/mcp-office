@@ -9,6 +9,9 @@ import { z, ZodError } from 'zod';
 import { McpResource, ApiResponse, SuccessResponse, ErrorResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types';
 import { getOfficeApplication, releaseObject } from '../../utils/officeInterop'; // Import releaseObject
 import logger from '../../utils/logger'; // Import logger
+import ExcelJS from 'exceljs'; // Import exceljs
+import * as fs from 'fs-extra'; // Import fs to read the Excel file
+import * as path from 'path'; // Import path
 
 // --- COM Constants (Examples, verify in Excel documentation) ---
 // https://learn.microsoft.com/en-us/office/vba/api/excel.xlautofilteroperator
@@ -92,7 +95,7 @@ const ExcelDataAnalysisInputSchema = z.object({
 
     // Specific fields for 'calculate'
     formulaRange: z.string().optional().describe('Address of the range containing formulas to calculate (e.g., "A1:A10"). Required for "calculate".'),
-
+    useComInterop: z.boolean().optional().default(false).describe('Use COM interop for local Excel interaction. Defaults to false (uses exceljs).'),
 }).refine(data => {
     // Conditional validations based on the operation
     if (data.operation === 'sort') {
@@ -190,168 +193,185 @@ export const excelDataAnalysisTool: McpResource[] = [{
   description: 'Performs data analysis operations (sort, filter, pivot, calculate) on Excel ranges or tables.',
   schema: ExcelDataAnalysisInputSchema, // Use the new z.object schema
   handler: async (params: ToolRequestParams, context?: FastMCPContext<any>): Promise<ApiResponse<string>> => {
-    let excelApp: any = null;
-    let workbook: any = null;
-    let sheet: any = null;
+    const input = ExcelDataAnalysisInputSchema.parse(params);
+    const { filePath, operation, sheetName, sheetIndex, rangeAddress, tableName, useComInterop, sortCriteria, filterCriteria, pivotTableParameters, formulaRange, header } = input;
+    const absoluteFilePath = path.resolve(filePath);
+    let resultMessage: string;
 
-    try {
-      // Validate input parameters using the combined schema
-      const input = ExcelDataAnalysisInputSchema.parse(params);
+    if (useComInterop) {
+      logger.info(`Executing excel/data-analysis (COM) operation '${operation}' for file: ${filePath}`);
+      let excelApp: any = null;
+      let workbook: any = null;
+      let sheet: any = null;
+      try {
+        excelApp = await getOfficeApplication('Excel.Application');
+        workbook = excelApp.Workbooks.Open(absoluteFilePath);
+        sheet = sheetIndex
+          ? workbook.Sheets(sheetIndex)
+          : workbook.Sheets(sheetName || 1); // Default to first sheet if name not provided
 
-      excelApp = await getOfficeApplication('Excel.Application');
-      workbook = excelApp.Workbooks.Open(input.filePath);
-      sheet = input.sheetIndex
-        ? workbook.Sheets(input.sheetIndex)
-        : workbook.Sheets(input.sheetName || 1);
-
-      let targetRange: any = null;
-      if (input.tableName) {
-        try {
-          targetRange = sheet.ListObjects(input.tableName).Range;
-        } catch (e: any) {
-          throw new Error(`Table "${input.tableName}" not found: ${e.message}`);
+        let targetRange: any = null;
+        if (tableName) {
+          try {
+            targetRange = sheet.ListObjects(tableName).Range;
+          } catch (e: any) {
+            throw new Error(`COM: Table "${tableName}" not found: ${e.message}`);
+          }
+        } else if (rangeAddress) {
+          targetRange = sheet.Range(rangeAddress);
+        } else {
+          throw new Error('COM: rangeAddress or tableName is required.');
         }
-      } else if (input.rangeAddress) {
-        targetRange = sheet.Range(input.rangeAddress);
-      } else {
-        // This case should be caught by the schema refine, but as a fallback:
-        throw new Error('rangeAddress or tableName is required.');
-      }
 
-      let resultMessage: string;
-
-      switch (input.operation) {
-        case 'sort': {
-          const sortInput = input; // input is already validated as ExcelDataAnalysisInput
-          if (!sortInput.sortCriteria) throw new Error("sortCriteria is required for 'sort' operation.");
-
-          const sort = targetRange.Sort;
-          sort.SortFields.Clear();
-          sortInput.sortCriteria.forEach(criteria => {
-            const columnRange = targetRange.Columns(criteria.column);
-            sort.SortFields.Add(columnRange, excelApp.constants.xlSortOnValues, criteria.order === 'Ascending' ? excelApp.constants.xlAscending : excelApp.constants.xlDescending);
-          });
-          sort.SetRange(targetRange);
-          sort.Header = input.header !== undefined ? input.header : excelApp.constants.xlGuess;
-          sort.MatchCase = false;
-          sort.Orientation = excelApp.constants.xlSortColumns;
-          sort.SortMethod = excelApp.constants.xlPinYin; // Or xlStroke
-          sort.Apply();
-          resultMessage = `Operation 'sort' applied to the range/table in "${input.filePath}".`;
-          break;
-        }
-        case 'filter': {
-          const filterInput = input; // input is already validated as ExcelDataAnalysisInput
-          if (!filterInput.filterCriteria) throw new Error("filterCriteria is required for 'filter' operation.");
-
-          targetRange.AutoFilter(); // Ensure AutoFilter is activated
-          filterInput.filterCriteria.forEach(criteria => {
-            targetRange.AutoFilter(
-              targetRange.Columns(criteria.column).Column, // Field
-              criteria.criteria1,
-              criteria.operator !== undefined ? criteria.operator : excelApp.constants.xlFilterValues, // Default operator
-              criteria.criteria2,
-              criteria.visibleDropDown !== undefined ? criteria.visibleDropDown : true // Default visibleDropDown
+        switch (operation) {
+          case 'sort': {
+            if (!sortCriteria) throw new Error("COM: sortCriteria is required for 'sort' operation.");
+            const sort = targetRange.Sort;
+            sort.SortFields.Clear();
+            sortCriteria.forEach(criteria => {
+              const columnRange = targetRange.Columns(criteria.column);
+              sort.SortFields.Add(columnRange, excelApp.constants.xlSortOnValues, criteria.order === 'Ascending' ? excelApp.constants.xlAscending : excelApp.constants.xlDescending);
+            });
+            sort.SetRange(targetRange);
+            sort.Header = header !== undefined ? header : excelApp.constants.xlGuess;
+            sort.MatchCase = false;
+            sort.Orientation = excelApp.constants.xlSortColumns;
+            sort.SortMethod = excelApp.constants.xlPinYin;
+            sort.Apply();
+            resultMessage = `COM: Operation 'sort' applied to "${filePath}".`;
+            break;
+          }
+          case 'filter': {
+            if (!filterCriteria) throw new Error("COM: filterCriteria is required for 'filter' operation.");
+            targetRange.AutoFilter();
+            filterCriteria.forEach(criteria => {
+              targetRange.AutoFilter(
+                targetRange.Columns(criteria.column).Column,
+                criteria.criteria1,
+                criteria.operator !== undefined ? criteria.operator : excelApp.constants.xlFilterValues,
+                criteria.criteria2,
+                criteria.visibleDropDown !== undefined ? criteria.visibleDropDown : true
+              );
+            });
+            resultMessage = `COM: Operation 'filter' applied to "${filePath}".`;
+            break;
+          }
+          case 'pivot': {
+            if (!pivotTableParameters) throw new Error("COM: pivotTableParameters is required for 'pivot' operation.");
+            const pivotCache = workbook.PivotCaches.Create(excelApp.constants.xlDatabase, targetRange);
+            const pivotTable = pivotCache.CreatePivotTable(
+              pivotTableParameters.destination,
+              pivotTableParameters.pivotTableName
             );
-          });
-          resultMessage = `Operation 'filter' applied to the range/table in "${input.filePath}".`;
-          break;
+            pivotTableParameters.rowFields?.forEach((field: string | number) => {
+              pivotTable.PivotFields(field).Orientation = excelApp.constants.xlRowField;
+            });
+            pivotTableParameters.columnFields?.forEach((field: string | number) => {
+              pivotTable.PivotFields(field).Orientation = excelApp.constants.xlColumnField;
+            });
+            pivotTableParameters.dataFields?.forEach(dataField => {
+              const field = pivotTable.PivotFields(dataField.field);
+              pivotTable.AddDataField(field, dataField.name, dataField.function !== undefined ? dataField.function : excelApp.constants.xlSum);
+            });
+            pivotTableParameters.filterFields?.forEach((field: string | number) => {
+              pivotTable.PivotFields(field).Orientation = excelApp.constants.xlPageField;
+            });
+            resultMessage = `COM: Pivot table "${pivotTableParameters.pivotTableName}" created.`;
+            break;
+          }
+          case 'calculate': {
+            if (!formulaRange) throw new Error("COM: formulaRange is required for 'calculate' operation.");
+            const calcRange = sheet.Range(formulaRange);
+            calcRange.Calculate();
+            resultMessage = `COM: Calculation executed on range "${formulaRange}" in "${filePath}".`;
+            break;
+          }
+          default:
+            throw new Error(`COM: Unsupported operation: "${operation}".`);
         }
-        case 'pivot': {
-          const pivotInput = input; // input is already validated as ExcelDataAnalysisInput
-          if (!pivotInput.pivotTableParameters) throw new Error("pivotTableParameters is required for 'pivot' operation.");
-
-          const pivotCache = workbook.PivotCaches.Create(excelApp.constants.xlDatabase, targetRange);
-          const pivotTable = pivotCache.CreatePivotTable(
-            pivotInput.pivotTableParameters.destination,
-            pivotInput.pivotTableParameters.pivotTableName
-          );
-
-          // Add row fields
-          pivotInput.pivotTableParameters.rowFields?.forEach((field: string | number) => { // Add type for field
-            pivotTable.PivotFields(field).Orientation = excelApp.constants.xlRowField;
-          });
-
-          // Add column fields
-          pivotInput.pivotTableParameters.columnFields?.forEach((field: string | number) => { // Add type for field
-            pivotTable.PivotFields(field).Orientation = excelApp.constants.xlColumnField;
-          });
-
-          // Add data fields
-          pivotInput.pivotTableParameters.dataFields?.forEach(dataField => {
-            const field = pivotTable.PivotFields(dataField.field);
-            const dataFieldItem = pivotTable.AddDataField(field, dataField.name, dataField.function !== undefined ? dataField.function : excelApp.constants.xlSum); // Default function
-          });
-
-          // Add filter fields
-          pivotInput.pivotTableParameters.filterFields?.forEach((field: string | number) => { // Add type for field
-            pivotTable.PivotFields(field).Orientation = excelApp.constants.xlPageField; // Filter
-          });
-
-          resultMessage = `Operation 'pivot' completed. Pivot table "${pivotInput.pivotTableParameters.pivotTableName}" created at "${pivotInput.pivotTableParameters.destination}".`;
-          break;
-        }
-        case 'calculate': {
-          const calcInput = input; // input is already validated as ExcelDataAnalysisInput
-          if (!calcInput.formulaRange) throw new Error("formulaRange is required for 'calculate' operation.");
-
-          const formulaRange = sheet.Range(calcInput.formulaRange);
-          formulaRange.Calculate();
-          // Note: This operation does not return the calculation results, it only executes them.
-          resultMessage = `Operation 'calculate' executed on range "${calcInput.formulaRange}" in "${input.filePath}".`;
-          break;
-        }
-        default:
-          // This case should theoretically not be reached due to discriminated union,
-          // but adding a type assertion for safety and to satisfy TypeScript.
-          // const exhaustiveCheck: never = input; // No longer needed with combined schema
-          throw new Error(`Unsupported operation: "${(input as any).operation}".`); // Access operation directly
-
+        return { success: true, data: resultMessage };
+      } catch (error: any) {
+        logger.error(`[excel/data-analysis COM] Error: ${error.message}`, { error: String(error), params });
+        return { success: false, error: { code: 'OFFICE_API_COM_ERROR', message: `COM Error: ${error.message}`, details: String(error) } };
+      } finally {
+        if (workbook) { try { workbook.Save(); workbook.Close(false); } catch(e){ /* ignore */ } }
+        releaseObject(sheet);
+        releaseObject(workbook);
+        releaseObject(excelApp); // Release app if we specifically got it for this op.
       }
+    } else {
+      // exceljs path
+      logger.info(`Executing excel/data-analysis (exceljs) operation '${operation}' for file: ${filePath}`);
+      const wb = new ExcelJS.Workbook();
+      try {
+        const fileExisted = await fs.pathExists(absoluteFilePath);
+        if (!fileExisted && operation !== 'pivot') { // Pivot might create a new file if destination is new sheet
+             throw new Error(`exceljs: File not found at ${absoluteFilePath}.`);
+        }
+        if(fileExisted) {
+            await wb.xlsx.readFile(absoluteFilePath);
+        }
 
-      // Return success response
-      return {
-        success: true,
-        data: resultMessage,
-      };
+        let ws: ExcelJS.Worksheet | undefined;
+        if (sheetName) ws = wb.getWorksheet(sheetName);
+        else if (sheetIndex && sheetIndex > 0 && sheetIndex <= wb.worksheets.length) ws = wb.worksheets[sheetIndex - 1];
+        else if (wb.worksheets.length > 0) ws = wb.worksheets[0];
+        
+        if (!ws && operation !== 'pivot') { // Pivot might create its own destination sheet
+            throw new Error(`exceljs: Worksheet "${sheetName || sheetIndex || 'default'}" not found.`);
+        }
 
-    } catch (error: any) {
-      // Handle Zod validation errors specifically
-      if (error instanceof ZodError) {
-        // Serialize error.errors to be serializable
-        const errorDetails = JSON.stringify(error.errors, null, 2);
-        logger.warn(`[excel/data-analysis] Input validation failed: ${error.message}`, { errors: errorDetails, params });
-        return {
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Input validation error.',
-            details: errorDetails,
-          },
-        };
+
+        switch (operation) {
+          case 'sort':
+            resultMessage = "exceljs: Sorting data within Excel files is not directly supported. For sorting, please use COM Interop or implement manual data extraction, sorting in code, and writing back.";
+            logger.warn(resultMessage);
+            break;
+          case 'filter':
+            if (ws && (rangeAddress || tableName)) {
+                // exceljs can set an autofilter range, but not apply criteria programmatically easily.
+                // If tableName is given, find its range.
+                let filterRange = rangeAddress;
+                if (tableName) {
+                    const table = ws.getTable(tableName);
+                    if (table) {
+                        filterRange = table.ref; // Get the range from the table
+                    } else {
+                        throw new Error(`exceljs: Table "${tableName}" not found on sheet "${ws.name}".`);
+                    }
+                }
+                if (filterRange) {
+                    ws.autoFilter = filterRange;
+                    resultMessage = `exceljs: AutoFilter enabled on range "${filterRange}" in sheet "${ws.name}". Applying specific criteria programmatically is not supported; use COM Interop or manual filtering in Excel.`;
+                } else {
+                     throw new Error(`exceljs: rangeAddress or tableName (resolving to a range) is required to enable AutoFilter.`);
+                }
+            } else {
+              resultMessage = "exceljs: To enable AutoFilter, a worksheet and either rangeAddress or tableName must be specified. Applying specific criteria is not supported; use COM Interop.";
+              logger.warn(resultMessage);
+            }
+            break;
+          case 'pivot':
+            resultMessage = "exceljs: Creating or manipulating Pivot Tables is not supported. Please use COM Interop for Pivot Table operations.";
+            logger.warn(resultMessage);
+            break;
+          case 'calculate':
+            // exceljs calculates formulas on load/save.
+            // If we just load and save, it might trigger calculations.
+            if(fileExisted) await wb.xlsx.writeFile(absoluteFilePath); // Save to trigger calculations
+            resultMessage = `exceljs: Formulas are generally calculated upon file load/save. Workbook at "${filePath}" processed. Specific range calculation is not applicable.`;
+            break;
+          default:
+            throw new Error(`exceljs: Unsupported operation: "${operation}".`);
+        }
+        if (operation === 'filter' || operation === 'calculate' && fileExisted) { // Only save if an action was taken
+             await wb.xlsx.writeFile(absoluteFilePath);
+        }
+        return { success: true, data: resultMessage };
+      } catch (error: any) {
+        logger.error(`[excel/data-analysis exceljs] Error: ${error.message}`, { error: String(error), params });
+        return { success: false, error: { code: 'EXCELJS_DATA_ANALYSIS_ERROR', message: `exceljs Error: ${error.message}`, details: String(error) } };
       }
-      // Handle other errors
-      logger.error(`[excel/data-analysis] Error executing tool: ${error.message}`, { error: String(error), params }); // Serialize error
-      return {
-        success: false,
-        error: {
-          code: 'OFFICE_API_ERROR', // Or a more specific code if possible
-          message: `Error executing excel/data-analysis tool: ${error.message}`,
-          details: String(error), // Serialize error
-        },
-      };
-    } finally {
-      // Do not close Excel here, the application should remain open for future operations.
-      // Release workbook and sheet if obtained
-      if (workbook) workbook.Close(false); // Close without saving
-      releaseObject(sheet);
-      releaseObject(workbook);
-      // Do not release excelApp here
     }
-    // Add a return at the end to cover all possible cases
-    // This will only be reached if no error was thrown or returned before.
-    // In an ideal scenario, all switch cases should return.
-    // But to satisfy the linter, we add this fallback return.
-    return { success: false, error: { code: 'UNHANDLED_CASE', message: 'Excel data analysis operation did not return an explicit result.' } };
   },
 }];

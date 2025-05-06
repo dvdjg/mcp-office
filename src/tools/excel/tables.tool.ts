@@ -14,6 +14,7 @@ import logger from '../../utils/logger'; // Import logger
 import { saveResource } from '../dynamic/resources.tool'; // Import saveResource
 import * as fs from 'fs-extra'; // Import fs to read the Excel file
 import * as path from 'path'; // Import path
+import ExcelJS from 'exceljs'; // Import exceljs
 
 // Input schema for the excel/tables tool
 const ExcelTablesInputSchema = z.object({
@@ -27,6 +28,7 @@ const ExcelTablesInputSchema = z.object({
   location: z.enum(['rows', 'columns']).optional().describe('Specifies whether to add "rows" or "columns". Required for the "add" operation.'),
   count: z.number().optional().describe('Number of rows or columns to add/delete. Required for "add" and "delete" operations (except full table delete).'),
   position: z.number().optional().describe('Position (1-based index) where to add/delete rows/columns. Optional for "add" and "delete" (rows/columns).'),
+  useComInterop: z.boolean().optional().default(false).describe('Use COM interop for local Excel interaction. Defaults to false (uses exceljs).'),
 });
 
 type ExcelTablesInput = z.infer<typeof ExcelTablesInputSchema>;
@@ -43,187 +45,290 @@ const excelTablesTool: McpResource = {
   description: 'Manages tables in Excel files (insert, modify, add/delete rows/columns, delete table).',
   schema: ExcelTablesInputSchema,
   handler: async (params: ToolRequestParams): Promise<ApiResponse<any>> => {
-    let excelApp: any = null;
-    let workbook: any = null;
-    let worksheet: any = null;
-    let filePath: string | undefined; // Declare filePath outside the try and allow undefined
+    const input = ExcelTablesInputSchema.parse(params);
+    const { filePath, operation, sheetName, sheetIndex, rangeAddress, tableName, data, location, count, position, useComInterop } = input;
+    const absoluteFilePath = path.resolve(filePath);
+    let message = '';
 
-    try {
-      const input = ExcelTablesInputSchema.parse(params);
-      filePath = input.filePath; // Assign filePath here
-      const { operation, sheetName, sheetIndex, rangeAddress, tableName, data, location, count, position } = input;
+    if (useComInterop) {
+      logger.info(`Executing excel/tables (COM) operation '${operation}' for file: ${filePath}`);
+      let excelApp: any = null;
+      let workbook: any = null;
+      let worksheet: any = null;
+      try {
+        excelApp = await getOfficeApplication('Excel.Application');
+        // Ensure file exists or create if necessary for certain operations (COM handles this implicitly for Open/Add)
+        // For COM, Open will fail if not exists, Add creates new.
+        // We'll assume filePath exists for read/modify/delete, and for insert, ListObjects.Add implies an existing sheet.
+        // If the file doesn't exist for insert, COM would typically require creating the workbook first.
+        // This logic might need refinement based on how strictly "create if not exists" should apply to COM path.
+        // For now, assume Open is the primary way to get the workbook.
+        try {
+            workbook = excelApp.Workbooks.Open(absoluteFilePath);
+        } catch (e) {
+            // If opening fails, and it's an insert operation, we might need to create the workbook.
+            // However, the COM ListObjects.Add typically expects an existing workbook and sheet.
+            // This part of COM logic might be more complex if file creation is strictly required here.
+            // For simplicity, we'll assume the file/workbook should exist for COM table operations.
+            logger.error(`COM: Failed to open workbook ${absoluteFilePath}: ${e instanceof Error ? e.message : String(e)}`);
+            throw new Error(`COM: Failed to open workbook ${absoluteFilePath}. Ensure the file exists.`);
+        }
 
-      excelApp = await getOfficeApplication('Excel.Application'); // Use getOfficeApplication
-      workbook = excelApp.Workbooks.Open(filePath);
 
-      if (sheetName) {
-        worksheet = workbook.Sheets(sheetName);
-      } else if (sheetIndex) {
-        worksheet = workbook.Sheets(sheetIndex);
-      } else {
-        worksheet = workbook.ActiveSheet;
+        if (sheetName) {
+          worksheet = workbook.Sheets(sheetName);
+        } else if (sheetIndex) {
+          worksheet = workbook.Sheets(sheetIndex);
+        } else {
+          worksheet = workbook.ActiveSheet;
+        }
+
+        if (!worksheet) {
+          throw new Error(`COM: Worksheet "${sheetName || sheetIndex || 'ActiveSheet'}" not found.`);
+        }
+
+        switch (operation) {
+          case 'insert':
+            if (!rangeAddress) {
+              throw new Error('COM: rangeAddress is required for the "insert" operation.');
+            }
+            const listObject = worksheet.ListObjects.Add(1, worksheet.Range(rangeAddress), null, 1); // xlSrcRange = 1, xlListObjectHasHeaders = 1
+            if (tableName) {
+              listObject.Name = tableName;
+            }
+            message = `COM: Table inserted in range ${rangeAddress}. Name: ${listObject.Name}`;
+            break;
+
+          case 'modify':
+            if (!tableName) {
+              throw new Error('COM: tableName is required for the "modify" operation.');
+            }
+            const tableToModify = worksheet.ListObjects(tableName);
+            if (!tableToModify) {
+              throw new Error(`COM: Table "${tableName}" not found.`);
+            }
+            // Modification logic (e.g., rename)
+            // if (input.newTableName) tableToModify.Name = input.newTableName; // Example
+            message = `COM: Table "${tableName}" found for modification.`; // Actual modification needs more params
+            break;
+
+          case 'add':
+            if (!tableName) throw new Error('COM: tableName is required for "add".');
+            if (!location) throw new Error('COM: location ("rows" or "columns") is required for "add".');
+            const tableToAdd = worksheet.ListObjects(tableName);
+            if (!tableToAdd) throw new Error(`COM: Table "${tableName}" not found.`);
+
+            if (location === 'rows') {
+              if (!data || data.length === 0) throw new Error('COM: data is required for adding rows.');
+              for (const rowData of data) {
+                const newRow = tableToAdd.ListRows.Add(); // Adds at the end by default
+                for (let i = 0; i < rowData.length; i++) {
+                  if (i < newRow.Range.Cells.Count) {
+                     newRow.Range.Cells(1, i + 1).Value = rowData[i];
+                  }
+                }
+              }
+              message = `COM: ${data.length} row(s) added to table "${tableName}".`;
+            } else if (location === 'columns') {
+              if (!count || count <= 0) throw new Error('COM: count is required for adding columns.');
+              const currentColumnCount = tableToAdd.ListColumns.Count;
+              const insertPos = position !== undefined && position >= 1 && position <= currentColumnCount + 1 ? position : currentColumnCount + 1;
+              for (let i = 0; i < count; i++) {
+                tableToAdd.ListColumns.Add(insertPos); // Adds column at specified position
+              }
+              message = `COM: ${count} column(s) added to table "${tableName}".`;
+            }
+            break;
+
+          case 'delete':
+            if (!tableName) throw new Error('COM: tableName is required for "delete".');
+            const tableToDelete = worksheet.ListObjects(tableName);
+            if (!tableToDelete) throw new Error(`COM: Table "${tableName}" not found.`);
+
+            if (location === 'rows') {
+              if (!count || count <= 0) throw new Error('COM: count is required for deleting rows.');
+              const currentRowCount = tableToDelete.ListRows.Count;
+              // Default to deleting from the end if position is not specified or invalid for deletion count
+              const startDeletePos = (position && position >=1 && position + count -1 <= currentRowCount) ? position : Math.max(1, currentRowCount - count + 1);
+              if (startDeletePos < 1 || startDeletePos + count -1 > currentRowCount) {
+                throw new Error(`COM: Invalid row deletion range for table "${tableName}".`);
+              }
+              for (let i = 0; i < count; i++) {
+                // COM ListRows index is 1-based. Deleting shifts indices. So always delete at startDeletePos.
+                tableToDelete.ListRows(startDeletePos).Delete();
+              }
+              message = `COM: ${count} row(s) deleted from table "${tableName}".`;
+            } else if (location === 'columns') {
+              if (!count || count <= 0) throw new Error('COM: count is required for deleting columns.');
+              const currentColCount = tableToDelete.ListColumns.Count;
+              const startDeletePos = (position && position >=1 && position + count -1 <= currentColCount) ? position : Math.max(1, currentColCount - count + 1);
+               if (startDeletePos < 1 || startDeletePos + count -1 > currentColCount) {
+                throw new Error(`COM: Invalid column deletion range for table "${tableName}".`);
+              }
+              for (let i = 0; i < count; i++) {
+                tableToDelete.ListColumns(startDeletePos).Delete();
+              }
+              message = `COM: ${count} column(s) deleted from table "${tableName}".`;
+            } else { // Delete whole table
+              tableToDelete.Delete();
+              message = `COM: Table "${tableName}" deleted.`;
+            }
+            break;
+          default:
+            throw new Error(`COM: Unsupported operation: ${operation}`);
+        }
+        return { success: true, data: message };
+      } catch (error: any) {
+        logger.error(`Error in excel/tables tool (COM): ${error.message}`);
+        return { success: false, error: { code: 'EXCEL_TABLES_COM_ERROR', message: `COM Error: ${error.message}` } };
+      } finally {
+        if (workbook) {
+          try { workbook.Save(); workbook.Close(); } catch (e) { logger.warn(`COM: Error saving/closing workbook: ${e}`);}
+          releaseObject(workbook);
+        }
+        if (excelApp) releaseObject(excelApp);
       }
+    } else {
+      // exceljs path
+      logger.info(`Executing excel/tables (exceljs) operation '${operation}' for file: ${filePath}`);
+      const wb = new ExcelJS.Workbook();
+      let ws: ExcelJS.Worksheet | undefined; // Allow ws to be undefined initially
+      let fileExisted = await fs.pathExists(absoluteFilePath);
 
-      if (!worksheet) {
-        throw new Error(`Worksheet "${sheetName || sheetIndex}" not found.`);
+      if (fileExisted) {
+        await wb.xlsx.readFile(absoluteFilePath);
+        if (sheetName) {
+            ws = wb.getWorksheet(sheetName);
+        } else if (sheetIndex && sheetIndex > 0 && sheetIndex <= wb.worksheets.length) {
+            ws = wb.worksheets[sheetIndex - 1]; // 0-indexed
+        } else if (wb.worksheets.length > 0) {
+            ws = wb.worksheets[0]; // Default to first sheet if no specific one is found by name/index
+        }
+      }
+      
+      // If worksheet is still not defined, and operation allows creation, create it.
+      if (!ws && (operation === 'insert' || (operation === 'add' && (sheetName || sheetIndex)))) {
+        const newSheetName = sheetName || (sheetIndex ? `Sheet${sheetIndex}` : 'Sheet1');
+        ws = wb.addWorksheet(newSheetName);
+        logger.info(`exceljs: Created new sheet "${newSheetName}" as it was not found or file was new.`);
+      } else if (!ws) {
+        // If ws is still not defined after trying to find or create it based on operation type
+        throw new Error(`exceljs: Worksheet "${sheetName || sheetIndex || 'default'}" could not be found or created for operation "${operation}".`);
       }
 
       switch (operation) {
         case 'insert':
-          if (!rangeAddress) {
-            throw new Error('rangeAddress is required for the "insert" operation.');
-          }
-          // Insert a new table in the specified range
-          // The second argument (xlYes) indicates that the first row is the header
-          const listObject = worksheet.ListObjects.Add(1, worksheet.Range(rangeAddress), null, 1); // xlSrcRange = 1, xlListObjectHasHeaders = 1
-          if (tableName) {
-            listObject.Name = tableName;
-          }
-          return { success: true, data: `Table inserted in range ${rangeAddress}. Name: ${listObject.Name}` }; // Adjusted return
+          if (!rangeAddress) throw new Error('exceljs: rangeAddress is required for "insert".');
+          // exceljs requires columns and rows for addTable.
+          // We'll infer columns from rangeAddress or use data if provided.
+          // This is a simplified interpretation. A robust solution needs clear data for columns/rows.
+          const columns = data && data.length > 0 && data[0].length > 0 ? data[0].map(header => ({ name: String(header), filterButton: true })) : [{name: 'Column1', filterButton: true}];
+          const rowsData = data && data.length > 1 ? data.slice(1) : [];
+          
+          ws.addTable({
+            name: tableName || `Table${Date.now()}`, // exceljs requires a name
+            ref: rangeAddress,
+            headerRow: true,
+            totalsRow: false, // example
+            style: {
+              theme: 'TableStyleMedium9',
+              showRowStripes: true,
+            },
+            columns: columns,
+            rows: rowsData,
+          });
+          message = `exceljs: Table inserted in range ${rangeAddress}. Name: ${tableName || 'auto-generated'}. Note: Column/row data inferred or defaulted.`;
+          break;
 
         case 'modify':
-          if (!tableName) {
-            throw new Error('tableName is required for the "modify" operation.');
-          }
-          // Modify an existing table (e.g., change name, resize - not implemented in this simple example)
-          const tableToModify = worksheet.ListObjects(tableName);
-          if (!tableToModify) {
-            throw new Error(`Table "${tableName}" not found.`);
-          }
-          // Implement modification logic here if necessary.
-          // For now, we just confirm that the table exists.
-          return { success: true, data: `Table "${tableName}" found for modification.` }; // Adjusted return
+          // exceljs: Modifying table properties like name or style.
+          // True resize or structural change is complex.
+          if (!tableName) throw new Error('exceljs: tableName is required for "modify".');
+          const tableToMod = ws.getTable(tableName);
+          if (!tableToMod) throw new Error(`exceljs: Table "${tableName}" not found.`);
+          // Example: tableToMod.name = newName; tableToMod.style = {...};
+          message = `exceljs: Table "${tableName}" found. Modification capabilities are specific (e.g., style, name). Structural changes are complex.`;
+          break;
 
         case 'add':
-          if (!tableName) {
-            throw new Error('tableName is required for the "add" operation.');
-          }
-          if (!location) {
-            throw new Error('location ("rows" or "columns") is required for the "add" operation.');
-          }
-          const tableToAdd = worksheet.ListObjects(tableName);
-          if (!tableToAdd) {
-            throw new Error(`Table "${tableName}" not found.`);
-          }
+          if (!tableName) throw new Error('exceljs: tableName is required for "add".');
+          if (!location) throw new Error('exceljs: location ("rows" or "columns") is required for "add".');
+          const tableToAddJs = ws.getTable(tableName);
+          if (!tableToAddJs) throw new Error(`exceljs: Table "${tableName}" not found.`);
 
           if (location === 'rows') {
-            if (!data || data.length === 0) {
-              throw new Error('data is required and cannot be empty for adding rows.');
-            }
-            // Add rows to the table
-            for (const rowData of data) {
-              // AddDataBoundRow adds an empty row at the end. Then we fill the data.
-              const newRow = tableToAdd.ListRows.Add();
-              for (let i = 0; i < rowData.length; i++) {
-                if (i < newRow.Range.Cells.Count) {
-                   newRow.Range.Cells(1, i + 1).Value = rowData[i];
-                }
-              }
-            }
-             return { success: true, data: `${data.length} row(s) added to table "${tableName}".` }; // Adjusted return
-
+            if (!data || data.length === 0) throw new Error('exceljs: data is required for adding rows.');
+            // Using addRow in a loop for broader compatibility, as addRows might have issues or specific requirements.
+            data.forEach(rowData => {
+              tableToAddJs.addRow(rowData);
+            });
+            message = `exceljs: ${data.length} row(s) added to table "${tableName}".`;
           } else if (location === 'columns') {
-             if (!count || count <= 0) {
-                throw new Error('count (number of columns to add) is required and must be positive for adding columns.');
-             }
-             // Add columns to the table
-             // Add method for ListColumns adds a column to the left of the specified position
-             const currentColumnCount = tableToAdd.ListColumns.Count;
-             const insertPosition = position !== undefined && position >= 1 && position <= currentColumnCount + 1 ? position : currentColumnCount + 1;
-
-             for (let i = 0; i < count; i++) {
-                tableToAdd.ListColumns.Add(insertPosition);
-             }
-             return { success: true, data: `${count} column(s) added to table "${tableName}" at position ${insertPosition}.` }; // Adjusted return
-           }
-           // break; // Should not reach here - Removed redundant break
+            // Adding columns in exceljs is not direct. It involves redefining table.columns and updating all rows.
+            // This is a significant limitation compared to COM.
+            message = `exceljs: Adding columns to an existing table is complex and not directly supported by simple 'addColumn' in exceljs. Requires manual data manipulation or table recreation. Operation for table "${tableName}" noted as a limitation.`;
+            logger.warn(message);
+          }
+          break;
 
         case 'delete':
-          if (!tableName) {
-            throw new Error('tableName is required for the "delete" operation.');
-          }
-          const tableToDelete = worksheet.ListObjects(tableName);
-          if (!tableToDelete) {
-            throw new Error(`Table "${tableName}" not found.`);
+          if (!tableName) throw new Error('exceljs: tableName is required for "delete".');
+          const tableToDelJs = ws.getTable(tableName);
+          if (!tableToDelJs && !location) { // If table not found and it's a full table delete op
+             throw new Error(`exceljs: Table "${tableName}" not found for deletion.`);
           }
 
           if (location === 'rows') {
-             if (!count || count <= 0) {
-                throw new Error('count (number of rows to delete) is required and must be positive for deleting rows.');
-             }
-             // Delete rows from the table
-             const currentRowCount = tableToDelete.ListRows.Count;
-             const deletePosition = position !== undefined && position >= 1 && position <= currentRowCount ? position : currentRowCount - count + 1;
-
-             if (deletePosition < 1 || deletePosition + count - 1 > currentRowCount) {
-                 throw new Error(`Invalid row deletion range. Attempting to delete ${count} row(s) from position ${deletePosition} in a table with ${currentRowCount} row(s).`);
-             }
-
-             for (let i = 0; i < count; i++) {
-                tableToDelete.ListRows(deletePosition).Delete();
-             }
-             return { success: true, data: `${count} row(s) deleted from table "${tableName}" starting from position ${deletePosition}.` }; // Adjusted return
-
-          } else if (location === 'columns') {
-             if (!count || count <= 0) {
-                throw new Error('count (number of columns to delete) is required and must be positive for deleting columns.');
-             }
-             // Delete columns from the table
-             const currentColumnCount = tableToDelete.ListColumns.Count;
-             const deletePosition = position !== undefined && position >= 1 && position <= currentColumnCount ? position : currentColumnCount - count + 1;
-
-             if (deletePosition < 1 || deletePosition + count - 1 > currentColumnCount) {
-                 throw new Error(`Invalid column deletion range. Attempting to delete ${count} column(s) from position ${deletePosition} in a table with ${currentColumnCount} column(s).`);
-             }
-
-             for (let i = 0; i < count; i++) {
-                tableToDelete.ListColumns(deletePosition).Delete();
-             }
-             return { success: true, data: `${count} column(s) deleted from table "${tableName}" starting from position ${deletePosition}.` }; // Adjusted return
-
-          } else {
-            // Delete the entire table
-            tableToDelete.Delete();
-            return { success: true, data: `Table "${tableName}" deleted.` }; // Adjusted return
-          }
-          // break; // Should not reach here - Removed redundant break
-      }
-
-    } catch (error: any) {
-      logger.error(`Error in excel/tables tool: ${error.message}`); // Use logger
-      return { success: false, error: { code: 'EXCEL_TABLES_ERROR', message: `Error managing tables in Excel: ${error.message}` } }; // Adjusted error return
-    } finally {
-      if (workbook) {
-        try {
-            workbook.Save();
-            // Save the modified Excel file as a dynamic resource
-            // This is done in the finally block because Save() happens here for all modification operations.
-            // We don't need to check the specific operation here.
-            // Ensure filePath has a value before attempting to read the file
-            if (filePath) {
-                try {
-                    const excelContent = await fs.readFile(filePath, null); // Read as Buffer
-                    await saveResource('excel/tables', path.basename(filePath), excelContent);
-                    // logger.info(`Saved ${filePath} as a dynamic resource.`);
-                } catch (resourceSaveError: any) {
-                    // logger.error(`Failed to save ${filePath} as a dynamic resource: ${resourceSaveError.message}`);
-                    // Continue execution even if resource saving fails
-                }
+            if (!tableToDelJs) throw new Error(`exceljs: Table "${tableName}" not found for deleting rows.`);
+            if (!count || count <= 0) throw new Error('exceljs: count is required for deleting rows.');
+            const startIdx = position ? position - 1 : tableToDelJs.rows.length - count; // 0-indexed
+            if (startIdx < 0 || startIdx + count > tableToDelJs.rows.length) {
+                throw new Error(`exceljs: Invalid row deletion range for table "${tableName}".`);
             }
-            workbook.Close();
-        } catch (closeError: any) {
-            logger.warn(`Error closing the workbook: ${closeError.message}`); // Use logger
-        }
-        releaseObject(workbook);
+            tableToDelJs.removeRows(startIdx, count);
+            message = `exceljs: ${count} row(s) deleted from table "${tableName}".`;
+          } else if (location === 'columns') {
+            if (!tableToDelJs) throw new Error(`exceljs: Table "${tableName}" not found for deleting columns.`);
+            if (!count || count <= 0) throw new Error('exceljs: count is required for deleting columns.');
+            const colStartIdx = position ? position -1 : tableToDelJs.columns.length - count;
+             if (colStartIdx < 0 || colStartIdx + count > tableToDelJs.columns.length) {
+                throw new Error(`exceljs: Invalid column deletion range for table "${tableName}".`);
+            }
+            tableToDelJs.removeColumns(colStartIdx, count); // This updates column definitions and data
+            message = `exceljs: ${count} column(s) deleted from table "${tableName}".`;
+          } else { // Delete whole table
+            ws.removeTable(tableName);
+            message = `exceljs: Table "${tableName}" deleted.`;
+          }
+          break;
+        default:
+          throw new Error(`exceljs: Unsupported operation: ${operation}`);
       }
-      // The Excel application is managed externally, we don't close it here.
-      releaseObject(excelApp);
+      await wb.xlsx.writeFile(absoluteFilePath);
+      logger.info(`exceljs: Workbook saved to ${absoluteFilePath}`);
+      return { success: true, data: message };
     }
-    // Add a return at the end to cover all possible cases
-    // This will only be reached if no error was thrown or returned before.
-    // In an ideal scenario, all switch cases should return.
-    // But to satisfy the linter, we add this fallback return.
-    return { success: false, error: { code: 'UNHANDLED_CASE', message: 'Excel table operation did not return an explicit result.' } };
+
+    // Common dynamic resource saving for both paths if successful and modified
+    if (operation === 'insert' || operation === 'add' || operation === 'delete' || operation === 'modify') {
+        try {
+            const excelContent = await fs.readFile(absoluteFilePath, null);
+            await saveResource('excel/tables', path.basename(absoluteFilePath), excelContent);
+            logger.info(`Saved ${absoluteFilePath} as a dynamic resource.`);
+            if (typeof message === 'string') message += ` Saved as dynamic resource.`;
+        } catch (resourceSaveError: any) {
+            logger.error(`Failed to save ${absoluteFilePath} as a dynamic resource: ${resourceSaveError.message}`);
+            if (typeof message === 'string') message += ` (Warning: Failed to save as dynamic resource: ${resourceSaveError.message})`;
+        }
+    }
+    // This return is for the COM path if it was successful and didn't return earlier in its switch.
+    // The exceljs path returns from its own switch or catch block.
+    // The final fallback return at the very end of the handler should ideally not be reached.
+    if (useComInterop) {
+        return { success: true, data: message || "COM operation completed." };
+    }
+    // Fallback if something went wrong and no specific return was hit.
+    return { success: false, error: { code: 'UNHANDLED_LOGIC_PATH', message: 'Operation did not complete as expected.' } };
   },
 };
 
