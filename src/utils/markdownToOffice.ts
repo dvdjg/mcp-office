@@ -74,7 +74,7 @@ async function createWordTableFromData(range: any, tableData: { type: string; co
     }
 
     const numRows = tableData.length;
-    const numCols = Math.max(...tableData.map(row => row.length)); // Get max columns
+    const numCols = tableData[0] ? tableData[0].length : 0; // Use header row length or 0 if no rows/data
 
     // Insert a new table
     const wordTable = range.Tables.Add(range, numRows, numCols);
@@ -180,74 +180,64 @@ export async function applyMarkdownFormattingToWord(range: any, markdownText: st
                 break;
 
             case 'paragraph_open':
-                // Apply list formatting if we are inside a list
-                if (listLevel > 0 && currentListType) {
-                    let listPara = null;
-                    try {
-                        // Get the current paragraph (which might be empty at this point)
-                        listPara = currentRange.Paragraphs(1);
-                        if (listPara) {
-                            const listFormat = listPara.Range.ListFormat;
+                // List formatting is now handled in paragraph_close after content insertion.
+                // Content insertion is handled by the 'inline' token case
+                break;
+
+            case 'paragraph_close':
+                // Apply list or blockquote formatting *before* inserting the paragraph break
+                let currentParagraph = null;
+                try {
+                    // Get the paragraph that just received content
+                    currentParagraph = currentRange.Paragraphs(1);
+                    if (currentParagraph) {
+                        // Apply List Formatting if active
+                        if (listLevel > 0 && currentListType) {
+                            const listFormat = currentParagraph.Range.ListFormat;
                             let listTemplate = null;
                             try {
-                                // Constants for list galleries (wdBulletGallery = 1, wdNumberGallery = 2)
-                                const galleryType = currentListType === 'bullet' ? 1 : 2;
-                                // Use the first template in the gallery for simplicity
+                                const galleryType = currentListType === 'bullet' ? 1 : 2; // wdBulletGallery = 1, wdNumberGallery = 2
                                 listTemplate = wordApp.ListGalleries(galleryType).ListTemplates(1);
-
                                 if (listTemplate) {
-                                    // Apply the list template at the current level
-                                    // DefaultListBehavior: wdWord10ListBehavior = 1 (or 0 for wdWord9ListBehavior)
+                                    // Apply list template (ContinuePreviousList=true, DefaultListBehavior=wdWord10ListBehavior=1, ApplyLevel=listLevel)
                                     listFormat.ApplyListTemplateWithLevel(listTemplate, true, 1, listLevel);
-                                    logger.debug(`Applied ${currentListType} list format at level ${listLevel}`);
+                                    logger.debug(`Applied ${currentListType} list format at level ${listLevel} to paragraph ${currentParagraph.Range.Start}-${currentParagraph.Range.End}`);
                                 } else {
                                     logger.warn(`Could not retrieve list template for ${currentListType} list.`);
                                 }
                             } catch (templateError: any) {
-                                logger.error(`Error getting list template: ${templateError.message}`);
+                                logger.error(`Error getting/applying list template: ${templateError.message}`);
                             } finally {
                                 if (listTemplate) releaseObject(listTemplate);
                                 releaseObject(listFormat);
                             }
                         }
-                    } catch (listParaError: any) {
-                        logger.error(`Error applying list format: ${listParaError.message}`);
-                    } finally {
-                        if (listPara) releaseObject(listPara);
+                        // Apply Blockquote Indentation if active
+                        else if (blockquoteLevel > 0) { // Use 'else if' to avoid applying both list and blockquote indent
+                            const indentPoints = blockquoteLevel * 36; // 0.5 inch per level
+                            currentParagraph.LeftIndent = indentPoints;
+                            logger.debug(`Applied blockquote indent level ${blockquoteLevel} (${indentPoints} points) to paragraph ${currentParagraph.Range.Start}-${currentParagraph.Range.End}`);
+                            // Optional: Apply a style like "Quote"
+                            // try { currentParagraph.Style = "Quote"; } catch (e) { logger.warn("Could not apply 'Quote' style."); }
+                        }
+                    } else {
+                         logger.warn('Could not get paragraph reference for list/blockquote formatting.');
                     }
+                } catch (paraError: any) {
+                    logger.error(`Error getting paragraph for list/blockquote formatting: ${paraError.message}`);
+                } finally {
+                    if (currentParagraph) releaseObject(currentParagraph);
                 }
-                // Content insertion is handled by the 'inline' token case
-                break;
 
-            case 'paragraph_close':
-                 // Insert paragraph break after the inline content has been inserted
-                 currentRange.InsertParagraphAfter();
-                 currentRange.Collapse(0); // wdCollapseEnd
-                 // Reset inline formatting states at the end of a paragraph block
-                 isBoldActive = false;
-                 isItalicActive = false;
-                 isStrikeActive = false; // Reset strikethrough at end of paragraph
-                 // Apply blockquote indentation if active
-                 if (blockquoteLevel > 0) {
-                     let paragraph = null;
-                     try {
-                         // Get the paragraph that was just finished (before the InsertParagraphAfter)
-                         paragraph = currentRange.Paragraphs(1);
-                         if (paragraph) {
-                             // Apply indentation - Word uses points (1 inch = 72 points)
-                             const indentPoints = blockquoteLevel * 36; // 0.5 inch per level
-                             paragraph.LeftIndent = indentPoints;
-                             logger.debug(`Applied blockquote indent level ${blockquoteLevel} (${indentPoints} points)`);
-                             // Optional: Apply a style like "Quote" or "Block Text"
-                             // try { paragraph.Style = "Quote"; } catch (e) { logger.warn("Could not apply 'Quote' style."); }
-                         }
-                     } catch (paraError: any) {
-                         logger.error(`Error applying blockquote indent: ${paraError.message}`);
-                     } finally {
-                         if (paragraph) releaseObject(paragraph);
-                     }
-                 }
-                 break;
+                // Now, insert paragraph break after the inline content has been inserted and formatted
+                currentRange.InsertParagraphAfter();
+                currentRange.Collapse(0); // wdCollapseEnd
+
+                // Reset inline formatting states at the end of a paragraph block
+                isBoldActive = false;
+                isItalicActive = false;
+                isStrikeActive = false;
+                break;
 
             case 'blockquote_open':
                 blockquoteLevel++;
@@ -591,25 +581,41 @@ export async function applyMarkdownFormattingToWord(range: any, markdownText: st
             case 'th_open':
             case 'td_open':
                 const cellType = token.type === 'th_open' ? 'th' : 'td';
-                // The content is in the following 'inline' token
-                if (tokens[i + 1]?.type === 'inline') {
-                    const cellContent = tokens[i + 1].content;
+                let cellContent = '';
+                const cellCloseToken = cellType === 'th' ? 'th_close' : 'td_close';
+
+                // Loop forward to gather all inline content until the closing tag
+                let k = i + 1;
+                while (k < tokens.length && tokens[k].type !== cellCloseToken) {
+                    if (tokens[k].type === 'inline') {
+                        cellContent += tokens[k].content;
+                    } else if (tokens[k].type === 'softbreak') {
+                        // In Word tables, a softbreak might best be represented by a vertical tab (character 11)
+                        // or just ignored depending on desired table layout. Let's use VT for now.
+                        cellContent += String.fromCharCode(11); // Vertical Tab
+                    } else if (tokens[k].type === 'code_inline') {
+                         cellContent += tokens[k].content; // Treat inline code as text for now within tables
+                    }
+                    // Ignore formatting tokens like strong_open/close for now, just collect text content
+                    k++;
+                }
+
+                if (k < tokens.length) { // Found the closing tag
                     currentTableRow.push({
                         type: cellType,
-                        content: cellContent,
-                        colspan: 1, // Basic markdown tables don't have colspan/rowspan
+                        content: cellContent, // Store collected text content (trimming might remove leading/trailing spaces intended)
+                        colspan: 1,
                         rowspan: 1,
                     });
-                    logger.debug(`Table cell open (${cellType}): ${cellContent}`);
-                    i += 2; // Skip the inline and the th_close/td_close tokens
+                    logger.debug(`Table cell open (${cellType}): Collected content "${cellContent}"`);
+                    i = k; // Move the main loop index past the processed cell tokens and the close tag
                 } else {
-                    logger.warn(`Expected inline token after ${token.type}, but found ${tokens[i+1]?.type}`);
-                    // Add an empty cell as fallback
-                     currentTableRow.push({ type: cellType, content: '', colspan: 1, rowspan: 1 });
-                     i++; // Skip only the th_close/td_close
+                    logger.error(`Could not find closing tag ${cellCloseToken} for ${token.type}`);
+                    currentTableRow.push({ type: cellType, content: '[Error: Unclosed Cell]', colspan: 1, rowspan: 1 });
+                    // Don't advance 'i' if closer wasn't found
                 }
                 break;
-            // th_close and td_close are implicitly handled by skipping tokens after _open
+            // th_close and td_close are handled by advancing 'i' = k
 
             case 'tr_close':
                 if (currentTableRow.length > 0) {
