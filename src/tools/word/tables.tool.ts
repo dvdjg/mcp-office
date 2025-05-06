@@ -1,28 +1,42 @@
 import { z } from 'zod';
 import path from 'path';
+import fs from 'fs-extra';
+import {
+    Document,
+    Packer,
+    Table,
+    TableRow,
+    TableCell,
+    Paragraph,
+    TextRun,
+    WidthType,
+    BorderStyle,
+    AlignmentType,
+} from 'docx';
+import * as mammoth from 'mammoth';
 import {
     getOfficeApplication,
     releaseObject,
-    // safeString, // Removed - Not found in common utils
 } from '../../utils/officeInterop';
-import { handleToolError } from '../../utils/errorHandler'; // Corrected path
-import { validateFilePath } from '../../utils/security'; // Corrected path
-import { ApiResponse, McpResource, FastMCPContext } from '../../types/common.types'; // Import FastMCPContext, remove ToolContext
-import logger from '../../utils/logger'; // Corrected import style
+import { handleToolError } from '../../utils/errorHandler';
+import { validateFilePath } from '../../utils/security';
+import { ApiResponse, McpResource, FastMCPContext } from '../../types/common.types';
+import logger from '../../utils/logger';
 
 // --- Zod Schema for Input Validation ---
-const insertTableSchema = z.object({
+export const insertTableSchema = z.object({
     filePath: z.string().min(1, 'File path cannot be empty.'),
     rows: z.number().int().positive('Number of rows must be a positive integer.'),
     columns: z.number().int().positive('Number of columns must be a positive integer.'),
     position: z.string().optional().describe("Optional: 'end', 'selection', 'paragraph:N' (1-based index). Defaults to end."),
-    style: z.string().optional().describe('Optional: Predefined Word table style name (e.g., "Table Grid").'),
+    style: z.string().optional().describe('Optional: Predefined Word table style name (e.g., "Table Grid"). Note: COM-path specific for exact style matching.'),
+    useComInterop: z.boolean().optional().default(false).describe("Specifies the processing path. `true` uses COM Interop. `false` uses platform-independent libraries. Defaults to `false`."),
 });
 
 type InsertTableParams = z.infer<typeof insertTableSchema>;
 
 // Add new schema for insertTableFromArray
-const insertTableFromArraySchema = z.object({
+export const insertTableFromArraySchema = z.object({
     filePath: z.string().min(1, 'File path cannot be empty.'),
     data: z.array(z.array(z.any())).min(1, 'Data array cannot be empty.').refine(data => data.every(row => row.length === data[0].length), 'All rows in the data array must have the same number of columns.'),
     position: z.string().optional().describe("Optional: 'end', 'selection', 'paragraph:N' (1-based index), 'bookmark:BookmarkName'. Defaults to end."),
@@ -33,6 +47,7 @@ const insertTableFromArraySchema = z.object({
         bandedRows: z.boolean().optional().default(false).describe('Apply alternating row shading (banding).'),
         bandedColumns: z.boolean().optional().default(false).describe('Apply alternating column shading (banding).'),
     }).optional().describe('Optional: Fine-tune the applied style\'s appearance.'),
+    useComInterop: z.boolean().optional().default(false).describe("Specifies the processing path. `true` uses COM Interop. `false` uses platform-independent libraries. Defaults to `false`."),
 });
 
 type InsertTableFromArrayParams = z.infer<typeof insertTableFromArraySchema>;
@@ -43,166 +58,131 @@ export async function insertTable(
     params: unknown,
     context?: FastMCPContext<undefined> // Use FastMCPContext<undefined>
 ): Promise<ApiResponse<{}>> {
-    // Removed safeString from log message, using JSON.stringify for basic logging
     logger.info(`Executing word/tables/insert tool with params: ${JSON.stringify(params)}`);
-    let wordApp: any = null;
-    let doc: any = null;
-    let table: any = null;
-    let insertionRange: any = null;
-    let errorOccurred = false; // Flag to track if an error happened
+    const validatedParams = insertTableSchema.parse(params);
+    const { filePath, rows, columns, position, style, useComInterop } = validatedParams;
+    const safeFilePath = validateFilePath(filePath); // validateFilePath throws on error
 
-    try {
-        // 1. Validate Input Parameters
-        const validatedParams = insertTableSchema.parse(params);
-        logger.debug('Parameters validated successfully.');
+    if (useComInterop) {
+        logger.info(`Using COM Interop path for insertTable: ${safeFilePath}`);
+        let wordApp: any = null;
+        let doc: any = null;
+        let table: any = null;
+        let insertionRange: any = null;
+        let errorOccurred = false;
 
-        // 2. Validate File Path
-        // Note: validateFilePath in security.ts doesn't seem to take userId based on provided snippet.
-        // Pass context?.userId or relevant identifier if your implementation differs and context exists.
-        const safeFilePath = validateFilePath(validatedParams.filePath /*, context?.userId */);
-        // validateFilePath now throws on error, so no need for `if (!safeFilePath)` check.
-        logger.debug(`File path validated: ${safeFilePath}`);
+        try {
+            wordApp = await getOfficeApplication('Word.Application');
+            doc = wordApp.Documents.Open(safeFilePath);
+            if (!doc) throw new Error(`COM: Failed to open document: ${safeFilePath}`);
+            logger.debug(`COM: Document opened: ${safeFilePath}`);
 
-        // 3. Get/Create Word Application Instance
-        wordApp = await getOfficeApplication('Word.Application');
-        logger.debug('Word application instance obtained.');
-
-        // 4. Open the Document
-        doc = wordApp.Documents.Open(safeFilePath);
-        if (!doc) {
-            throw new Error(`Failed to open document: ${safeFilePath}`);
-        }
-        logger.debug(`Document opened: ${safeFilePath}`);
-
-        // 5. Determine Insertion Range
-        const position = validatedParams.position?.toLowerCase() || 'end';
-        logger.debug(`Determining insertion range for position: ${position}`);
-
-        if (position === 'selection') {
-            insertionRange = wordApp.Selection.Range;
-            if (!insertionRange) {
-                throw new Error("Cannot insert at selection: No selection found.");
-            }
-            logger.debug('Insertion range set to current selection.');
-        } else if (position.startsWith('paragraph:')) {
-            const parts = position.split(':');
-            const paragraphIndex = parseInt(parts[1], 10);
-            if (isNaN(paragraphIndex) || paragraphIndex <= 0) {
-                throw new Error(`Invalid paragraph index: ${parts[1]}. Must be a positive integer.`);
-            }
-            if (paragraphIndex > doc.Paragraphs.Count) {
-                 throw new Error(`Paragraph index ${paragraphIndex} out of bounds. Document has ${doc.Paragraphs.Count} paragraphs.`);
-            }
-            // Insert *before* the specified paragraph
-            insertionRange = doc.Paragraphs(paragraphIndex).Range;
-            insertionRange.Collapse(1); // Collapse to the start of the paragraph range (wdCollapseStart = 1)
-            logger.debug(`Insertion range set before paragraph ${paragraphIndex}.`);
-        } else { // Default to 'end'
-            // Create a range at the very end of the document content
-            insertionRange = doc.Range(doc.Content.End, doc.Content.End);
-             // Ensure we are not inside the final paragraph mark if it exists
-            if (insertionRange.Start > 0) {
-                 // Move range just before the final paragraph mark
-                 insertionRange.Start = insertionRange.Start -1;
-                 insertionRange.End = insertionRange.Start;
-                 // Add a paragraph break *after* this position (which becomes before the table)
-                 insertionRange.InsertParagraphAfter();
-                 // Move the range to the start of the new empty paragraph for table insertion
-                 insertionRange.Collapse(0); // wdCollapseEnd = 0 (moves to end of selection, which is start of new para)
+            const comPosition = position?.toLowerCase() || 'end';
+            if (comPosition === 'selection') {
+                insertionRange = wordApp.Selection.Range;
+                if (!insertionRange) throw new Error("COM: Cannot insert at selection: No selection found.");
+            } else if (comPosition.startsWith('paragraph:')) {
+                const parts = comPosition.split(':');
+                const paragraphIndex = parseInt(parts[1], 10);
+                if (isNaN(paragraphIndex) || paragraphIndex <= 0) throw new Error(`COM: Invalid paragraph index: ${parts[1]}.`);
+                if (paragraphIndex > doc.Paragraphs.Count) throw new Error(`COM: Paragraph index ${paragraphIndex} out of bounds.`);
+                insertionRange = doc.Paragraphs(paragraphIndex).Range;
+                insertionRange.Collapse(1); // wdCollapseStart
             } else {
-                 // Document is empty, just use the start
-                 insertionRange = doc.Range(0, 0);
-            }
-            logger.debug('Insertion range set to the end of the document.');
-        }
-
-        if (!insertionRange) {
-             throw new Error("Could not determine a valid insertion range.");
-        }
-
-        // 6. Insert the Table
-        logger.debug(`Attempting to add table with ${validatedParams.rows} rows and ${validatedParams.columns} columns.`);
-        // DefaultTableBehavior = wdWord9TableBehavior (0), AutoFitBehavior = wdAutoFitFixed (0)
-        table = doc.Tables.Add(insertionRange, validatedParams.rows, validatedParams.columns, 0, 0);
-        if (!table) {
-            throw new Error('Failed to insert table.');
-        }
-        // Accessing table.Index might fail if table creation truly failed, guard it.
-        logger.debug(`Table inserted successfully. Table index: ${table?.Index ?? 'N/A'}`);
-
-        // 7. Apply Style (Optional)
-        if (validatedParams.style) {
-            logger.debug(`Attempting to apply style: ${validatedParams.style}`);
-            try {
-                table.Style = validatedParams.style;
-                logger.debug(`Style "${validatedParams.style}" applied successfully.`);
-            } catch (styleError: any) {
-                logger.warn(`Failed to apply style "${validatedParams.style}": ${styleError.message}. Table inserted without style.`);
-                // Continue without style, maybe add warning to response later if needed
-            }
-        }
-
-        // 8. Save the Document
-        logger.debug('Saving document...');
-        doc.Save();
-        logger.debug('Document saved successfully.');
-
-        return { success: true, data: { message: `Table (${validatedParams.rows}x${validatedParams.columns}) inserted successfully.` } };
-
-    } catch (error: any) {
-        errorOccurred = true; // Set flag on error
-        logger.error(`Error in word/tables/insert: ${error.message}`, { stack: error.stack });
-        // Ensure doc is closed without saving changes in case of error after opening
-        if (doc) {
-            try {
-                // Attempt to close without saving only if it's a valid document object
-                 // Check for a property that indicates it's a valid COM object (e.g., FullName)
-                 // This check might need refinement based on the COM library used.
-                 if (typeof doc.Close === 'function') {
-                     doc.Close(false); // wdDoNotSaveChanges = 0
-                     logger.debug('Document closed without saving changes due to error.');
-                 } else {
-                     logger.debug('Document object seems invalid or already closed, skipping close attempt.');
-                 }
-            } catch (closeError: any) {
-                // Avoid logging errors if the primary error was about the doc object itself
-                if (!error.message?.toLowerCase().includes('object invalid')) {
-                   logger.error(`Error closing document after initial error: ${closeError.message}`);
+                insertionRange = doc.Range(doc.Content.End, doc.Content.End);
+                if (insertionRange.Start > 0) {
+                    insertionRange.Start = insertionRange.Start - 1;
+                    insertionRange.End = insertionRange.Start;
+                    insertionRange.InsertParagraphAfter();
+                    insertionRange.Collapse(0); // wdCollapseEnd
+                } else {
+                    insertionRange = doc.Range(0, 0);
                 }
             }
+            if (!insertionRange) throw new Error("COM: Could not determine a valid insertion range.");
+
+            table = doc.Tables.Add(insertionRange, rows, columns, 0, 0);
+            if (!table) throw new Error('COM: Failed to insert table.');
+            logger.debug(`COM: Table inserted. Index: ${table?.Index ?? 'N/A'}`);
+
+            if (style) {
+                try {
+                    table.Style = style;
+                    logger.debug(`COM: Style "${style}" applied.`);
+                } catch (styleError: any) {
+                    logger.warn(`COM: Failed to apply style "${style}": ${styleError.message}.`);
+                }
+            }
+            doc.Save();
+            logger.debug('COM: Document saved.');
+            return { success: true, data: { message: `COM: Table (${rows}x${columns}) inserted.` } };
+        } catch (error: any) {
+            errorOccurred = true;
+            logger.error(`Error in word/tables/insert (COM path): ${error.message}`, { stack: error.stack });
+            if (doc && typeof doc.Close === 'function') {
+                try { doc.Close(false); } catch (e) { logger.error(`COM: Error closing doc on error: ${(e as Error).message}`); }
+            }
+            return handleToolError(error, 'WORD_TABLE_INSERT_FAILED_COM');
+        } finally {
+            releaseObject(table);
+            if (doc && !errorOccurred && typeof doc.Close === 'function') {
+                try { doc.Close(false); } catch (e) { logger.warn(`COM: Error closing doc in finally: ${(e as Error).message}`); }
+            }
+            if (doc) releaseObject(doc);
+            if (wordApp) releaseObject(wordApp);
+            logger.debug('COM: Objects released in finally.');
         }
-        // Release wordApp explicitly before returning the error
-        if (wordApp) {
-            releaseObject(wordApp);
-            logger.debug('Word application released in catch block.');
-            wordApp = null; // Prevent double release in finally
+    } else {
+        // Library path (docx) - Initially for NEW documents only
+        logger.info(`Using Library (docx) path for insertTable: ${safeFilePath}`);
+        try {
+            if (await fs.pathExists(safeFilePath)) {
+                logger.error(`Library path for insertTable currently only supports creating new files. File exists: ${safeFilePath}`);
+                return handleToolError(new Error('Library path for insertTable currently only supports creating new files. File already exists.'), 'LIB_INSERT_EXISTING_FILE_NOT_SUPPORTED');
+            }
+
+            const tableRows = Array(rows).fill(0).map(() => {
+                const cells = Array(columns).fill(0).map(() => {
+                    return new TableCell({
+                        children: [new Paragraph("")], // Add an empty paragraph to each cell
+                        // borders: { ... }, // Optional: define cell borders
+                        // width: { size: ..., type: WidthType.AUTO }, // Optional: define cell width
+                    });
+                });
+                return new TableRow({ children: cells });
+            });
+
+            const docxTable = new Table({
+                rows: tableRows,
+                // width: { size: 100, type: WidthType.PERCENTAGE }, // Optional: define table width
+            });
+
+            // Style parameter for docx library is complex and not a direct string match to Word styles.
+            // For now, we acknowledge it but don't apply a complex style.
+            if (style) {
+                logger.warn(`Library (docx) path: Style parameter '${style}' received. Applying specific docx styles requires custom mapping and is not fully implemented for this basic table. Table will be unstyled or use default docx styling.`);
+            }
+            // Position parameter is ignored for new files with docx library, table is added to main body.
+            if (position && position !== 'end') {
+                 logger.warn(`Library (docx) path: Position parameter '${position}' is ignored when creating a new document. Table will be added to the main body.`);
+            }
+
+
+            const doc = new Document({
+                sections: [{
+                    children: [docxTable],
+                }],
+            });
+
+            const buffer = await Packer.toBuffer(doc);
+            await fs.writeFile(safeFilePath, buffer);
+            logger.info(`Library (docx) path: New document with table created successfully at ${safeFilePath}`);
+            return { success: true, data: { message: `Library (docx): New document with table (${rows}x${columns}) created at ${safeFilePath}.` } };
+
+        } catch (error: any) {
+            logger.error(`Error in word/tables/insert (Library path): ${error.message}`, { stack: error.stack });
+            return handleToolError(error, 'WORD_TABLE_INSERT_FAILED_LIB');
         }
-        // Provide a more specific default error code, remove wordApp argument
-        return handleToolError(error, 'WORD_TABLE_INSERT_FAILED');
-    } finally {
-        // 9. Release COM Objects
-        releaseObject(table);
-        // Only release doc here if it wasn't closed in the catch block and seems valid
-        // Refined check for validity before attempting close/release
-        if (doc && typeof doc.Close === 'function' && !errorOccurred) {
-             try {
-                 doc.Close(false); // Close without saving again on success path
-                 logger.debug('Document closed in finally block (success path).');
-             } catch (finalCloseError: any) {
-                 logger.warn(`Error during final document close: ${finalCloseError.message}`);
-             } finally {
-                 releaseObject(doc);
-             }
-        } else if (doc) {
-             // Release even if closing failed or error occurred (doc object might still hold resources)
-             releaseObject(doc);
-        }
-        // wordApp should have been released in catch block on error.
-        // Release here only on success path.
-        if (!errorOccurred && wordApp) {
-             releaseObject(wordApp);
-        }
-        logger.debug('COM objects released.');
     }
 }
 
@@ -212,304 +192,293 @@ export async function insertTableFromArray(
     context?: FastMCPContext<undefined>
 ): Promise<ApiResponse<{}>> {
     logger.info(`Executing word/tables/insertFromArray tool with params: ${JSON.stringify(params)}`);
-    let wordApp: any = null;
-    let doc: any = null;
-    let table: any = null;
-    let insertionRange: any = null;
-    let errorOccurred = false;
+    const validatedParams = insertTableFromArraySchema.parse(params);
+    const { filePath, data, position, styleName, styleOptions, useComInterop } = validatedParams;
+    const safeFilePath = validateFilePath(filePath);
 
-    try {
-        // 1. Validate Input Parameters
-        const validatedParams = insertTableFromArraySchema.parse(params);
-        logger.debug('Parameters validated successfully.');
+    if (useComInterop) {
+        logger.info(`Using COM Interop path for insertTableFromArray: ${safeFilePath}`);
+        let wordApp: any = null;
+        let doc: any = null;
+        let table: any = null;
+        let insertionRange: any = null;
+        let errorOccurred = false;
 
-        const safeFilePath = validateFilePath(validatedParams.filePath);
-        logger.debug(`File path validated: ${safeFilePath}`);
+        try {
+            wordApp = await getOfficeApplication('Word.Application');
+            doc = wordApp.Documents.Open(safeFilePath);
+            if (!doc) throw new Error(`COM: Failed to open document: ${safeFilePath}`);
+            logger.debug(`COM: Document opened: ${safeFilePath}`);
 
-        // 2. Get/Create Word Application Instance
-        wordApp = await getOfficeApplication('Word.Application');
-        logger.debug('Word application instance obtained.');
-
-        // 3. Open the Document
-        doc = wordApp.Documents.Open(safeFilePath);
-        if (!doc) {
-            throw new Error(`Failed to open document: ${safeFilePath}`);
-        }
-        logger.debug(`Document opened: ${safeFilePath}`);
-
-        // 4. Determine Insertion Range
-        const position = validatedParams.position?.toLowerCase() || 'end';
-        logger.debug(`Determining insertion range for position: ${position}`);
-
-        if (position === 'selection') {
-            insertionRange = wordApp.Selection.Range;
-            if (!insertionRange) {
-                throw new Error("Cannot insert at selection: No selection found.");
-            }
-            logger.debug('Insertion range set to current selection.');
-        } else if (position.startsWith('paragraph:')) {
-            const parts = position.split(':');
-            const paragraphIndex = parseInt(parts[1], 10);
-            if (isNaN(paragraphIndex) || paragraphIndex <= 0) {
-                throw new Error(`Invalid paragraph index: ${parts[1]}. Must be a positive integer.`);
-            }
-            if (paragraphIndex > doc.Paragraphs.Count) {
-                 throw new Error(`Paragraph index ${paragraphIndex} out of bounds. Document has ${doc.Paragraphs.Count} paragraphs.`);
-            }
-            insertionRange = doc.Paragraphs(paragraphIndex).Range;
-            insertionRange.Collapse(1); // Collapse to the start of the paragraph range (wdCollapseStart = 1)
-            logger.debug(`Insertion range set before paragraph ${paragraphIndex}.`);
-        } else if (position.startsWith('bookmark:')) {
-             const bookmarkName = position.substring('bookmark:'.length);
-             try {
-                 insertionRange = doc.Bookmarks(bookmarkName).Range;
-                 insertionRange.Collapse(1); // Collapse to the start of the bookmark range
-                 logger.debug(`Insertion range set at bookmark: ${bookmarkName}`);
-             } catch (bookmarkError: any) {
-                 throw new Error(`Bookmark "${bookmarkName}" not found.`);
-             }
-        }
-        else { // Default to 'end'
-            insertionRange = doc.Range(doc.Content.End, doc.Content.End);
-             if (insertionRange.Start > 0) {
-                 insertionRange.Start = insertionRange.Start -1;
-                 insertionRange.End = insertionRange.Start;
-                 insertionRange.InsertParagraphAfter();
-                 insertionRange.Collapse(0);
-             } else {
-                 insertionRange = doc.Range(0, 0);
-             }
-            logger.debug('Insertion range set to the end of the document.');
-        }
-
-        if (!insertionRange) {
-             throw new Error("Could not determine a valid insertion range.");
-        }
-
-        // 5. Insert the Table and Populate Data
-        const rows = validatedParams.data.length;
-        const columns = validatedParams.data[0].length;
-        logger.debug(`Attempting to add table with ${rows} rows and ${columns} columns and populate data.`);
-
-        // DefaultTableBehavior = wdWord9TableBehavior (0), AutoFitBehavior = wdAutoFitFixed (0)
-        table = doc.Tables.Add(insertionRange, rows, columns, 0, 0);
-        if (!table) {
-            throw new Error('Failed to insert table.');
-        }
-        logger.debug(`Table inserted successfully. Table index: ${table?.Index ?? 'N/A'}`);
-
-        // Populate table cells
-        for (let i = 0; i < rows; i++) {
-            for (let j = 0; j < columns; j++) {
-                // Word table cells are 1-based index
-                table.Cell(i + 1, j + 1).Range.Text = validatedParams.data[i][j]?.toString() ?? '';
-            }
-        }
-        logger.debug('Table populated with data.');
-
-        // 6. Apply Style (Optional)
-        if (validatedParams.styleName) {
-            logger.debug(`Attempting to apply style: ${validatedParams.styleName}`);
-            try {
-                table.Style = validatedParams.styleName;
-                logger.debug(`Style "${validatedParams.styleName}" applied successfully.`);
-
-                // Apply style options if style was applied
-                if (validatedParams.styleOptions) {
-                    logger.debug(`Applying style options: ${JSON.stringify(validatedParams.styleOptions)}`);
-                    // These properties control which parts of the table the style formatting is applied to
-                    table.AllowFormatting = true; // Ensure formatting is allowed
-                    table.ApplyStyleHeadingRows = validatedParams.styleOptions.headerRow ?? true; // Default to true as per schema default
-                    table.ApplyStyleFirstColumn = validatedParams.styleOptions.firstColumn ?? false; // Default to false
-                    table.ApplyStyleLastRow = false; // Assuming no last row formatting needed by default
-                    table.ApplyStyleLastColumn = false; // Assuming no last column formatting needed by default
-                    table.ApplyStyleBandedRows = validatedParams.styleOptions.bandedRows ?? false; // Default to false
-                    table.ApplyStyleBandedColumns = validatedParams.styleOptions.bandedColumns ?? false; // Default to false
-                    logger.debug('Table style options applied.');
+            const comPosition = position?.toLowerCase() || 'end';
+            // ... (COM position logic from original function - lines 244-287)
+            if (comPosition === 'selection') {
+                insertionRange = wordApp.Selection.Range;
+                if (!insertionRange) throw new Error("COM: Cannot insert at selection: No selection found.");
+            } else if (comPosition.startsWith('paragraph:')) {
+                const parts = comPosition.split(':');
+                const paragraphIndex = parseInt(parts[1], 10);
+                if (isNaN(paragraphIndex) || paragraphIndex <= 0) throw new Error(`COM: Invalid paragraph index: ${parts[1]}.`);
+                if (paragraphIndex > doc.Paragraphs.Count) throw new Error(`COM: Paragraph index ${paragraphIndex} out of bounds.`);
+                insertionRange = doc.Paragraphs(paragraphIndex).Range;
+                insertionRange.Collapse(1); // wdCollapseStart
+            } else if (comPosition.startsWith('bookmark:')) {
+                const bookmarkName = comPosition.substring('bookmark:'.length);
+                try {
+                    insertionRange = doc.Bookmarks(bookmarkName).Range;
+                    insertionRange.Collapse(1);
+                } catch (bookmarkError: any) {
+                    throw new Error(`COM: Bookmark "${bookmarkName}" not found.`);
                 }
-
-            } catch (styleError: any) {
-                logger.warn(`Failed to apply style "${validatedParams.styleName}" or style options: ${styleError.message}. Table inserted without style/options.`);
-                // Continue without style/options
-            }
-        } else if (validatedParams.styleOptions) {
-             logger.warn('styleOptions were provided but no styleName was specified. styleOptions will not be applied.');
-        }
-
-
-        // 7. Save the Document
-        logger.debug('Saving document...');
-        doc.Save();
-        logger.debug('Document saved successfully.');
-
-        return { success: true, data: { message: `Table (${rows}x${columns}) inserted and populated successfully.` } };
-
-    } catch (error: any) {
-        errorOccurred = true;
-        logger.error(`Error in word/tables/insertFromArray: ${error.message}`, { stack: error.stack });
-        if (doc) {
-            try {
-                 if (typeof doc.Close === 'function') {
-                     doc.Close(false); // wdDoNotSaveChanges = 0
-                     logger.debug('Document closed without saving changes due to error.');
-                 } else {
-                     logger.debug('Document object seems invalid or already closed, skipping close attempt.');
-                 }
-            } catch (closeError: any) {
-                if (!error.message?.toLowerCase().includes('object invalid')) {
-                   logger.error(`Error closing document after initial error: ${closeError.message}`);
+            } else { // Default to 'end'
+                insertionRange = doc.Range(doc.Content.End, doc.Content.End);
+                if (insertionRange.Start > 0) {
+                    insertionRange.Start = insertionRange.Start - 1;
+                    insertionRange.End = insertionRange.Start;
+                    insertionRange.InsertParagraphAfter();
+                    insertionRange.Collapse(0); // wdCollapseEnd
+                } else {
+                    insertionRange = doc.Range(0, 0);
                 }
             }
+            if (!insertionRange) throw new Error("COM: Could not determine a valid insertion range.");
+
+
+            const rows = data.length;
+            const columns = data[0].length;
+            table = doc.Tables.Add(insertionRange, rows, columns, 0, 0);
+            if (!table) throw new Error('COM: Failed to insert table.');
+            logger.debug(`COM: Table inserted. Index: ${table?.Index ?? 'N/A'}`);
+
+            for (let i = 0; i < rows; i++) {
+                for (let j = 0; j < columns; j++) {
+                    table.Cell(i + 1, j + 1).Range.Text = data[i][j]?.toString() ?? '';
+                }
+            }
+            logger.debug('COM: Table populated.');
+
+            if (styleName) {
+                try {
+                    table.Style = styleName;
+                    logger.debug(`COM: Style "${styleName}" applied.`);
+                    if (styleOptions) {
+                        table.AllowFormatting = true;
+                        table.ApplyStyleHeadingRows = styleOptions.headerRow ?? true;
+                        table.ApplyStyleFirstColumn = styleOptions.firstColumn ?? false;
+                        table.ApplyStyleLastRow = false;
+                        table.ApplyStyleLastColumn = false;
+                        table.ApplyStyleBandedRows = styleOptions.bandedRows ?? false;
+                        table.ApplyStyleBandedColumns = styleOptions.bandedColumns ?? false;
+                        logger.debug('COM: Table style options applied.');
+                    }
+                } catch (styleError: any) {
+                    logger.warn(`COM: Failed to apply style "${styleName}" or options: ${styleError.message}.`);
+                }
+            } else if (styleOptions) {
+                logger.warn('COM: styleOptions provided but no styleName. Options not applied.');
+            }
+
+            doc.Save();
+            logger.debug('COM: Document saved.');
+            return { success: true, data: { message: `COM: Table (${rows}x${columns}) inserted and populated.` } };
+        } catch (error: any) {
+            errorOccurred = true;
+            logger.error(`Error in word/tables/insertFromArray (COM path): ${error.message}`, { stack: error.stack });
+            if (doc && typeof doc.Close === 'function') {
+                try { doc.Close(false); } catch (e) { logger.error(`COM: Error closing doc on error: ${(e as Error).message}`); }
+            }
+            return handleToolError(error, 'WORD_TABLE_INSERT_FROM_ARRAY_FAILED_COM');
+        } finally {
+            releaseObject(table);
+            if (doc && !errorOccurred && typeof doc.Close === 'function') {
+                try { doc.Close(false); } catch (e) { logger.warn(`COM: Error closing doc in finally: ${(e as Error).message}`); }
+            }
+            if (doc) releaseObject(doc);
+            if (wordApp) releaseObject(wordApp);
+            logger.debug('COM: Objects released in finally.');
         }
-        if (wordApp) {
-            releaseObject(wordApp);
-            logger.debug('Word application released in catch block.');
-            wordApp = null;
+    } else {
+        // Library path (docx) - Initially for NEW documents only
+        logger.info(`Using Library (docx) path for insertTableFromArray: ${safeFilePath}`);
+        try {
+            if (await fs.pathExists(safeFilePath)) {
+                logger.error(`Library path for insertTableFromArray currently only supports creating new files. File exists: ${safeFilePath}`);
+                return handleToolError(new Error('Library path for insertTableFromArray currently only supports creating new files. File already exists.'), 'LIB_INSERT_ARRAY_EXISTING_FILE_NOT_SUPPORTED');
+            }
+
+            const tableRows = data.map(rowData => {
+                const cells = rowData.map(cellData => {
+                    return new TableCell({
+                        children: [new Paragraph({ children: [new TextRun(cellData?.toString() ?? '')] })],
+                    });
+                });
+                return new TableRow({ children: cells });
+            });
+
+            const docxTableProperties: any = {}; // Add type for properties if more specific needed from docx
+            if (styleOptions?.bandedRows) {
+                // Note: `rowBands: true` is a common way to enable this in docx, but might need specific style.
+                // For direct property, it's often part of a table style.
+                // This is a simplification.
+                // docxTableProperties.rowBands = true; // This might not be a direct property.
+                logger.warn("Library (docx) path: 'bandedRows' direct property might not be available; usually part of a table style.");
+            }
+            if (styleOptions?.bandedColumns) {
+                // docxTableProperties.columnBands = true; // Similar to rowBands
+                logger.warn("Library (docx) path: 'bandedColumns' direct property might not be available; usually part of a table style.");
+            }
+
+
+            const docxTable = new Table({
+                rows: tableRows,
+                // properties: docxTableProperties, // Apply if properties are set
+            });
+
+            if (styleOptions?.headerRow && tableRows.length > 0) {
+                // In `docx`, header property is on the TableRow.
+                // tableRows[0].properties.isHeader = true; // This is not the correct API.
+                // It's usually set like: new TableRow({ children: cells, isHeader: true })
+                // Or by applying a style that defines a header row.
+                // For simplicity, we'll log a warning.
+                logger.warn("Library (docx) path: Setting 'headerRow' directly on TableRow properties is complex. It's typically part of a style or set during row creation if API supports.");
+            }
+            if (styleOptions?.firstColumn){
+                logger.warn("Library (docx) path: 'firstColumn' formatting is typically part of a table style and not a direct property. It will be ignored for now.");
+            }
+            if (styleName) {
+                logger.warn(`Library (docx) path: StyleName '${styleName}' is COM-specific. Applying named Word styles directly is complex with the 'docx' library. Table will use default styling.`);
+            }
+            if (position && position.toLowerCase() !== 'end') {
+                logger.warn(`Library (docx) path: Position parameter '${position}' is ignored when creating a new document. Table will be added to the main body.`);
+            }
+
+
+            const doc = new Document({
+                sections: [{
+                    children: [docxTable],
+                }],
+            });
+
+            const buffer = await Packer.toBuffer(doc);
+            await fs.writeFile(safeFilePath, buffer);
+            logger.info(`Library (docx) path: New document with table from array created successfully at ${safeFilePath}`);
+            return { success: true, data: { message: `Library (docx): New document with table from array created at ${safeFilePath}.` } };
+
+        } catch (error: any) {
+            logger.error(`Error in word/tables/insertFromArray (Library path): ${error.message}`, { stack: error.stack });
+            return handleToolError(error, 'WORD_TABLE_INSERT_FROM_ARRAY_FAILED_LIB');
         }
-        return handleToolError(error, 'WORD_TABLE_INSERT_FROM_ARRAY_FAILED');
-    } finally {
-        releaseObject(table);
-        if (doc && typeof doc.Close === 'function' && !errorOccurred) {
-             try {
-                 doc.Close(false);
-                 logger.debug('Document closed in finally block (success path).');
-             } catch (finalCloseError: any) {
-                 logger.warn(`Error during final document close: ${finalCloseError.message}`);
-             } finally {
-                 releaseObject(doc);
-             }
-        } else if (doc) {
-             releaseObject(doc);
-        }
-        if (!errorOccurred && wordApp) {
-             releaseObject(wordApp);
-        }
-        logger.debug('COM objects released.');
     }
 }
 
 
 // --- Tool Definition ---
 // Add new schema for extractTableData
-const extractTableDataSchema = z.object({
+export const extractTableDataSchema = z.object({
     filePath: z.string().min(1, 'File path cannot be empty.'),
     tableIndex: z.number().int().positive('Table index must be a positive integer.'),
+    useComInterop: z.boolean().optional().default(false).describe("Specifies the processing path. `true` uses COM Interop. `false` uses platform-independent libraries. Defaults to `false`."),
 });
 
 type ExtractTableDataParams = z.infer<typeof extractTableDataSchema>;
 
 
-// Add new tool handler implementation for extractTableData
 export async function extractTableData(
     params: unknown,
     context?: FastMCPContext<undefined>
 ): Promise<ApiResponse<any[][]>> {
     logger.info(`Executing word/tables/extractData tool with params: ${JSON.stringify(params)}`);
-    let wordApp: any = null;
-    let doc: any = null;
-    let table: any = null;
-    let errorOccurred = false;
+    const validatedParams = extractTableDataSchema.parse(params);
+    const { filePath, tableIndex, useComInterop } = validatedParams;
+    const safeFilePath = validateFilePath(filePath);
 
-    try {
-        // 1. Validate Input Parameters
-        const validatedParams = extractTableDataSchema.parse(params);
-        logger.debug('Parameters validated successfully.');
+    if (useComInterop) {
+        logger.info(`Using COM Interop path for extractTableData: ${safeFilePath}, tableIndex: ${tableIndex}`);
+        let wordApp: any = null;
+        let doc: any = null;
+        let table: any = null;
+        let errorOccurred = false;
 
-        const safeFilePath = validateFilePath(validatedParams.filePath);
-        logger.debug(`File path validated: ${safeFilePath}`);
+        try {
+            wordApp = await getOfficeApplication('Word.Application');
+            doc = wordApp.Documents.Open(safeFilePath, false, true); // Open read-only
+            if (!doc) throw new Error(`COM: Failed to open document: ${safeFilePath}`);
+            logger.debug(`COM: Document opened: ${safeFilePath}`);
 
-        // 2. Get/Create Word Application Instance
-        wordApp = await getOfficeApplication('Word.Application');
-        logger.debug('Word application instance obtained.');
+            if (tableIndex <= 0 || tableIndex > doc.Tables.Count) {
+                throw new Error(`COM: Table index ${tableIndex} out of bounds. Document has ${doc.Tables.Count} tables.`);
+            }
+            table = doc.Tables(tableIndex);
+            logger.debug(`COM: Accessed table with index: ${tableIndex}`);
 
-        // 3. Open the Document
-        doc = wordApp.Documents.Open(safeFilePath);
-        if (!doc) {
-            throw new Error(`Failed to open document: ${safeFilePath}`);
-        }
-        logger.debug(`Document opened: ${safeFilePath}`);
+            const numRows = table.Rows.Count;
+            const numCols = table.Columns.Count;
+            const tableData: any[][] = Array(numRows).fill(null).map(() => Array(numCols).fill(null));
 
-        // 4. Access the specified table
-        const tableIndex = validatedParams.tableIndex;
-        if (tableIndex <= 0 || tableIndex > doc.Tables.Count) {
-            throw new Error(`Table index ${tableIndex} is out of bounds. Document has ${doc.Tables.Count} tables.`);
-        }
-        table = doc.Tables(tableIndex);
-        logger.debug(`Accessed table with index: ${tableIndex}`);
-
-        // 5. Extract table data
-        const numRows = table.Rows.Count;
-        const numCols = table.Columns.Count;
-        const tableData: any[][] = Array(numRows).fill(null).map(() => Array(numCols).fill(null));
-
-        for (let r = 1; r <= numRows; r++) {
-            for (let c = 1; c <= numCols; c++) {
-                let cell = null;
-                try {
-                    cell = table.Cell(r, c);
-                    // Check if this cell is the top-left cell of a merged area
-                    // This is a simplified check; a more robust approach might track merged cells
-                    // as they are encountered. For now, rely on checking if the cell's
-                    // RowIndex and ColumnIndex match the loop indices.
-                    if (cell.RowIndex === r && cell.ColumnIndex === c) {
-                         tableData[r - 1][c - 1] = cell.Range.Text.replace(/\r?\n|\r/g, '').trim(); // Extract text, remove newlines, trim whitespace
-                    } else {
-                         // This cell is part of a merge started by a previous cell
-                         tableData[r - 1][c - 1] = null;
+            for (let r = 1; r <= numRows; r++) {
+                for (let c = 1; c <= numCols; c++) {
+                    let cell = null;
+                    try {
+                        cell = table.Cell(r, c);
+                        if (cell.RowIndex === r && cell.ColumnIndex === c) { // Handle merged cells simply
+                            tableData[r - 1][c - 1] = cell.Range.Text.replace(/\r?\n|\r/g, '').trim();
+                        } else {
+                            tableData[r - 1][c - 1] = null; // Part of a merged cell
+                        }
+                    } catch (cellError: any) {
+                        logger.warn(`COM: Could not access cell (${r}, ${c}): ${cellError.message}`);
+                        tableData[r - 1][c - 1] = null;
+                    } finally {
+                        if (cell) releaseObject(cell);
                     }
-                } catch (cellError: any) {
-                    logger.warn(`Could not access cell (${r}, ${c}): ${cellError.message}`);
-                    tableData[r - 1][c - 1] = null; // Mark inaccessible cells as null
-                } finally {
-                    if (cell) releaseObject(cell);
                 }
             }
-        }
-        logger.debug('Table data extracted.');
-
-        return { success: true, data: tableData };
-
-    } catch (error: any) {
-        errorOccurred = true;
-        logger.error(`Error in word/tables/extractData: ${error.message}`, { stack: error.stack });
-        if (doc) {
-            try {
-                 if (typeof doc.Close === 'function') {
-                     doc.Close(false); // wdDoNotSaveChanges = 0
-                     logger.debug('Document closed without saving changes due to error.');
-                 } else {
-                     logger.debug('Document object seems invalid or already closed, skipping close attempt.');
-                 }
-            } catch (closeError: any) {
-                if (!error.message?.toLowerCase().includes('object invalid')) {
-                   logger.error(`Error closing document after initial error: ${closeError.message}`);
-                }
+            logger.debug('COM: Table data extracted.');
+            return { success: true, data: tableData };
+        } catch (error: any) {
+            errorOccurred = true;
+            logger.error(`Error in word/tables/extractData (COM path): ${error.message}`, { stack: error.stack });
+            if (doc && typeof doc.Close === 'function') {
+                try { doc.Close(false); } catch (e) { logger.error(`COM: Error closing doc on error: ${(e as Error).message}`); }
             }
+            return handleToolError(error, 'WORD_TABLE_EXTRACT_DATA_FAILED_COM');
+        } finally {
+            releaseObject(table);
+            if (doc && !errorOccurred && typeof doc.Close === 'function') {
+                try { doc.Close(false); } catch (e) { logger.warn(`COM: Error closing doc in finally: ${(e as Error).message}`); }
+            }
+            if (doc) releaseObject(doc);
+            if (wordApp) releaseObject(wordApp);
+            logger.debug('COM: Objects released in finally.');
         }
-        if (wordApp) {
-            releaseObject(wordApp);
-            logger.debug('Word application released in catch block.');
-            wordApp = null;
+    } else {
+        // Library path (mammoth)
+        logger.info(`Using Library (Mammoth) path for extractTableData: ${safeFilePath}, tableIndex: ${tableIndex}`);
+        try {
+            if (!await fs.pathExists(safeFilePath)) {
+                return handleToolError(new Error(`File not found: ${safeFilePath}`), 'FILE_NOT_FOUND_LIB');
+            }
+
+            // Using mammoth.convertToHtml and then parsing HTML for tables is complex
+            // and error-prone without a proper HTML parser.
+            // For this refactoring, we'll state it's not fully implemented.
+            logger.warn("Library (Mammoth) path for extractTableData: Extracting structured table data via HTML conversion is complex and not fully implemented. This path may only work for very simple tables or return an error.");
+
+            // Placeholder for actual HTML parsing logic:
+            // const htmlResult = await mammoth.convertToHtml({ path: safeFilePath });
+            // const tablesHtml = parseHtmlAndExtractTables(htmlResult.value); // This function would be complex
+            // if (tableIndex > tablesHtml.length) throw new Error("Table index out of bounds for HTML tables.");
+            // const tableData = convertHtmlTableToArray(tablesHtml[tableIndex - 1]); // Also complex
+
+            return handleToolError(
+                new Error('Library path for extractTableData is not fully implemented due to HTML parsing complexity. Use COM Interop (useComInterop: true) for reliable table data extraction.'),
+                'NOT_IMPLEMENTED_LIB_TABLE_EXTRACTION'
+            );
+
+        } catch (error: any) {
+            logger.error(`Error in word/tables/extractData (Library path): ${error.message}`, { stack: error.stack });
+            return handleToolError(error, 'WORD_TABLE_EXTRACT_DATA_FAILED_LIB');
         }
-        return handleToolError(error, 'WORD_TABLE_EXTRACT_DATA_FAILED');
-    } finally {
-        releaseObject(table);
-        if (doc && typeof doc.Close === 'function' && !errorOccurred) {
-             try {
-                 doc.Close(false);
-                 logger.debug('Document closed in finally block (success path).');
-             } catch (finalCloseError: any) {
-                 logger.warn(`Error during final document close: ${finalCloseError.message}`);
-             } finally {
-                 releaseObject(doc);
-             }
-        } else if (doc) {
-             releaseObject(doc);
-        }
-        if (!errorOccurred && wordApp) {
-             releaseObject(wordApp);
-        }
-        logger.debug('COM objects released.');
     }
 }
 export const wordTablesTool: McpResource[] = [

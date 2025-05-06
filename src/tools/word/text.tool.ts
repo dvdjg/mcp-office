@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import * as path from 'path';
-import * as fs from 'fs-extra'; // Added fs import
+import * as fs from 'fs-extra';
+import { Document, Packer, Paragraph, TextRun } from 'docx';
+import mammoth from 'mammoth';
 import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types';
 import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
 import { resolveNaturalLanguageRange } from '../../utils/wordRangeResolver';
@@ -14,6 +16,7 @@ const textOpBaseSchema = z.object({
   filePath: z.string().min(1, 'File path is required.').refine(validateFilePath, {
     message: "Invalid or potentially unsafe file path provided.",
   }),
+  useComInterop: z.boolean().optional().default(false).describe("Specifies the processing path. `true` uses COM Interop (for local, interactive scenarios). `false` uses platform-independent libraries like docx/mammoth (for server-side, batch processing). Defaults to `false`."),
 });
 
 const getSchema = textOpBaseSchema.extend({
@@ -26,7 +29,7 @@ const insertSchema = textOpBaseSchema.extend({
   format: z.enum(['plaintext', 'markdown']).default('markdown').optional().describe("Format of the text to insert ('plaintext' or 'markdown'). Defaults to 'markdown'."),
 });
 
-const modifySchema = textOpBaseSchema.extend({
+export const modifySchema = textOpBaseSchema.extend({
   range: z.string().min(1, 'Range specifier is required.'),
   newText: z.string(),
 });
@@ -90,354 +93,331 @@ export function getRangeFromSpecifier(doc: any, rangeSpecifier: string, wordApp:
 
 // getText function remains unchanged
 export async function getText(requestParams: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<string>> {
-  let wordApp: any = null;
-  let doc: any = null;
-  let selectedRange: any = null;
-  let officeAppInstance: any = null;
+  const params = getSchema.parse(requestParams);
+  logger.info(`Executing word/text/get for file: ${params.filePath}, range: ${params.range}, useComInterop: ${params.useComInterop}`);
+  const absoluteFilePath = path.resolve(params.filePath);
 
-  try {
-    const params = getSchema.parse(requestParams);
-    logger.info(`Executing word/text/get for file: ${params.filePath}, range: ${params.range}`);
+  if (!await fs.pathExists(absoluteFilePath)) {
+    return createErrorResponse(`File not found: ${params.filePath}`, 'FILE_NOT_FOUND');
+  }
 
-    // File path validated by Zod refine
-    wordApp = await getOfficeApplication('Word.Application');
-    const absoluteFilePath = path.resolve(params.filePath);
+  if (params.useComInterop) {
+    let wordApp: any = null;
+    let doc: any = null;
+    let selectedRange: any = null;
+    try {
+      wordApp = await getOfficeApplication('Word.Application');
+      doc = wordApp.Documents.Open(absoluteFilePath, false, true, false, "", "", false, "", "", 0, false); // Open read-only, not visible
+      if (!doc) {
+        return createErrorResponse(`Failed to open document via COM: ${params.filePath}`, 'FILE_OPEN_FAILED_COM');
+      }
 
-    // Check if file exists before opening read-only
-    if (!await fs.pathExists(absoluteFilePath)) {
-        return createErrorResponse(`File not found: ${params.filePath}`, 'FILE_NOT_FOUND');
+      selectedRange = resolveNaturalLanguageRange(doc, params.range, wordApp);
+      if (!selectedRange) {
+        selectedRange = getRangeFromSpecifier(doc, params.range, wordApp);
+      }
+
+      if (!selectedRange) {
+        return createErrorResponse(`Could not determine range for extraction via COM based on specifier: ${params.range}`, 'RANGE_ERROR_COM');
+      }
+      const textContent = selectedRange.Text || '';
+      logger.info(`Successfully retrieved text via COM from range "${params.range}" in ${params.filePath}`);
+      return { success: true, data: textContent };
+    } catch (error: any) {
+      logger.error(`Error in word/text/get (COM path): ${error.message}`, { error: error instanceof z.ZodError ? error.errors : error });
+      if (error instanceof z.ZodError) {
+        return createErrorResponse('Input validation failed (COM path)', 'VALIDATION_ERROR', error.errors);
+      }
+      return createErrorResponse(`Failed to get text (COM path): ${error.message}`, 'GET_TEXT_FAILED_COM', error);
+    } finally {
+      releaseObject(selectedRange);
+      if (doc) {
+        try { doc.Close(false); } catch (e) { logger.warn('Error closing document (COM path, read-only)', e); }
+        releaseObject(doc);
+      }
+      if (wordApp) {
+        releaseObject(wordApp);
+      }
     }
-
-    doc = wordApp.Documents.Open(absoluteFilePath, false, true, false, "", "", false, "", "", 0, false); // Open read-only, not visible
-    if (!doc) {
-      return createErrorResponse(`Failed to open document: ${params.filePath}`, 'FILE_OPEN_FAILED');
-    }
-
-    // Attempt to resolve natural language range first
-    selectedRange = resolveNaturalLanguageRange(doc, params.range, wordApp);
-
-    if (!selectedRange) {
-        // If natural language resolution failed, try specific formats
-        selectedRange = getRangeFromSpecifier(doc, params.range, wordApp); // Use local helper
-    }
-
-    if (!selectedRange) {
-        // If neither resolution method worked
-        return createErrorResponse(`Could not determine range for extraction based on specifier: ${params.range}`, 'RANGE_ERROR');
-    }
-
-    const textContent = selectedRange.Text || '';
-
-    logger.info(`Successfully retrieved text from range "${params.range}" in ${params.filePath}`);
-    return { success: true, data: textContent };
-
-  } catch (error: any) {
-    logger.error(`Error in word/text/get: ${error.message}`, { error: error instanceof z.ZodError ? error.errors : error });
-     if (error instanceof z.ZodError) {
-        return createErrorResponse('Input validation failed', 'VALIDATION_ERROR', error.errors);
-    }
-    // Catch errors from getRangeFromSpecifier and resolveNaturalLanguageRange too
-    return createErrorResponse(`Failed to get text: ${error.message}`, 'GET_TEXT_FAILED', error);
-  } finally {
-    releaseObject(selectedRange); // Release range obtained from helper
-    if (doc) {
-      try { doc.Close(false); } catch (e) { logger.warn('Error closing document (read-only)', e); }
-      releaseObject(doc);
-    }
-    if (wordApp) { // Changed from officeAppInstance
-      releaseObject(wordApp); // Release the application object
+  } else {
+    // Library path (Mammoth)
+    try {
+      const rangeLower = params.range.toLowerCase();
+      if (rangeLower === 'document') {
+        const { value } = await mammoth.extractRawText({ path: absoluteFilePath });
+        logger.info(`Successfully retrieved text using mammoth from ${params.filePath}`);
+        return { success: true, data: value };
+      } else if (rangeLower === 'selection' || rangeLower.startsWith('paragraph:') || resolveNaturalLanguageRange(null, params.range, null)) {
+         // Crude check for natural language, as resolveNaturalLanguageRange would be used by COM path
+        return createErrorResponse(
+            `Library path for getText currently only supports 'document' range. '${params.range}' requires COM Interop. Set useComInterop to true.`,
+            'RANGE_REQUIRES_COM_LIB'
+        );
+      } else {
+        return createErrorResponse(
+            `Library path for getText currently only supports 'document' range. '${params.range}' is not supported.`,
+            'RANGE_NOT_SUPPORTED_LIB'
+        );
+      }
+    } catch (mammothError: any) {
+      logger.error(`Error in word/text/get with mammoth: ${mammothError.message}`, { error: mammothError });
+      return createErrorResponse(`Failed to get text with mammoth: ${mammothError.message}`, 'MAMMOTH_GET_TEXT_FAILED', mammothError);
     }
   }
 }
 
 // Modified insertText function
 export async function insertText(requestParams: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> {
-    let wordApp: any = null;
-    let doc: any = null;
-    let insertionRange: any = null;
-    let paraRange: any = null; // Specific range for paragraph logic
-    let fileCreated = false; // Flag to track if the file was created
+    const params = insertSchema.parse(requestParams);
+    logger.info(`Executing word/text/insert for file: ${params.filePath}, position: ${params.position}, useComInterop: ${params.useComInterop}`);
+    const absoluteFilePath = path.resolve(params.filePath);
 
-    try {
-        const params = insertSchema.parse(requestParams);
-        logger.info(`Executing word/text/insert for file: ${params.filePath}, position: ${params.position}`);
-
-        // File path validated by Zod refine
-        wordApp = await getOfficeApplication('Word.Application');
-        const absoluteFilePath = path.resolve(params.filePath);
-
-        // --- Create if not exists logic ---
+    if (params.useComInterop) {
+        let wordApp: any = null;
+        let doc: any = null;
+        let insertionRange: any = null;
+        let paraRange: any = null;
+        let fileCreated = false;
         try {
-            if (await fs.pathExists(absoluteFilePath)) {
-                logger.info(`Opening existing document: ${absoluteFilePath}`);
-                doc = wordApp.Documents.Open(absoluteFilePath, false, false); // Open read/write
-            } else {
-                logger.info(`File not found. Creating new document at: ${absoluteFilePath}`);
-                doc = wordApp.Documents.Add(); // Create new document
-                // Save the new document immediately to the target path
-                const wdFormatDocumentDefault = 16; // .docx format
-                doc.SaveAs2(absoluteFilePath, wdFormatDocumentDefault);
-                fileCreated = true;
-                logger.info(`Successfully created and saved new document: ${absoluteFilePath}`);
+            wordApp = await getOfficeApplication('Word.Application');
+
+            try {
+                if (await fs.pathExists(absoluteFilePath)) {
+                    logger.info(`Opening existing document (COM): ${absoluteFilePath}`);
+                    doc = wordApp.Documents.Open(absoluteFilePath, false, false);
+                } else {
+                    logger.info(`File not found. Creating new document (COM) at: ${absoluteFilePath}`);
+                    doc = wordApp.Documents.Add();
+                    const wdFormatDocumentDefault = 16; // .docx format
+                    doc.SaveAs2(absoluteFilePath, wdFormatDocumentDefault);
+                    fileCreated = true;
+                    logger.info(`Successfully created and saved new document (COM): ${absoluteFilePath}`);
+                }
+            } catch (fileError: any) {
+                logger.error(`Error opening or creating document (COM) '${absoluteFilePath}': ${fileError.message}`, { error: fileError });
+                return createErrorResponse(`Failed to open or create document (COM): ${fileError.message}`, 'FILE_OPERATION_FAILED_COM', fileError);
             }
-        } catch (fileError: any) {
-             logger.error(`Error opening or creating document '${absoluteFilePath}': ${fileError.message}`, { error: fileError });
-             return createErrorResponse(`Failed to open or create document: ${fileError.message}`, 'FILE_OPERATION_FAILED', fileError);
-        }
-        // --- End create if not exists logic ---
 
-        if (!doc) {
-             // This check might be redundant if the try/catch above handles errors, but good as a safeguard
-             return createErrorResponse(`Failed to obtain document object for: ${params.filePath}`, 'FILE_OPEN_FAILED');
-        }
+            if (!doc) {
+                return createErrorResponse(`Failed to obtain document object (COM) for: ${params.filePath}`, 'FILE_OPEN_FAILED_COM');
+            }
 
-        // Attempt to resolve natural language position first
-        insertionRange = resolveNaturalLanguageRange(doc, params.position, wordApp);
-
-        if (!insertionRange) {
-            // If natural language resolution failed, try specific formats
-            const positionLower = params.position.toLowerCase();
-
-            if (positionLower === 'start') {
-                insertionRange = doc.Range(0, 0);
-            } else if (positionLower === 'end') {
-                const endPos = doc.Content.End;
-                insertionRange = doc.Range(endPos, endPos);
-            } else if (positionLower === 'selection') {
-                 if (!wordApp.Selection) return createErrorResponse("Cannot insert at selection: No selection found.", 'NO_SELECTION');
-                 insertionRange = wordApp.Selection.Range;
-                 if (wordApp.Selection.Type !== 2 /* wdSelectionIP = 2 */) {
-                      insertionRange.Collapse(1); // wdCollapseStart = 1
-                 }
-            } else if (positionLower.startsWith('paragraph:')) {
-                const parts = positionLower.split(':');
-                if (parts.length < 2 || parts.length > 3) return createErrorResponse(`Invalid paragraph position format: ${params.position}`, 'INVALID_POSITION');
-
-                const indexStr = parts[1];
-                const paraIndex = parseInt(indexStr, 10);
-                 if (isNaN(paraIndex) || paraIndex <= 0) {
-                    return createErrorResponse(`Invalid paragraph index format: '${indexStr}'. Use 'paragraph:N' where N is a positive integer.`, 'INVALID_PARAM');
-                }
-                 if (!doc || !doc.Paragraphs || typeof doc.Paragraphs.Count === 'undefined') {
-                     return createErrorResponse("Could not access document paragraphs collection.", 'COM_ERROR');
-                }
-                const paraCount = doc.Paragraphs.Count;
-                if (paraIndex > paraCount) {
-                    return createErrorResponse(`Paragraph index ${paraIndex} is out of bounds. Document has ${paraCount} paragraphs.`, 'INVALID_PARAM');
-                }
-
-                paraRange = doc.Paragraphs(paraIndex).Range; // Get the paragraph range
-
-                if (parts.length === 3) { // Position specified (start/end)
-                    if (parts[2] === 'start') {
-                        insertionRange = doc.Range(paraRange.Start, paraRange.Start);
-                    } else if (parts[2] === 'end') {
-                        const endPos = paraRange.End > paraRange.Start ? paraRange.End - 1 : paraRange.Start; // Adjust for para mark
-                        insertionRange = doc.Range(endPos, endPos);
-                    } else {
-                        releaseObject(paraRange); // Release paraRange before throwing
-                        return createErrorResponse(`Invalid paragraph position specifier: ${parts[2]}`, 'INVALID_POSITION');
+            insertionRange = resolveNaturalLanguageRange(doc, params.position, wordApp);
+            if (!insertionRange) {
+                const positionLower = params.position.toLowerCase();
+                if (positionLower === 'start') {
+                    insertionRange = doc.Range(0, 0);
+                } else if (positionLower === 'end') {
+                    const endPos = doc.Content.End;
+                    insertionRange = doc.Range(endPos, endPos);
+                } else if (positionLower === 'selection') {
+                    if (!wordApp.Selection) return createErrorResponse("Cannot insert at selection (COM): No selection found.", 'NO_SELECTION_COM');
+                    insertionRange = wordApp.Selection.Range;
+                    if (wordApp.Selection.Type !== 2 /* wdSelectionIP */) {
+                        insertionRange.Collapse(1); // wdCollapseStart
                     }
-                } else { // Default to start of paragraph
-                     insertionRange = doc.Range(paraRange.Start, paraRange.Start);
-                }
-                // paraRange is released in the finally block now
+                } else if (positionLower.startsWith('paragraph:')) {
+                    const parts = positionLower.split(':');
+                    if (parts.length < 2 || parts.length > 3) return createErrorResponse(`Invalid paragraph position format (COM): ${params.position}`, 'INVALID_POSITION_COM');
+                    const indexStr = parts[1];
+                    const paraIndex = parseInt(indexStr, 10);
+                    if (isNaN(paraIndex) || paraIndex <= 0) return createErrorResponse(`Invalid paragraph index format (COM): '${indexStr}'.`, 'INVALID_PARAM_COM');
+                    if (!doc.Paragraphs || typeof doc.Paragraphs.Count === 'undefined') return createErrorResponse("Could not access document paragraphs collection (COM).", 'COM_ERROR');
+                    const paraCount = doc.Paragraphs.Count;
+                    if (paraIndex > paraCount) return createErrorResponse(`Paragraph index ${paraIndex} out of bounds (COM). Document has ${paraCount} paragraphs.`, 'INVALID_PARAM_COM');
+                    paraRange = doc.Paragraphs(paraIndex).Range;
+                    if (parts.length === 3) {
+                        if (parts[2] === 'start') insertionRange = doc.Range(paraRange.Start, paraRange.Start);
+                        else if (parts[2] === 'end') {
+                            const endPos = paraRange.End > paraRange.Start ? paraRange.End - 1 : paraRange.Start;
+                            insertionRange = doc.Range(endPos, endPos);
+                        } else {
+                            releaseObject(paraRange);
+                            return createErrorResponse(`Invalid paragraph position specifier (COM): ${parts[2]}`, 'INVALID_POSITION_COM');
+                        }
+                    } else insertionRange = doc.Range(paraRange.Start, paraRange.Start);
+                } else return createErrorResponse(`Unsupported position specifier (COM): ${params.position}`, 'INVALID_POSITION_COM');
+            }
+
+            if (!insertionRange) return createErrorResponse(`Could not determine insertion range (COM) for position: ${params.position}`, 'RANGE_ERROR_COM');
+
+            if (params.format === 'markdown') {
+                logger.debug('Inserting and formatting text as Markdown (COM).');
+                await applyMarkdownFormattingToWord(insertionRange, params.text, wordApp, doc);
             } else {
-                return createErrorResponse(`Unsupported position specifier: ${params.position}`, 'INVALID_POSITION');
+                logger.debug('Inserting text as plaintext (COM).');
+                insertionRange.Text = params.text;
+            }
+
+            if (!fileCreated) {
+                doc.Save();
+                logger.info(`Successfully inserted text (COM) at position "${params.position}" with format "${params.format}" and saved ${params.filePath}`);
+            } else {
+                logger.info(`Successfully inserted text (COM) at position "${params.position}" with format "${params.format}" into newly created file ${params.filePath}`);
+            }
+
+            // Save the modified document as a dynamic resource
+            try {
+                logger.warn("Dynamic resource saving (COM path) commented out due to reliance on officeAppInstance.readDocumentContent");
+            } catch (resourceSaveError: any) {
+                logger.error(`Failed to save ${params.filePath} as a dynamic resource (COM): ${resourceSaveError.message}`);
+                // Continue execution even if saving the resource fails
+            }
+            return { success: true, data: {} };
+        } catch (error: any) {
+            logger.error(`Error in word/text/insert (COM path): ${error.message}`, { error: error instanceof z.ZodError ? error.errors : error });
+            if (error instanceof z.ZodError) return createErrorResponse('Input validation failed (COM path)', 'VALIDATION_ERROR', error.errors);
+            return createErrorResponse(`Failed to insert text (COM path): ${error.message}`, 'INSERT_TEXT_FAILED_COM', error);
+        } finally {
+            releaseObject(insertionRange);
+            releaseObject(paraRange);
+            if (doc) {
+                try { doc.Close(false); } catch (e) { logger.warn('Error closing document after insert (COM)', e); }
+                releaseObject(doc);
+            }
+            if (wordApp) releaseObject(wordApp);
+        }
+    } else {
+        // Library path (docx)
+        logger.warn(`Library path for word/text/insert is not fully implemented yet for file: ${params.filePath}`);
+        // TODO: Implement docx logic for insertText
+        // This will involve:
+        // 1. Reading the document if it exists (or creating a new one).
+        //    - `docx` doesn't "open" files like COM. You'd read it into memory.
+        //    - `fs.readFile` then parse with a `docx` parser if modifying, or `new Document()` if new.
+        // 2. Determining insertion point (start, end, paragraph:N). This is complex with `docx`.
+        // 3. If 'markdown', using a new `markdownToDocx` utility (to be created).
+        // 4. If 'plaintext', creating `Paragraph` and `TextRun` objects.
+        // 5. Using `Packer.toBuffer(doc)` and `fs.writeFile` to save.
+        return createErrorResponse(
+            'Library path for insertText is not yet implemented. Use COM Interop (useComInterop: true) for this functionality.',
+            'NOT_IMPLEMENTED_LIB'
+        );
+    }
+}
+
+export async function modifyText(requestParams: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> {
+    const params = modifySchema.parse(requestParams);
+    logger.info(`Executing word/text/modify for file: ${params.filePath}, range: ${params.range}, useComInterop: ${params.useComInterop}`);
+    const absoluteFilePath = path.resolve(params.filePath);
+
+    if (!await fs.pathExists(absoluteFilePath)) {
+        return createErrorResponse(`File not found: ${params.filePath}`, 'FILE_NOT_FOUND');
+    }
+
+    if (params.useComInterop) {
+        let wordApp: any = null;
+        let doc: any = null;
+        let selectedRange: any = null;
+        try {
+            wordApp = await getOfficeApplication('Word.Application');
+            doc = wordApp.Documents.Open(absoluteFilePath, false, false); // Open read/write
+            if (!doc) {
+                return createErrorResponse(`Failed to open document (COM): ${params.filePath}`, 'FILE_OPEN_FAILED_COM');
+            }
+            selectedRange = getRangeFromSpecifier(doc, params.range, wordApp);
+            selectedRange.Text = params.newText;
+            doc.Save();
+            logger.info(`Successfully modified text (COM) in range "${params.range}" and saved ${params.filePath}`);
+
+            // Save the modified document as a dynamic resource
+            try {
+                logger.warn("Dynamic resource saving (COM path) commented out due to reliance on officeAppInstance.readDocumentContent");
+            } catch (resourceSaveError: any) {
+                logger.error(`Failed to save ${params.filePath} as a dynamic resource (COM): ${resourceSaveError.message}`);
+                // Continue execution even if saving the resource fails
+            }
+            return { success: true, data: {} };
+        } catch (error: any) {
+            logger.error(`Error in word/text/modify (COM path): ${error.message}`, { error: error instanceof z.ZodError ? error.errors : error });
+            if (error instanceof z.ZodError) {
+                return createErrorResponse('Input validation failed (COM path)', 'VALIDATION_ERROR', error.errors);
+            }
+            return createErrorResponse(`Failed to modify text (COM path): ${error.message}`, 'MODIFY_TEXT_FAILED_COM', error);
+        } finally {
+            releaseObject(selectedRange);
+            if (doc) {
+                try { doc.Close(false); } catch (e) { logger.warn('Error closing document after modify (COM)', e); }
+                releaseObject(doc);
+            }
+            if (wordApp) {
+                releaseObject(wordApp);
             }
         }
-
-
-        if (!insertionRange) {
-             // Should be caught earlier, but safeguard
-             return createErrorResponse(`Could not determine insertion range for position: ${params.position}`, 'RANGE_ERROR');
-        }
-
-        // Insert and format text based on the specified format
-        if (params.format === 'markdown') {
-            logger.debug('Inserting and formatting text as Markdown.');
-            await applyMarkdownFormattingToWord(insertionRange, params.text, wordApp, doc); // Pass doc object
-        } else { // Default to plaintext
-            logger.debug('Inserting text as plaintext.');
-            insertionRange.Text = params.text;
-        }
-
-
-        // Save only if the file wasn't just created (SaveAs already saved it)
-        if (!fileCreated) {
-            doc.Save();
-            logger.info(`Successfully inserted text at position "${params.position}" with format "${params.format}" and saved ${params.filePath}`);
-        } else {
-             logger.info(`Successfully inserted text at position "${params.position}" with format "${params.format}" into newly created file ${params.filePath}`);
-        }
-
-
-        // Guardar el documento modificado como un recurso dinámico
-        try {
-            // Assuming officeAppInstance.readDocumentContent is a helper that uses the COM object
-            // Need to replace this with direct COM calls or a helper that takes wordApp/doc
-            // For now, commenting out or adapting based on available info
-            // const updatedContent = await officeAppInstance.readDocumentContent(params.filePath);
-            // await saveResource('word/text', path.basename(params.filePath), updatedContent);
-            // logger.info(`Saved ${params.filePath} as a dynamic resource.`);
-             logger.warn("Dynamic resource saving commented out due to reliance on officeAppInstance.readDocumentContent");
-        } catch (resourceSaveError: any) {
-            logger.error(`Failed to save ${params.filePath} as a dynamic resource: ${resourceSaveError.message}`);
-            // Continuar la ejecución aunque falle el guardado del recurso
-        }
-
-        return { success: true, data: {} };
-
-    } catch (error: any) {
-        logger.error(`Error in word/text/insert: ${error.message}`, { error: error instanceof z.ZodError ? error.errors : error });
-         if (error instanceof z.ZodError) {
-            return createErrorResponse('Input validation failed', 'VALIDATION_ERROR', error.errors);
-        }
-        return createErrorResponse(`Failed to insert text: ${error.message}`, 'INSERT_TEXT_FAILED', error);
-    } finally {
-        releaseObject(insertionRange);
-        releaseObject(paraRange); // Release the paragraph range if it was obtained
-        if (doc) {
-            // Close without saving changes if we just created it (already saved by SaveAs)
-            // Otherwise, close normally (changes should have been saved by doc.Save())
-            try { doc.Close(false); } catch (e) { logger.warn('Error closing document after insert', e); }
-            releaseObject(doc);
-        }
-        if (wordApp) {
-            releaseObject(wordApp); // Release the application object
-        }
+    } else {
+        // Library path (docx)
+        logger.warn(`Library path for word/text/modify is not fully implemented yet for file: ${params.filePath}`);
+        // TODO: Implement docx logic for modifyText
+        // This is complex. It might involve:
+        // 1. Reading the document using a docx parser.
+        // 2. Traversing the document structure to find the text matching the range (if possible to map ranges).
+        // 3. Replacing the content.
+        // 4. Re-packing and saving the document.
+        // Simple string replacement on full text extracted by Mammoth would lose formatting.
+        return createErrorResponse(
+            'Library path for modifyText is not yet implemented. Use COM Interop (useComInterop: true) for this functionality.',
+            'NOT_IMPLEMENTED_LIB'
+        );
     }
 }
 
-// modifyText function remains unchanged
-export async function modifyText(requestParams: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> {
-    let wordApp: any = null;
-    let doc: any = null;
-    let selectedRange: any = null;
-    let officeAppInstance: any = null;
-
-    try {
-        const params = modifySchema.parse(requestParams);
-        logger.info(`Executing word/text/modify for file: ${params.filePath}, range: ${params.range}`);
-
-        // File path validated by Zod refine
-        wordApp = await getOfficeApplication('Word.Application');
-        const absoluteFilePath = path.resolve(params.filePath);
-
-        // Check if file exists before opening
-        if (!await fs.pathExists(absoluteFilePath)) {
-            return createErrorResponse(`File not found: ${params.filePath}`, 'FILE_NOT_FOUND');
-        }
-
-        doc = wordApp.Documents.Open(absoluteFilePath, false, false); // Open read/write
-        if (!doc) {
-            return createErrorResponse(`Failed to open document: ${params.filePath}`, 'FILE_OPEN_FAILED');
-        }
-
-        selectedRange = getRangeFromSpecifier(doc, params.range, wordApp); // Use local helper
-
-        selectedRange.Text = params.newText;
-
-        doc.Save();
-        logger.info(`Successfully modified text in range "${params.range}" and saved ${params.filePath}`);
-
-        // Guardar el documento modificado como un recurso dinámico
-        try {
-            // Assuming officeAppInstance.readDocumentContent is a helper that uses the COM object
-            // Need to replace this with direct COM calls or a helper that takes wordApp/doc
-            // For now, commenting out or adapting based on available info
-            // const updatedContent = await officeAppInstance.readDocumentContent(params.filePath);
-            // await saveResource('word/text', path.basename(params.filePath), updatedContent);
-            // logger.info(`Saved ${params.filePath} as a dynamic resource.`);
-             logger.warn("Dynamic resource saving commented out due to reliance on officeAppInstance.readDocumentContent");
-        } catch (resourceSaveError: any) {
-            logger.error(`Failed to save ${params.filePath} as a dynamic resource: ${resourceSaveError.message}`);
-            // Continuar la ejecución aunque falle el guardado del recurso
-        }
-
-        return { success: true, data: {} };
-
-    } catch (error: any) {
-        logger.error(`Error in word/text/modify: ${error.message}`, { error: error instanceof z.ZodError ? error.errors : error });
-         if (error instanceof z.ZodError) {
-            return createErrorResponse('Input validation failed', 'VALIDATION_ERROR', error.errors);
-        }
-        return createErrorResponse(`Failed to modify text: ${error.message}`, 'MODIFY_TEXT_FAILED', error);
-    } finally {
-        releaseObject(selectedRange); // Release range obtained from helper
-        if (doc) {
-             try { doc.Close(false); } catch (e) { logger.warn('Error closing document after modify', e); }
-            releaseObject(doc);
-        }
-        if (wordApp) {
-            releaseObject(wordApp); // Release the application object
-        }
-    }
-}
-
-// deleteText function remains unchanged
 export async function deleteText(requestParams: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> {
-    let wordApp: any = null;
-    let doc: any = null;
-    let selectedRange: any = null;
-    let officeAppInstance: any = null;
+    const params = deleteSchema.parse(requestParams);
+    logger.info(`Executing word/text/delete for file: ${params.filePath}, range: ${params.range}, useComInterop: ${params.useComInterop}`);
+    const absoluteFilePath = path.resolve(params.filePath);
 
-    try {
-        const params = deleteSchema.parse(requestParams);
-        logger.info(`Executing word/text/delete for file: ${params.filePath}, range: ${params.range}`);
+    if (!await fs.pathExists(absoluteFilePath)) {
+        return createErrorResponse(`File not found: ${params.filePath}`, 'FILE_NOT_FOUND');
+    }
 
-        // File path validated by Zod refine
-        wordApp = await getOfficeApplication('Word.Application');
-        const absoluteFilePath = path.resolve(params.filePath);
-
-        // Check if file exists before opening
-        if (!await fs.pathExists(absoluteFilePath)) {
-            return createErrorResponse(`File not found: ${params.filePath}`, 'FILE_NOT_FOUND');
-        }
-
-        doc = wordApp.Documents.Open(absoluteFilePath, false, false); // Open read/write
-        if (!doc) {
-            return createErrorResponse(`Failed to open document: ${params.filePath}`, 'FILE_OPEN_FAILED');
-        }
-
-        selectedRange = getRangeFromSpecifier(doc, params.range, wordApp); // Use local helper
-
-        selectedRange.Delete(); // Use Delete method
-
-        doc.Save();
-        logger.info(`Successfully deleted text in range "${params.range}" and saved ${params.filePath}`);
-
-        // Guardar el documento modificado como un recurso dinámico
+    if (params.useComInterop) {
+        let wordApp: any = null;
+        let doc: any = null;
+        let selectedRange: any = null;
         try {
-            // Assuming officeAppInstance.readDocumentContent is a helper that uses the COM object
-            // Need to replace this with direct COM calls or a helper that takes wordApp/doc
-            // For now, commenting out or adapting based on available info
-            // const updatedContent = await officeAppInstance.readDocumentContent(params.filePath);
-            // await saveResource('word/text', path.basename(params.filePath), updatedContent);
-            // logger.info(`Saved ${params.filePath} as a dynamic resource.`);
-             logger.warn("Dynamic resource saving commented out due to reliance on officeAppInstance.readDocumentContent");
-        } catch (resourceSaveError: any) {
-            logger.error(`Failed to save ${params.filePath} as a dynamic resource: ${resourceSaveError.message}`);
-            // Continuar la ejecución aunque falle el guardado del recurso
-        }
+            wordApp = await getOfficeApplication('Word.Application');
+            doc = wordApp.Documents.Open(absoluteFilePath, false, false); // Open read/write
+            if (!doc) {
+                return createErrorResponse(`Failed to open document (COM): ${params.filePath}`, 'FILE_OPEN_FAILED_COM');
+            }
+            selectedRange = getRangeFromSpecifier(doc, params.range, wordApp);
+            selectedRange.Delete();
+            doc.Save();
+            logger.info(`Successfully deleted text (COM) in range "${params.range}" and saved ${params.filePath}`);
 
-        return { success: true, data: {} };
-
-    } catch (error: any) {
-        logger.error(`Error in word/text/delete: ${error.message}`, { error: error instanceof z.ZodError ? error.errors : error });
-         if (error instanceof z.ZodError) {
-            return createErrorResponse('Input validation failed', 'VALIDATION_ERROR', error.errors);
+            // Save the modified document as a dynamic resource
+            try {
+                logger.warn("Dynamic resource saving (COM path) commented out due to reliance on officeAppInstance.readDocumentContent");
+            } catch (resourceSaveError: any) {
+                logger.error(`Failed to save ${params.filePath} as a dynamic resource (COM): ${resourceSaveError.message}`);
+                // Continue execution even if saving the resource fails
+            }
+            return { success: true, data: {} };
+        } catch (error: any) {
+            logger.error(`Error in word/text/delete (COM path): ${error.message}`, { error: error instanceof z.ZodError ? error.errors : error });
+            if (error instanceof z.ZodError) {
+                return createErrorResponse('Input validation failed (COM path)', 'VALIDATION_ERROR', error.errors);
+            }
+            return createErrorResponse(`Failed to delete text (COM path): ${error.message}`, 'DELETE_TEXT_FAILED_COM', error);
+        } finally {
+            releaseObject(selectedRange);
+            if (doc) {
+                try { doc.Close(false); } catch (e) { logger.warn('Error closing document after delete (COM)', e); }
+                releaseObject(doc);
+            }
+            if (wordApp) {
+                releaseObject(wordApp);
+            }
         }
-        return createErrorResponse(`Failed to delete text: ${error.message}`, 'DELETE_TEXT_FAILED', error);
-    } finally {
-        releaseObject(selectedRange); // Release range obtained from helper
-        if (doc) {
-             try { doc.Close(false); } catch (e) { logger.warn('Error closing document after delete', e); }
-            releaseObject(doc);
-        }
-        if (wordApp) {
-            releaseObject(wordApp); // Release the application object
-        }
+    } else {
+        // Library path (docx)
+        logger.warn(`Library path for word/text/delete is not fully implemented yet for file: ${params.filePath}`);
+        // TODO: Implement docx logic for deleteText
+        // Similar complexity to modifyText.
+        return createErrorResponse(
+            'Library path for deleteText is not yet implemented. Use COM Interop (useComInterop: true) for this functionality.',
+            'NOT_IMPLEMENTED_LIB'
+        );
     }
 }
 

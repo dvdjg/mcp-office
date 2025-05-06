@@ -1,153 +1,218 @@
-import { listStyles } from '../../../src/tools/word/styles.tool';
+import { listStyles, applyStyle } from '../../../src/tools/word/styles.tool';
 import { getOfficeApplication, releaseObject } from '../../../src/utils/officeInterop';
 import { validateFilePath } from '../../../src/utils/security';
 import logger from '../../../src/utils/logger';
+import { createErrorResponse } from '../../../src/utils/errorHandler';
 
-// Mock de las dependencias externas (simulando la interacción con Office)
+
 jest.mock('../../../src/utils/officeInterop');
 jest.mock('../../../src/utils/security');
 jest.mock('../../../src/utils/errorHandler', () => ({
     handleToolError: jest.fn((error, code) => ({ success: false, error: { code, message: error.message } })),
+    createErrorResponse: jest.fn((message, code) => ({ success: false, error: { code, message } })),
 }));
 jest.mock('../../../src/utils/logger');
 
 const mockGetOfficeApplication = getOfficeApplication as jest.Mock;
 const mockReleaseObject = releaseObject as jest.Mock;
 const mockValidateFilePath = validateFilePath as jest.Mock;
-const mockLogger = logger as jest.Mocked<typeof logger>;
+const mockLoggerInfo = jest.spyOn(logger, 'info');
+const mockLoggerWarn = jest.spyOn(logger, 'warn');
+const mockLoggerError = jest.spyOn(logger, 'error');
+const mockCreateErrorResponse = createErrorResponse as jest.Mock;
+
 
 describe('word/styles integration tests', () => {
     let mockWordApp: any;
     let mockDoc: any;
-    let mockStyles: any;
-    let mockOfficeAppInstance: any;
+    let mockStylesCollection: any;
+    let mockSelectionRange: any;
+    let mockParagraphRange: any;
+    let mockDocumentContentRange: any;
+
 
     beforeEach(() => {
         jest.clearAllMocks();
 
-        // Configurar mocks para simular objetos COM de Word y la interacción con officeInterop
-        mockStyles = {
+        mockStylesCollection = {
             Count: 3,
             Item: jest.fn((index: number) => {
-                if (index === 1) return { NameLocal: 'Normal' };
-                if (index === 2) return { NameLocal: 'Heading 1' };
-                if (index === 3) return { NameLocal: 'Heading 2' };
+                if (index === 1) return { NameLocal: 'Normal', release: jest.fn() };
+                if (index === 2) return { NameLocal: 'Heading 1', release: jest.fn() };
+                if (index === 3) return { NameLocal: 'Heading 2', release: jest.fn() };
                 return undefined;
             }),
+            release: jest.fn(),
         };
+
+        mockSelectionRange = { Style: '', release: jest.fn() };
+        mockParagraphRange = { Style: '', release: jest.fn() };
+        mockDocumentContentRange = { Style: '', release: jest.fn() };
+
         mockDoc = {
-            Styles: mockStyles,
+            Styles: mockStylesCollection,
+            Content: mockDocumentContentRange,
+            Paragraphs: jest.fn((index: number) => {
+                if (index > 0 && index <= (mockDoc.Paragraphs as any).Count) {
+                    return { Range: mockParagraphRange, release: jest.fn() };
+                }
+                throw new Error("COM Error: Invalid paragraph index."); // Simulate COM error
+            }),
             Close: jest.fn(),
+            release: jest.fn(),
         };
+        (mockDoc.Paragraphs as any).Count = 5;
+
+
         mockWordApp = {
             Documents: {
                 Open: jest.fn().mockReturnValue(mockDoc),
             },
+            Selection: {
+                Range: mockSelectionRange,
+                release: jest.fn(), // Selection object itself might need release
+            },
+            release: jest.fn(),
         };
 
-        // Mock de la estructura de OfficeAppInstance devuelta por getOfficeApplication
-        mockOfficeAppInstance = {
-            app: mockWordApp,
-            openDocument: jest.fn().mockReturnValue(mockDoc), // Simula openDocument de officeInterop
-            release: jest.fn(), // Simula release de officeInterop
-        };
-
-        mockGetOfficeApplication.mockResolvedValue(mockOfficeAppInstance);
-        mockValidateFilePath.mockReturnValue(true); // Asumir que la validación de ruta es exitosa
+        mockGetOfficeApplication.mockResolvedValue(mockWordApp);
+        mockValidateFilePath.mockImplementation(filePath => filePath);
     });
 
-    // Prueba de integración para listStyles
-    test('listStyles debería interactuar correctamente con officeInterop para listar estilos', async () => {
-        const params = { filePath: 'C:/test/document.docx' };
+    const testModes = [
+        { mode: 'COM', useComInterop: true, default: false },
+        { mode: 'Library', useComInterop: false, default: true }, // Default behavior is library path
+    ];
 
-        // Ejecutar la herramienta
-        const result = await listStyles(params);
+    // Consolidate undefined with false for testing logic, as schema defaults undefined to false
+    const effectiveTestModes = testModes.map(tm => ({
+        ...tm,
+        effectiveUseComInterop: tm.useComInterop === undefined ? false : tm.useComInterop,
+    }));
 
-        // Verificar interacciones con officeInterop y mocks de COM
-        expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-        expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-        // En una prueba de integración, verificamos que openDocument de officeInterop es llamado
-        expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath);
-        // Verificamos que se accede a la colección de estilos del documento mockeado
-        expect(mockDoc.Styles).toBe(mockStyles);
-        // Verificamos que se itera sobre los estilos mockeados
-        expect(mockStyles.Item).toHaveBeenCalledWith(1);
-        expect(mockStyles.Item).toHaveBeenCalledWith(2);
-        expect(mockStyles.Item).toHaveBeenCalledWith(3);
 
-        // Verificamos que los objetos COM mockeados son liberados
-        expect(mockReleaseObject).toHaveBeenCalledWith({ NameLocal: 'Normal' });
-        expect(mockReleaseObject).toHaveBeenCalledWith({ NameLocal: 'Heading 1' });
-        expect(mockReleaseObject).toHaveBeenCalledWith({ NameLocal: 'Heading 2' });
-        expect(mockDoc.Close).toHaveBeenCalledWith(false); // Documento cerrado
-        expect(mockReleaseObject).toHaveBeenCalledWith(mockDoc); // Documento liberado
-        expect(mockOfficeAppInstance.release).toHaveBeenCalled(); // Instancia de OfficeApp liberada
+    describe.each(effectiveTestModes)('listStyles (mode: $mode, useComInterop: $effectiveUseComInterop)', ({ useComInterop, effectiveUseComInterop }) => {
+        const params = { filePath: 'C:/test/document.docx', useComInterop };
 
-        // Verificar el resultado de la herramienta
-        expect(result).toEqual({ success: true, data: ['Normal', 'Heading 1', 'Heading 2'] });
-        expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Attempting to list styles for document'));
-        expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Successfully listed'));
-    });
+        if (effectiveUseComInterop) {
+            test('COM: should list styles correctly', async () => {
+                const result = await listStyles(params);
+                expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
+                expect(mockWordApp.Documents.Open).toHaveBeenCalledWith(params.filePath, false, true);
+                expect(mockStylesCollection.Item).toHaveBeenCalledTimes(3);
+                expect(result).toEqual({ success: true, data: ['Normal', 'Heading 1', 'Heading 2'] });
+                expect(mockReleaseObject).toHaveBeenCalledWith(mockStylesCollection.Item(1));
+                expect(mockReleaseObject).toHaveBeenCalledWith(mockStylesCollection.Item(2));
+                expect(mockReleaseObject).toHaveBeenCalledWith(mockStylesCollection.Item(3));
+                expect(mockReleaseObject).toHaveBeenCalledWith(mockStylesCollection);
+                expect(mockReleaseObject).toHaveBeenCalledWith(mockDoc);
+                expect(mockReleaseObject).toHaveBeenCalledWith(mockWordApp);
+            });
 
-    test('listStyles debería manejar errores al abrir el documento', async () => {
-        // Simular que openDocument falla
-        mockOfficeAppInstance.openDocument.mockReturnValue(null);
-        const params = { filePath: 'C:/test/nonexistent.docx' };
+            test('COM: should handle error if document open fails', async () => {
+                mockWordApp.Documents.Open.mockReturnValue(null);
+                const result = await listStyles(params);
+                expect(result.success).toBe(false);
+                if (!result.success) expect(result.error?.message).toContain('Failed to open document');
+                expect(mockReleaseObject).toHaveBeenCalledWith(mockWordApp);
+            });
 
-        const result = await listStyles(params);
+            test('COM: should handle empty styles collection', async () => {
+                mockStylesCollection.Count = 0;
+                const result = await listStyles(params);
+                expect(result.success).toBe(true);
+                if (result.success) expect(result.data).toEqual([]);
+                expect(mockStylesCollection.Item).not.toHaveBeenCalled();
+            });
+            
+            test('COM: should skip style if NameLocal is missing', async () => {
+                mockStylesCollection.Item.mockImplementation((index: number) => {
+                    if (index === 1) return { NameLocal: 'Normal', release: jest.fn() };
+                    if (index === 2) return { release: jest.fn() }; // No NameLocal
+                    if (index === 3) return { NameLocal: 'Heading 2', release: jest.fn() };
+                    return undefined;
+                });
+                const result = await listStyles(params);
+                expect(result.success).toBe(true);
+                if(result.success) expect(result.data).toEqual(['Normal', 'Heading 2']);
+            });
 
-        expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-        expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-        expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath);
-
-        // No debería intentar acceder a Styles si el documento no se abrió
-        expect(mockDoc.Styles).toBeUndefined(); // O verificar que no se accede a propiedades de mockDoc
-
-        // Debería liberar la instancia de OfficeApp
-        expect(mockOfficeAppInstance.release).toHaveBeenCalled();
-        // No debería intentar cerrar o liberar mockDoc si es null
-        expect(mockDoc.Close).not.toHaveBeenCalled();
-        expect(mockReleaseObject).not.toHaveBeenCalledWith(mockDoc);
-
-        // Verificar el resultado de error
-        expect(result.success).toBe(false);
-        if (!result.success) { // Check if it's an ErrorResponse
-            expect(result.error?.message).toContain('Failed to open document');
+        } else { // Library path (effectiveUseComInterop is false)
+            test('Library: should return NOT_IMPLEMENTED_LIB_STYLE_LIST', async () => {
+                const result = await listStyles(params);
+                expect(result.success).toBe(false);
+                if (!result.success) expect(result.error.code).toBe('NOT_IMPLEMENTED_LIB_STYLE_LIST');
+                expect(mockCreateErrorResponse).toHaveBeenCalledWith(expect.stringContaining("Listing all styles from an existing document is not supported"), 'NOT_IMPLEMENTED_LIB_STYLE_LIST');
+                expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining(`useComInterop=false`));
+            });
         }
-        expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining('Error listing styles via COM'));
     });
 
-     test('listStyles debería manejar errores al acceder a estilos individuales', async () => {
-         // Simular un error al acceder al segundo estilo
-        mockStyles.Item.mockImplementation((index: number) => {
-            if (index === 1) return { NameLocal: 'Normal' };
-            if (index === 2) throw new Error('COM Error accessing style');
-            if (index === 3) return { NameLocal: 'Heading 2' };
-            return undefined;
-        });
+    describe.each(effectiveTestModes)('applyStyle (mode: $mode, useComInterop: $effectiveUseComInterop)', ({ useComInterop, effectiveUseComInterop }) => {
+        const baseParams = { filePath: 'C:/test/document.docx', style: 'Heading 1' };
+        const getParams = (range: string) => ({ ...baseParams, range, useComInterop });
 
-        const params = { filePath: 'C:/test/document.docx' };
-        const result = await listStyles(params);
 
-        expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-        expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-        expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath);
-        expect(mockDoc.Styles).toBe(mockStyles);
-        expect(mockStyles.Item).toHaveBeenCalledWith(1);
-        expect(mockStyles.Item).toHaveBeenCalledWith(2);
-        expect(mockStyles.Item).toHaveBeenCalledWith(3);
+        if (effectiveUseComInterop) {
+            test('COM: should apply style to paragraph range', async () => {
+                const paramsWithRange = getParams('paragraph:1');
+                const result = await applyStyle(paramsWithRange);
+                expect(mockDoc.Paragraphs).toHaveBeenCalledWith(1);
+                expect(mockParagraphRange.Style).toBe(paramsWithRange.style);
+                expect(result.success).toBe(true);
+            });
 
-        // Debería intentar liberar el primer y tercer estilo, pero no el segundo que falló
-        expect(mockReleaseObject).toHaveBeenCalledWith({ NameLocal: 'Normal' });
-        expect(mockReleaseObject).not.toHaveBeenCalledWith({ NameLocal: 'Heading 1' }); // Este falló
-        expect(mockReleaseObject).toHaveBeenCalledWith({ NameLocal: 'Heading 2' });
-        expect(mockDoc.Close).toHaveBeenCalledWith(false);
-        expect(mockReleaseObject).toHaveBeenCalledWith(mockDoc);
-        expect(mockOfficeAppInstance.release).toHaveBeenCalled();
+            test('COM: should apply style to selection range', async () => {
+                const paramsWithRange = getParams('selection');
+                const result = await applyStyle(paramsWithRange);
+                expect(mockSelectionRange.Style).toBe(paramsWithRange.style);
+                expect(result.success).toBe(true);
+            });
 
-        // Debería devolver los estilos que pudo obtener y loggear el error
-        expect(result).toEqual({ success: true, data: ['Normal', 'Heading 2'] });
-        expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining('Error accessing style at index 2'));
-        expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Successfully listed'));
+            test('COM: should apply style to document range', async () => {
+                const paramsWithRange = getParams('document');
+                const result = await applyStyle(paramsWithRange);
+                expect(mockDocumentContentRange.Style).toBe(paramsWithRange.style);
+                expect(result.success).toBe(true);
+            });
+
+            test('COM: should handle invalid paragraph index (e.g., "paragraph:0")', async () => {
+                const paramsWithRange = getParams('paragraph:0');
+                const result = await applyStyle(paramsWithRange);
+                expect(result.success).toBe(false);
+                if(!result.success) expect(result.error.message).toContain("Invalid paragraph index format: '0'");
+            });
+            
+            test('COM: should handle out-of-bounds paragraph index', async () => {
+                const paramsWithRange = getParams('paragraph:99');
+                const result = await applyStyle(paramsWithRange);
+                expect(result.success).toBe(false);
+                if(!result.success) expect(result.error.message).toContain("Paragraph index 99 out of bounds.");
+            });
+            
+            test('COM: should handle error if selection range is null', async () => {
+                mockWordApp.Selection.Range = null;
+                const paramsWithRange = getParams('selection');
+                const result = await applyStyle(paramsWithRange);
+                expect(result.success).toBe(false);
+                if(!result.success) expect(result.error.message).toContain("Could not get range from selection");
+            });
+
+
+        } else { // Library path
+            test('Library: should return NOT_IMPLEMENTED_LIB_STYLE_APPLY for paragraph range', async () => {
+                const paramsWithRange = getParams('paragraph:1');
+                const result = await applyStyle(paramsWithRange);
+                expect(result.success).toBe(false);
+                if (!result.success) expect(result.error.code).toBe('NOT_IMPLEMENTED_LIB_STYLE_APPLY');
+            });
+
+            test('Library: should return LIB_RANGE_NOT_SUPPORTED for selection range', async () => {
+                const paramsWithRange = getParams('selection');
+                const result = await applyStyle(paramsWithRange);
+                expect(result.success).toBe(false);
+                if (!result.success) expect(result.error.code).toBe('LIB_RANGE_NOT_SUPPORTED');
+            });
+        }
     });
 });

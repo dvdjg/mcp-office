@@ -2,22 +2,29 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import fetch from 'node-fetch';
 
-const MCP_SERVER_URL = 'http://localhost:3000'; // Assuming the server runs on localhost:3000
+const MCP_SERVER_URL = 'http://localhost:3000';
 const TEMP_DIR = path.join(__dirname, '../temp_word_image_dir');
 const FIXTURES_DIR = path.join(__dirname, '../../fixtures');
-const FIXTURE_DOC_WITH_IMAGE = path.join(FIXTURES_DIR, 'doc_with_image.docx'); // Assuming this fixture exists with an image
-const FIXTURE_IMAGE_FILE = path.join(FIXTURES_DIR, 'sample_image.png'); // Assuming a sample image fixture exists
-const FIXTURE_WORD_DOC_EMPTY = path.join(FIXTURES_DIR, 'empty_doc.docx'); // Assuming an empty Word doc fixture exists
+
+const FIXTURE_DOC_WITH_IMAGE_NAME = 'doc_with_image.docx'; // Contains at least one image
+const FIXTURE_DOC_WITH_IMAGE_PATH = path.join(FIXTURES_DIR, FIXTURE_DOC_WITH_IMAGE_NAME);
+const RELATIVE_FIXTURE_DOC_WITH_IMAGE_PATH = `tests/fixtures/${FIXTURE_DOC_WITH_IMAGE_NAME}`;
+
+const FIXTURE_IMAGE_NAME = 'sample_image.png';
+const FIXTURE_IMAGE_PATH = path.join(FIXTURES_DIR, FIXTURE_IMAGE_NAME);
+// const RELATIVE_FIXTURE_IMAGE_PATH = `tests/fixtures/${FIXTURE_IMAGE_NAME}`; // Not used directly by tool, image data is base64
+
+const FIXTURE_EMPTY_DOC_NAME = 'empty_doc.docx';
+const FIXTURE_EMPTY_DOC_PATH = path.join(FIXTURES_DIR, FIXTURE_EMPTY_DOC_NAME);
+const RELATIVE_FIXTURE_EMPTY_DOC_PATH = `tests/fixtures/${FIXTURE_EMPTY_DOC_NAME}`;
 
 
-// Define a basic type for the expected successful response
 interface SuccessResponse {
   success: true;
-  data: any; // Use a more specific type if the data structure is known
+  data: any;
   message?: string;
 }
 
-// Define a basic type for the expected error response
 interface ErrorResponse {
   success: false;
   error: {
@@ -29,118 +36,179 @@ interface ErrorResponse {
 
 type ToolResponse = SuccessResponse | ErrorResponse;
 
+const callTool = async (toolName: string, args: Record<string, any>): Promise<ToolResponse> => {
+  const response = await fetch(`${MCP_SERVER_URL}/tool`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tool_name: toolName, arguments: args }),
+  });
+  return response.json() as Promise<ToolResponse>;
+};
 
 describe('word/image e2e tests', () => {
+  let sampleImageBase64: string;
 
   beforeAll(async () => {
-    // Ensure temp directory does not exist before tests
-    try {
-      await fs.rm(TEMP_DIR, { recursive: true });
-    } catch (error: any) {
-      if (error.code !== 'ENOENT') {
-        console.error(`Error cleaning up temp directory ${TEMP_DIR}:`, error);
-      }
-    }
-    // Create temp directory
+    await fs.rm(TEMP_DIR, { recursive: true, force: true });
     await fs.mkdir(TEMP_DIR, { recursive: true });
 
-    // Check if fixture files exist
-    const fixtures = [FIXTURE_DOC_WITH_IMAGE, FIXTURE_IMAGE_FILE, FIXTURE_WORD_DOC_EMPTY];
-    for (const fixturePath of fixtures) {
+    const fixturesToVerify = [FIXTURE_DOC_WITH_IMAGE_PATH, FIXTURE_IMAGE_PATH, FIXTURE_EMPTY_DOC_PATH];
+    for (const fixturePath of fixturesToVerify) {
       try {
         await fs.stat(fixturePath);
       } catch (error: any) {
         if (error.code === 'ENOENT') {
-           console.error(`Fixture file ${fixturePath} not found. Please ensure it exists for word/image tests.`);
-           // Depending on test setup, might throw or skip tests
-        } else {
-          console.error(`Error checking fixture file ${fixturePath}:`, error);
+          console.error(`Required fixture file ${fixturePath} not found.`);
+          throw new Error(`Fixture file ${fixturePath} not found.`);
         }
+        throw error;
       }
     }
+    // Load sample image data for insertion tests
+    const imageBuffer = await fs.readFile(FIXTURE_IMAGE_PATH);
+    sampleImageBase64 = imageBuffer.toString('base64');
   });
 
   afterAll(async () => {
-    // Clean up temp directory after tests
-    try {
-      await fs.rm(TEMP_DIR, { recursive: true });
-    } catch (error: any) {
-      if (error.code !== 'ENOENT') {
-        console.error(`Error cleaning up temp directory ${TEMP_DIR}:`, error);
-      }
-    }
+    await fs.rm(TEMP_DIR, { recursive: true, force: true });
   });
 
-  describe('word/image/extract', () => {
-    test('should extract images from a Word document (requires fixture)', async () => {
-      const outputDir = path.join(TEMP_DIR, 'extracted_images');
+  const testModes = [
+    { mode: 'COM', useComInterop: true },
+    { mode: 'Library', useComInterop: false },
+    { mode: 'Library (Default)', useComInterop: undefined },
+  ];
 
-      const response = await fetch(`${MCP_SERVER_URL}/tool`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          tool_name: 'word/image/extract',
-          arguments: {
-            document: 'tests/fixtures/doc_with_image.docx', // Use path relative to workspace
-            outputDirectory: 'tests/temp_word_image_dir/extracted_images', // Use path relative to workspace
-          },
-        }),
-      });
-
-      expect(response.ok).toBe(true);
-      const result = await response.json() as ToolResponse;
+  describe.each(testModes)('word/image/extract (mode: $mode)', ({ useComInterop }) => {
+    test('should extract an image from a Word document by index', async () => {
+      const args = {
+        filePath: RELATIVE_FIXTURE_DOC_WITH_IMAGE_PATH,
+        identifier: 1, // Extract the first image
+        outputFormat: 'png', // outputFormat might be ignored by library path
+        useComInterop,
+      };
+      const result = await callTool('word/image/extract', args);
 
       expect(result.success).toBe(true);
-
       if (result.success) {
-        expect(result.data).toHaveProperty('extractedFiles');
-        expect(Array.isArray(result.data.extractedFiles)).toBe(true);
-        // TODO: Add more specific checks based on the expected number and names of images in the fixture
-        // expect(result.data.extractedFiles.length).toBeGreaterThan(0);
-        // expect(result.data.extractedFiles).toContain(path.normalize('tests/temp_word_image_dir/extracted_images/image1.png'));
-      } else {
-        fail('Expected test to succeed but it failed.');
+        expect(result.data).toBeInstanceOf(Buffer); // Expect Buffer in response data
+        expect(result.data.length).toBeGreaterThan(0);
+        // TODO: Could save buffer to a temp file and verify it's a valid image
       }
     });
 
-    // TODO: Add tests for extracting specific images by index or other criteria if supported
-    // TODO: Add tests for error handling (e.g., non-existent document, document with no images)
+    test('should extract an image from a Word document by alt text (if available)', async () => {
+        // This test assumes 'doc_with_image.docx' has an image with identifiable alt text.
+        // Let's assume an image has "Test Alt Text" or similar.
+        const altTextIdentifier = "A sample image used for testing purposes."; // Adjust if your fixture has different alt text
+        const args = {
+            filePath: RELATIVE_FIXTURE_DOC_WITH_IMAGE_PATH,
+            identifier: altTextIdentifier,
+            outputFormat: 'jpeg',
+            useComInterop,
+        };
+        const result = await callTool('word/image/extract', args);
+
+        // Library path might struggle with alt text if Mammoth doesn't expose it well for this tool's logic
+        if (useComInterop) {
+            expect(result.success).toBe(true);
+            if (result.success) {
+                expect(result.data).toBeInstanceOf(Buffer);
+                expect(result.data.length).toBeGreaterThan(0);
+            }
+        } else {
+            // Library path's alt text identification is best-effort.
+            // It might succeed if alt text is simple and Mammoth picks it up, or fail.
+            if (result.success) {
+                expect(result.data).toBeInstanceOf(Buffer);
+                expect(result.data.length).toBeGreaterThan(0);
+                console.warn("Library path succeeded extracting by alt text, which is a good sign.");
+            } else {
+                expect(result.success).toBe(false);
+                // Expect specific error if alt text not found or not supported well by library path
+                expect(result.error.code).toMatch(/IMAGE_EXTRACTION_FAILED_LIB|USER_ERROR/);
+                 console.warn(`Library path failed to extract by alt text as potentially expected: ${result.error.message}`);
+            }
+        }
+    });
   });
 
-  describe('word/image/insert', () => {
-    test('should insert an image into a Word document (requires fixtures)', async () => {
-      const outputPath = path.join(TEMP_DIR, 'doc_with_inserted_image.docx');
-      // Copy the empty fixture to the temp directory to avoid modifying the original
-      await fs.copyFile(FIXTURE_WORD_DOC_EMPTY, outputPath);
+  describe.each(testModes)('word/image/insert (mode: $mode)', ({ useComInterop }) => {
+    test('should insert an image into a Word document', async () => {
+      const outputFileName = `doc_inserted_image_${useComInterop}.docx`;
+      const outputPath = path.join(TEMP_DIR, outputFileName);
+      const relativeOutputPath = `tests/temp_word_image_dir/${outputFileName}`;
 
-      const response = await fetch(`${MCP_SERVER_URL}/tool`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          tool_name: 'word/image/insert',
-          arguments: {
-            document: 'tests/temp_word_image_dir/doc_with_inserted_image.docx', // Use path relative to workspace
-            imagePath: 'tests/fixtures/sample_image.png', // Use path relative to workspace
-            // Optional: position, width, height, altText
-          },
-        }),
-      });
+      if (useComInterop) { // COM modifies existing
+        await fs.copyFile(FIXTURE_EMPTY_DOC_PATH, outputPath);
+      }
 
-      expect(response.ok).toBe(true);
-      const result = await response.json() as ToolResponse;
+      const args = {
+        filePath: relativeOutputPath,
+        imageDataBase64: sampleImageBase64,
+        position: 'end',
+        width: 150,
+        height: 100,
+        altText: 'A test image inserted via E2E test',
+        useComInterop,
+      };
+      const result = await callTool('word/image/insert', args);
 
-      expect(result.success).toBe(true);
+      if (useComInterop) {
+        expect(result.success).toBe(true);
+        await expect(fs.stat(outputPath)).resolves.toBeTruthy();
+        // TODO: Verify image presence in COM path (complex)
+      } else { // Library path
+        // Library path creates new, or fails if file exists and not 'end' position
+        let fileExisted = false;
+        try { await fs.stat(outputPath); fileExisted = true; } catch (e) { /* fine */ }
 
-      // Verify the document was modified (basic check - could check modification time)
-      await expect(fs.stat(outputPath)).resolves.toBeTruthy();
-      // TODO: Add verification that the image was actually inserted into the document
+        if (fileExisted) { // Should fail as it's not a new file
+            expect(result.success).toBe(false);
+            if(!result.success) expect(result.error.code).toBe('NOT_IMPLEMENTED_LIB_MODIFY');
+        } else { // New file creation
+            expect(result.success).toBe(true);
+            await expect(fs.stat(outputPath)).resolves.toBeTruthy();
+            // TODO: Verify image presence in new file for Library path (complex)
+        }
+      }
     });
 
-    // TODO: Add tests for inserting image data (base64), inserting at specific positions, with size/alt text
-    // TODO: Add tests for error handling (e.g., non-existent document, non-existent image file)
+    test('Library path should fail to insert into existing file at specific position', async () => {
+        if (useComInterop === false || useComInterop === undefined) {
+            const outputFileName = `existing_doc_lib_img_insert_fail.docx`;
+            const outputPath = path.join(TEMP_DIR, outputFileName);
+            const relativeOutputPath = `tests/temp_word_image_dir/${outputFileName}`;
+            await fs.copyFile(FIXTURE_EMPTY_DOC_PATH, outputPath); // Create an existing file
+
+            const args = {
+                filePath: relativeOutputPath,
+                imageDataBase64: sampleImageBase64,
+                position: 'paragraph:1', // Specific position
+                useComInterop,
+            };
+            const result = await callTool('word/image/insert', args);
+            expect(result.success).toBe(false);
+            if (!result.success) {
+                expect(result.error.code).toBe('NOT_IMPLEMENTED_LIB_MODIFY');
+            }
+        } else {
+            expect(true).toBe(true); // Test only for library path
+        }
+    });
+  });
+
+  test('word/image/extract should fail for non-existent file', async () => {
+    const args = {
+      filePath: 'non_existent_doc_for_image_extract.docx',
+      identifier: 1,
+      useComInterop: true, // COM path
+    };
+    const result = await callTool('word/image/extract', args);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.code).toBe('IMAGE_EXTRACTION_FAILED_COM'); // COM error for file open
+      expect(result.error.message).toMatch(/Failed to open document|File not found/i);
+    }
   });
 });

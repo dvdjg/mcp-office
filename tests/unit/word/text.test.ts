@@ -1,21 +1,42 @@
-import { getText, insertText, modifyText, deleteText } from '../../../src/tools/word/text.tool';
+import { getText, insertText, modifyText, deleteText, getRangeFromSpecifier } from '../../../src/tools/word/text.tool';
 import { getOfficeApplication, releaseObject } from '../../../src/utils/officeInterop';
 import { validateFilePath } from '../../../src/utils/security';
 import logger from '../../../src/utils/logger';
 import { z } from 'zod';
+import * as fs from 'fs-extra';
+import mammoth from 'mammoth';
+import * as path from 'path'; // Import path for path.resolve
+import { createErrorResponse as mockCreateErrorResponseUtil } from '../../../src/utils/errorHandler';
+import { applyMarkdownFormattingToWord } from '../../../src/utils/markdownToOffice'; // Added this import
 
-// Mock de las dependencias
+
+// Mock dependencies
 jest.mock('../../../src/utils/officeInterop');
 jest.mock('../../../src/utils/security');
 jest.mock('../../../src/utils/errorHandler', () => ({
     handleToolError: jest.fn((error, code) => ({ success: false, error: { code, message: error.message } })),
+    createErrorResponse: jest.fn((message, code, details) => ({ success: false, error: { code, message, details } })),
 }));
 jest.mock('../../../src/utils/logger');
+jest.mock('fs-extra');
+jest.mock('mammoth');
+jest.mock('../../../src/utils/wordRangeResolver', () => ({
+    resolveNaturalLanguageRange: jest.fn(),
+}));
+jest.mock('../../../src/utils/markdownToOffice'); // Added this mock call
 
 const mockGetOfficeApplication = getOfficeApplication as jest.Mock;
 const mockReleaseObject = releaseObject as jest.Mock;
 const mockValidateFilePath = validateFilePath as jest.Mock;
-const mockLogger = logger as jest.Mocked<typeof logger>;
+const mockLoggerInfo = jest.spyOn(logger, 'info');
+const mockLoggerWarn = jest.spyOn(logger, 'warn');
+const mockLoggerError = jest.spyOn(logger, 'error');
+const mockFsPathExists = fs.pathExists as jest.Mock;
+const mockMammothExtractRawText = mammoth.extractRawText as jest.Mock;
+const mockCreateErrorResponse = mockCreateErrorResponseUtil as jest.Mock;
+const mockResolveNaturalLanguageRange = require('../../../src/utils/wordRangeResolver').resolveNaturalLanguageRange as jest.Mock;
+const mockApplyMarkdownFormattingToWord = applyMarkdownFormattingToWord as jest.Mock; // Corrected to use direct import
+
 
 describe('word/text unit tests', () => {
     let mockWordApp: any;
@@ -23,665 +44,474 @@ describe('word/text unit tests', () => {
     let mockSelection: any;
     let mockRange: any;
     let mockParagraphs: any;
-    let mockOfficeAppInstance: any;
+    let mockContentRange: any;
 
     beforeEach(() => {
-        // Reset mocks antes de cada prueba
         jest.clearAllMocks();
 
-        // Configurar mocks básicos para Word COM objects
         mockRange = {
-            Text: 'Sample text',
-            Start: 0,
-            End: 11,
-            Delete: jest.fn(),
-            Collapse: jest.fn(),
+            _textValue: 'Sample text from range',
+            Start: 0, End: 22,
+            Delete: jest.fn(), Collapse: jest.fn(),
+            set Text(value: string) { (this as any)._textValue = value; },
+            get Text() { return (this as any)._textValue; },
+            release: jest.fn(),
         };
-        mockSelection = {
-            Range: mockRange,
-            Type: 2, // wdSelectionIP = 2 (Insertion Point)
-        };
+        mockSelection = { Range: mockRange, Type: 2, release: jest.fn() }; // wdSelectionIP
         mockParagraphs = {
             Count: 5,
-            Item: jest.fn((index: number) => {
+            Item: jest.fn(index => {
                 if (index > 0 && index <= mockParagraphs.Count) {
-                    return { Range: { Text: `Paragraph ${index}`, Start: (index - 1) * 15, End: (index * 15) -1 } }; // Mock simple paragraph range
+                    return { Range: { ...mockRange, Text: `Paragraph ${index} text`, _textValue: `Paragraph ${index} text`}, release: jest.fn() };
                 }
-                return undefined; // Simular COM object no encontrado
+                throw new Error(`COM Error: Paragraph index ${index} out of bounds.`); // Simulate COM error
             }),
+            release: jest.fn(),
         };
+        mockContentRange = { ...mockRange, Text: 'Document content text', _textValue: 'Document content text', Delete: jest.fn(), Start: 0, End: 20 };
         mockDoc = {
-            Content: { Text: 'Document content', Start: 0, End: 16 },
-            Paragraphs: mockParagraphs,
-            Range: jest.fn((start, end) => {
-                 // Return a new mock range for specific positions
-                 const newRange = {
-                    Text: '', // Initially empty for insertion
-                    Start: start,
-                    End: end,
-                    Delete: jest.fn(),
-                    Collapse: jest.fn(),
-                 };
-                 // Add a mock setter for Text to simulate insertion
-                 Object.defineProperty(newRange, 'Text', {
-                     set: jest.fn((value) => { newRange._text = value; }),
-                     get: jest.fn(() => newRange._text),
-                     configurable: true,
-                 });
-                 return newRange;
-            }),
-            Save: jest.fn(),
-            Close: jest.fn(),
+            Content: mockContentRange, Paragraphs: mockParagraphs,
+            Range: jest.fn((start, end) => ({ ...mockRange, Start: start, End: end, _textValue: '', Text: '' })), // Ensure Text property exists for insertion
+            Save: jest.fn(), Close: jest.fn(), release: jest.fn(),
+            // Documents: { Add: jest.fn().mockReturnThis(), SaveAs2: jest.fn() }, // This was incorrect for mockDoc
         };
         mockWordApp = {
             Documents: {
-                Open: jest.fn().mockResolvedValue(mockDoc),
+                Open: jest.fn().mockReturnValue(mockDoc), // mockReturnValue for sync COM calls
+                Add: jest.fn().mockReturnValue(mockDoc)
             },
-            Selection: mockSelection,
-            Quit: jest.fn(),
+            Selection: mockSelection, Quit: jest.fn(), release: jest.fn(),
         };
 
-        mockGetOfficeApplication.mockResolvedValue(mockWordApp); // Return the raw app object
-        mockValidateFilePath.mockReturnValue(true); // Asumir que la validación de ruta es exitosa por defecto
+        mockGetOfficeApplication.mockResolvedValue(mockWordApp);
+        mockValidateFilePath.mockImplementation(fp => fp);
+        mockFsPathExists.mockResolvedValue(true);
+        mockMammothExtractRawText.mockResolvedValue({ value: 'Mammoth extracted text', messages: [] });
+        mockResolveNaturalLanguageRange.mockReturnValue(null);
+        // Ensure mockApplyMarkdownFormattingToWord is reset and configured for each test if needed, or here globally
+        mockApplyMarkdownFormattingToWord.mockReset().mockResolvedValue(undefined);
     });
 
-    // --- Pruebas Unitarias para getText ---
+    const testModes = [
+        { mode: 'COM', useComInterop: true, default: false },
+        { mode: 'Library', useComInterop: false, default: true },
+    ];
 
-    describe('getText', () => {
+    describe.each(testModes)('getText (mode: $mode, default: $default)', ({ useComInterop }) => {
         const baseParams = { filePath: 'C:/test/document.docx' };
-
-        test('debería obtener texto de la selección', async () => {
-            const params = { ...baseParams, range: 'selection' };
-            const result = await getText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockWordApp.Documents.Open).toHaveBeenCalledWith(expect.any(String), false, true, false, "", "", false, "", "", 0, false); // Check Documents.Open call
-            // getRangeFromSpecifier is called internally, we check its effect
-            expect(mockSelection.Range).toBe(mockRange);
-            expect(result).toEqual({ success: true, data: 'Sample text' });
-            expect(mockDoc.Close).toHaveBeenCalledWith(false); // Cerrar sin guardar
-            expect(mockReleaseObject).toHaveBeenCalledWith(mockWordApp); // Release the app object
-            expect(mockReleaseObject).toHaveBeenCalledWith(mockRange); // Range obtained from getRangeFromSpecifier
-            expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Successfully retrieved text'));
-        });
-
-        test('debería obtener texto del documento completo', async () => {
-            const params = { ...baseParams, range: 'document' };
-            const result = await getText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockWordApp.Documents.Open).toHaveBeenCalledWith(expect.any(String), false, true, false, "", "", false, "", "", 0, false); // Check Documents.Open call
-            // getRangeFromSpecifier is called internally
-            expect(mockDoc.Content.Text).toBe('Document content');
-            expect(result).toEqual({ success: true, data: 'Document content' });
-            expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockReleaseObject).toHaveBeenCalledWith(mockWordApp); // Release the app object
-            // Note: doc.Content is not explicitly released in the tool's finally block,
-            // as it's part of the document object itself.
-            expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Successfully retrieved text'));
-        });
-
-        test('debería obtener texto de un párrafo específico', async () => {
-            const params = { ...baseParams, range: 'paragraph:2' };
-            const result = await getText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockWordApp.Documents.Open).toHaveBeenCalledWith(expect.any(String), false, true, false, "", "", false, "", "", 0, false); // Check Documents.Open call
-            expect(mockParagraphs.Item).toHaveBeenCalledWith(2);
-            // getRangeFromSpecifier is called internally
-            expect(result).toEqual({ success: true, data: 'Paragraph 2' });
-            expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockReleaseObject).toHaveBeenCalledWith(mockWordApp); // Release the app object
-            // The range returned by Paragraphs.Item().Range is released
-            expect(mockReleaseObject).toHaveBeenCalled(); // Check if releaseObject was called at least once
-            expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Successfully retrieved text'));
-        });
-
-        test('debería manejar un filePath inválido', async () => {
-            mockValidateFilePath.mockReturnValue(false);
-            const params = { ...baseParams, range: 'document' };
-            const result = await getText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).not.toHaveBeenCalled();
-            expect(result.success).toBe(false);
-            expect(result.error?.message).toContain('Invalid or potentially unsafe file path');
-        });
-
-        test('debería manejar un rango no soportado', async () => {
-            const params = { ...baseParams, range: 'invalidRange' };
-            const result = await getText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockWordApp.Documents.Open).toHaveBeenCalledWith(expect.any(String), false, true, false, "", "", false, "", "", 0, false); // Check Documents.Open call
-            expect(result.success).toBe(false);
-            expect(result.error?.message).toContain('Unsupported range format');
-            expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockReleaseObject).toHaveBeenCalledWith(mockWordApp); // Release the app object
-        });
-
-        test('debería manejar un índice de párrafo fuera de límites', async () => {
-            const params = { ...baseParams, range: 'paragraph:10' }; // Solo hay 5 párrafos mockeados
-            const result = await getText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockWordApp.Documents.Open).toHaveBeenCalledWith(expect.any(String), false, true, false, "", "", false, "", "", 0, false); // Check Documents.Open call
-            expect(mockParagraphs.Item).toHaveBeenCalledWith(10);
-            expect(result.success).toBe(false);
-            expect(result.error?.message).toContain('Paragraph index 10 is out of bounds');
-            expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockReleaseObject).toHaveBeenCalledWith(mockWordApp); // Release the app object
-        });
-
-         test('debería manejar un error al abrir el documento', async () => {
-            mockWordApp.Documents.Open.mockReturnValue(null); // Simular fallo al abrir
-            const params = { ...baseParams, range: 'document' };
-            const result = await getText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockWordApp.Documents.Open).toHaveBeenCalledWith(expect.any(String), false, true, false, "", "", false, "", "", 0, false); // Check Documents.Open call
-            expect(result.success).toBe(false);
-            expect(result.error?.message).toContain('Failed to open document');
-            // No debería intentar cerrar doc si es null
-            expect(mockDoc.Close).not.toHaveBeenCalled();
-            expect(mockReleaseObject).toHaveBeenCalledWith(mockWordApp); // Release the app object
-        });
-    });
-
-    // --- Pruebas Unitarias para insertText ---
-
-    describe('insertText', () => {
-        const baseParams = { filePath: 'C:/test/document.docx', text: 'Inserted text' };
-
-        test('debería insertar texto al inicio del documento', async () => {
-            const params = { ...baseParams, position: 'start' };
-            const result = await insertText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockWordApp.Documents.Open).toHaveBeenCalledWith(expect.any(String), false, false); // Check Documents.Open call
-            expect(mockDoc.Range).toHaveBeenCalledWith(0, 0);
-            expect(mockRange.Text).toBe(params.text); // Check the setter was called
-            expect(mockDoc.Save).toHaveBeenCalled();
-            expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockReleaseObject).toHaveBeenCalledWith(mockWordApp); // Release the app object
-            expect(mockReleaseObject).toHaveBeenCalledWith(mockRange); // insertionRange
-            expect(mockReleaseObject).toHaveBeenCalledWith(undefined); // paraRange (should be undefined)
-            expect(result).toEqual({ success: true, data: {} });
-            expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Successfully inserted text'));
-        });
-
-        test('debería insertar texto al final del documento', async () => {
-            const params = { ...baseParams, position: 'end' };
-            const result = await insertText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockWordApp.Documents.Open).toHaveBeenCalledWith(expect.any(String), false, false); // Check Documents.Open call
-            expect(mockDoc.Content.End).toBe(16); // Mocked end position
-            expect(mockDoc.Range).toHaveBeenCalledWith(16, 16);
-            expect(mockRange.Text).toBe(params.text);
-            expect(mockDoc.Save).toHaveBeenCalled();
-            expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockReleaseObject).toHaveBeenCalledWith(mockWordApp); // Release the app object
-            expect(mockReleaseObject).toHaveBeenCalledWith(mockRange); // insertionRange
-            expect(mockReleaseObject).toHaveBeenCalledWith(undefined); // paraRange
-            expect(result).toEqual({ success: true, data: {} });
-            expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Successfully inserted text'));
-        });
-
-        test('debería insertar texto en la selección (punto de inserción)', async () => {
-            const params = { ...baseParams, position: 'selection' };
-            const result = await insertText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath, false, false);
-            expect(mockWordApp.Selection.Range).toBe(mockRange);
-            expect(mockWordApp.Selection.Type).toBe(2); // wdSelectionIP
-            expect(mockRange.Collapse).not.toHaveBeenCalled(); // Should not collapse if IP
-            expect(mockRange.Text).toBe(params.text);
-            expect(mockDoc.Save).toHaveBeenCalled();
-            expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
-            expect(mockReleaseObject).toHaveBeenCalledWith(mockRange); // insertionRange
-            expect(mockReleaseObject).toHaveBeenCalledWith(undefined); // paraRange
-            expect(result).toEqual({ success: true, data: {} });
-            expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Successfully inserted text'));
-        });
-
-         test('debería insertar texto en la selección (rango seleccionado)', async () => {
-            mockSelection.Type = 1; // wdSelectionNormal = 1
-            const params = { ...baseParams, position: 'selection' };
-            const result = await insertText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath, false, false);
-            expect(mockWordApp.Selection.Range).toBe(mockRange);
-            expect(mockWordApp.Selection.Type).toBe(1); // wdSelectionNormal
-            expect(mockRange.Collapse).toHaveBeenCalledWith(1); // Should collapse to start
-            expect(mockRange.Text).toBe(params.text);
-            expect(mockDoc.Save).toHaveBeenCalled();
-            expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
-            expect(mockReleaseObject).toHaveBeenCalledWith(mockRange); // insertionRange
-            expect(mockReleaseObject).toHaveBeenCalledWith(undefined); // paraRange
-            expect(result).toEqual({ success: true, data: {} });
-            expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Successfully inserted text'));
-        });
-
-
-        test('debería insertar texto al inicio de un párrafo específico', async () => {
-            const params = { ...baseParams, position: 'paragraph:3:start' };
-            const result = await insertText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath, false, false);
-            expect(mockParagraphs.Item).toHaveBeenCalledWith(3);
-            // Mocked paragraph 3 range start is (3-1)*15 = 30
-            expect(mockDoc.Range).toHaveBeenCalledWith(30, 30);
-            expect(mockRange.Text).toBe(params.text);
-            expect(mockDoc.Save).toHaveBeenCalled();
-            expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
-            expect(mockReleaseObject).toHaveBeenCalledWith(mockRange); // insertionRange
-            expect(mockReleaseObject).toHaveBeenCalled(); // paraRange should be released
-            expect(result).toEqual({ success: true, data: {} });
-            expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Successfully inserted text'));
-        });
-
-        test('debería insertar texto al final de un párrafo específico', async () => {
-            const params = { ...baseParams, position: 'paragraph:2:end' };
-            const result = await insertText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath, false, false);
-            expect(mockParagraphs.Item).toHaveBeenCalledWith(2);
-             // Mocked paragraph 2 range end is 2*15 - 1 = 29
-            expect(mockDoc.Range).toHaveBeenCalledWith(29, 29);
-            expect(mockRange.Text).toBe(params.text);
-            expect(mockDoc.Save).toHaveBeenCalled();
-            expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
-            expect(mockReleaseObject).toHaveBeenCalledWith(mockRange); // insertionRange
-            expect(mockReleaseObject).toHaveBeenCalled(); // paraRange should be released
-            expect(result).toEqual({ success: true, data: {} });
-            expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Successfully inserted text'));
-        });
-
-        test('debería insertar texto al inicio de un párrafo por defecto si no se especifica start/end', async () => {
-            const params = { ...baseParams, position: 'paragraph:4' };
-            const result = await insertText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath, false, false);
-            expect(mockParagraphs.Item).toHaveBeenCalledWith(4);
-            // Mocked paragraph 4 range start is (4-1)*15 = 45
-            expect(mockDoc.Range).toHaveBeenCalledWith(45, 45);
-            expect(mockRange.Text).toBe(params.text);
-            expect(mockDoc.Save).toHaveBeenCalled();
-            expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
-            expect(mockReleaseObject).toHaveBeenCalledWith(mockRange); // insertionRange
-            expect(mockReleaseObject).toHaveBeenCalled(); // paraRange should be released
-            expect(result).toEqual({ success: true, data: {} });
-            expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Successfully inserted text'));
-        });
-
-        test('debería manejar un filePath inválido', async () => {
-            mockValidateFilePath.mockReturnValue(false);
-            const params = { ...baseParams, position: 'start' };
-            const result = await insertText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).not.toHaveBeenCalled();
-            expect(result.success).toBe(false);
-            expect(result.error?.message).toContain('Invalid or potentially unsafe file path');
-        });
-
-        test('debería manejar una posición no soportada', async () => {
-            const params = { ...baseParams, position: 'invalidPosition' };
-            const result = await insertText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath, false, false);
-            expect(result.success).toBe(false);
-            expect(result.error?.message).toContain('Unsupported position specifier');
-            expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
-        });
-
-        test('debería manejar un índice de párrafo inválido (no numérico)', async () => {
-            const params = { ...baseParams, position: 'paragraph:abc:start' };
-            const result = await insertText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath, false, false);
-            expect(result.success).toBe(false);
-            expect(result.error?.message).toContain('Invalid paragraph index format');
-            expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
-        });
-
-        test('debería manejar un índice de párrafo fuera de límites', async () => {
-            const params = { ...baseParams, position: 'paragraph:10:start' }; // Solo hay 5 párrafos mockeados
-            const result = await insertText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath, false, false);
-            expect(mockParagraphs.Item).toHaveBeenCalledWith(10);
-            expect(result.success).toBe(false);
-            expect(result.error?.message).toContain('Paragraph index 10 is out of bounds');
-            expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
-        });
-
-        test('debería manejar un error al abrir el documento', async () => {
-            mockOfficeAppInstance.openDocument.mockReturnValue(null); // Simular fallo al abrir
-            const params = { ...baseParams, position: 'start' };
-            const result = await insertText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath, false, false);
-            expect(result.success).toBe(false);
-            expect(result.error?.message).toContain('Failed to open document');
-            // No debería intentar cerrar doc si es null
-            expect(mockDoc.Close).not.toHaveBeenCalled();
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
-        });
-    });
-
-    // --- Pruebas Unitarias para modifyText ---
-
-    describe('modifyText', () => {
-        const baseParams = { filePath: 'C:/test/document.docx', newText: 'Modified text' };
-
-        test('debería modificar texto en la selección', async () => {
-            const params = { ...baseParams, range: 'selection' };
-            const result = await modifyText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath, false, false);
-            // getRangeFromSpecifier is called internally
-            expect(mockSelection.Range).toBe(mockRange);
-            expect(mockRange.Text).toBe(params.newText);
-            expect(mockDoc.Save).toHaveBeenCalled();
-            expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
-            expect(mockReleaseObject).toHaveBeenCalledWith(mockRange); // selectedRange
-            expect(result).toEqual({ success: true, data: {} });
-            expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Successfully modified text'));
-        });
-
-        test('debería modificar texto en el documento completo', async () => {
-            const params = { ...baseParams, range: 'document' };
-            const result = await modifyText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath, false, false);
-            // getRangeFromSpecifier is called internally
-            // Note: doc.Content is not the same mockRange as selection, need to adjust mock if testing this specifically
-            // For now, assume getRangeFromSpecifier returns a range-like object
-            // We check if the Text property of the returned range is set
-            const rangeFromSpecifier = getRangeFromSpecifier(mockDoc, params.range, mockWordApp);
-            expect(rangeFromSpecifier.Text).toBe(params.newText);
-
-            expect(mockDoc.Save).toHaveBeenCalled();
-            expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
-            // The range returned by getRangeFromSpecifier is released
-            expect(mockReleaseObject).toHaveBeenCalled(); // Check if releaseObject was called at least once
-            expect(result).toEqual({ success: true, data: {} });
-            expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Successfully modified text'));
-        });
-
-        test('debería modificar texto en un párrafo específico', async () => {
-            const params = { ...baseParams, range: 'paragraph:1' };
-            const result = await modifyText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath, false, false);
-            expect(mockParagraphs.Item).toHaveBeenCalledWith(1);
-            // getRangeFromSpecifier is called internally
-            const rangeFromSpecifier = getRangeFromSpecifier(mockDoc, params.range, mockWordApp);
-            expect(rangeFromSpecifier.Text).toBe(params.newText);
-
-            expect(mockDoc.Save).toHaveBeenCalled();
-            expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
-            // The range returned by Paragraphs.Item().Range is released
-            expect(mockReleaseObject).toHaveBeenCalled(); // Check if releaseObject was called at least once
-            expect(result).toEqual({ success: true, data: {} });
-            expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Successfully modified text'));
-        });
-
-        test('debería manejar un filePath inválido', async () => {
-            mockValidateFilePath.mockReturnValue(false);
-            const params = { ...baseParams, range: 'document' };
-            const result = await modifyText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).not.toHaveBeenCalled();
-            expect(result.success).toBe(false);
-            expect(result.error?.message).toContain('Invalid or potentially unsafe file path');
-        });
-
-        test('debería manejar un rango no soportado', async () => {
-            const params = { ...baseParams, range: 'invalidRange' };
-            const result = await modifyText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath, false, false);
-            expect(result.success).toBe(false);
-            expect(result.error?.message).toContain('Unsupported range format');
-            expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
-        });
-
-        test('debería manejar un índice de párrafo fuera de límites', async () => {
-            const params = { ...baseParams, range: 'paragraph:10' }; // Solo hay 5 párrafos mockeados
-            const result = await modifyText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath, false, false);
-            expect(mockParagraphs.Item).toHaveBeenCalledWith(10);
-            expect(result.success).toBe(false);
-            expect(result.error?.message).toContain('Paragraph index 10 is out of bounds');
-            expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
-        });
-
-         test('debería manejar un error al abrir el documento', async () => {
-            mockOfficeAppInstance.openDocument.mockReturnValue(null); // Simular fallo al abrir
-            const params = { ...baseParams, range: 'document' };
-            const result = await modifyText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath, false, false);
-            expect(result.success).toBe(false);
-            expect(result.error?.message).toContain('Failed to open document');
-            // No debería intentar cerrar doc si es null
-            expect(mockDoc.Close).not.toHaveBeenCalled();
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
-        });
-    });
-
-    // --- Pruebas Unitarias para deleteText ---
-
-    describe('deleteText', () => {
-        const baseParams = { filePath: 'C:/test/document.docx' };
-
-        test('debería eliminar texto en la selección', async () => {
-            const params = { ...baseParams, range: 'selection' };
-            const result = await deleteText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath, false, false);
-            // getRangeFromSpecifier is called internally
-            expect(mockSelection.Range).toBe(mockRange);
-            expect(mockRange.Delete).toHaveBeenCalled();
-            expect(mockDoc.Save).toHaveBeenCalled();
-            expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
-            expect(mockReleaseObject).toHaveBeenCalledWith(mockRange); // selectedRange
-            expect(result).toEqual({ success: true, data: {} });
-            expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Successfully deleted text'));
-        });
-
-        test('debería eliminar texto en el documento completo', async () => {
-            const params = { ...baseParams, range: 'document' };
-            const result = await deleteText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath, false, false);
-            // getRangeFromSpecifier is called internally
-            const rangeFromSpecifier = getRangeFromSpecifier(mockDoc, params.range, mockWordApp);
-            expect(rangeFromSpecifier.Delete).toHaveBeenCalled();
-
-            expect(mockDoc.Save).toHaveBeenCalled();
-            expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
-            // The range returned by getRangeFromSpecifier is released
-            expect(mockReleaseObject).toHaveBeenCalled(); // Check if releaseObject was called at least once
-            expect(result).toEqual({ success: true, data: {} });
-            expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Successfully deleted text'));
-        });
-
-        test('debería eliminar texto en un párrafo específico', async () => {
-            const params = { ...baseParams, range: 'paragraph:1' };
-            const result = await deleteText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath, false, false);
-            expect(mockParagraphs.Item).toHaveBeenCalledWith(1);
-            // getRangeFromSpecifier is called internally
-            const rangeFromSpecifier = getRangeFromSpecifier(mockDoc, params.range, mockWordApp);
-            expect(rangeFromSpecifier.Delete).toHaveBeenCalled();
-
-            expect(mockDoc.Save).toHaveBeenCalled();
-            expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
-            // The range returned by Paragraphs.Item().Range is released
-            expect(mockReleaseObject).toHaveBeenCalled(); // Check if releaseObject was called at least once
-            expect(result).toEqual({ success: true, data: {} });
-            expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Successfully deleted text'));
-        });
-
-        test('debería manejar un filePath inválido', async () => {
-            mockValidateFilePath.mockReturnValue(false);
-            const params = { ...baseParams, range: 'document' };
-            const result = await deleteText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).not.toHaveBeenCalled();
-            expect(result.success).toBe(false);
-            expect(result.error?.message).toContain('Invalid or potentially unsafe file path');
-        });
-
-        test('debería manejar un rango no soportado', async () => {
-            const params = { ...baseParams, range: 'invalidRange' };
-            const result = await deleteText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath, false, false);
-            expect(result.success).toBe(false);
-            expect(result.error?.message).toContain('Unsupported range format');
-            expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
-        });
-
-        test('debería manejar un índice de párrafo fuera de límites', async () => {
-            const params = { ...baseParams, range: 'paragraph:10' }; // Solo hay 5 párrafos mockeados
-            const result = await deleteText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath, false, false);
-            expect(mockParagraphs.Item).toHaveBeenCalledWith(10);
-            expect(result.success).toBe(false);
-            expect(result.error?.message).toContain('Paragraph index 10 is out of bounds');
-            expect(mockDoc.Close).toHaveBeenCalledWith(false);
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
-        });
-
-         test('debería manejar un error al abrir el documento', async () => {
-            mockOfficeAppInstance.openDocument.mockReturnValue(null); // Simular fallo al abrir
-            const params = { ...baseParams, range: 'document' };
-            const result = await deleteText(params);
-
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.filePath);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.filePath, false, false);
-            expect(result.success).toBe(false);
-            expect(result.error?.message).toContain('Failed to open document');
-            // No debería intentar cerrar doc si es null
-            expect(mockDoc.Close).not.toHaveBeenCalled();
-            expect(mockOfficeAppInstance.release).toHaveBeenCalled();
-        });
-    });
-});
-
-// Mock implementation for the local getRangeFromSpecifier used within text.tool.ts
-// This is needed because the tests mock the external dependencies but the internal helper is called directly.
-// We need to provide a mock implementation that behaves like the real one for testing purposes.
-// This mock should be placed outside the describe block or in a separate file if preferred.
-// For simplicity, we'll place it here and ensure it's used by the handlers being tested.
-// Note: This is a simplified mock and might need refinement based on actual getRangeFromSpecifier logic.
-// A better approach might be to export getRangeFromSpecifier and mock it like other dependencies.
-// Given the current structure, we'll mock the internal behavior by ensuring the mocks
-// for doc.Content, doc.Paragraphs.Item, and wordApp.Selection.Range return the expected mockRange objects.
-// The tests for each handler already implicitly test the getRangeFromSpecifier logic by checking
-// which COM object properties/methods are accessed based on the range specifier.
-// We can add a specific test for getRangeFromSpecifier if needed, but for now,
-// the handler tests cover its usage sufficiently for unit testing purposes.
-
-// Re-mocking getRangeFromSpecifier if it were exported:
-/*
-jest.mock('../../../src/tools/word/text.tool', () => {
-    const originalModule = jest.requireActual('../../../src/tools/word/text.tool');
-    return {
-        ...originalModule,
-        getRangeFromSpecifier: jest.fn((doc, rangeSpecifier, wordApp) => {
-            // Simplified mock logic based on the real function
-            const rangeStringLower = rangeSpecifier.toLowerCase();
-            if (rangeStringLower === 'selection') {
-                return wordApp.Selection.Range;
-            } else if (rangeStringLower === 'document') {
-                return doc.Content;
-            } else if (rangeStringLower.startsWith('paragraph:')) {
-                const indexStr = rangeSpecifier.split(':')[1];
-                const index = parseInt(indexStr, 10);
-                if (!isNaN(index) && index > 0 && index <= doc.Paragraphs.Count) {
-                    return doc.Paragraphs.Item(index).Range;
+        const getParams = (range: string) => ({ ...baseParams, range, useComInterop });
+
+        if (useComInterop) {
+            test('COM: should get text from selection', async () => {
+                const params = getParams('selection');
+                const result = await getText(params);
+                expect(mockWordApp.Documents.Open).toHaveBeenCalledWith(path.resolve(params.filePath), false, true, false, "", "", false, "", "", 0, false);
+                expect(result.success).toBe(true);
+                if(result.success) expect(result.data).toBe('Sample text from range');
+                expect(mockReleaseObject).toHaveBeenCalledWith(mockWordApp.Selection.Range);
+            });
+
+            test('COM: should get text from document', async () => {
+                const params = getParams('document');
+                const result = await getText(params);
+                expect(result.success).toBe(true);
+                if(result.success) expect(result.data).toBe('Document content text');
+                expect(mockReleaseObject).toHaveBeenCalledWith(mockDoc.Content);
+            });
+
+            test('COM: should get text from paragraph', async () => {
+                const params = getParams('paragraph:2');
+                const result = await getText(params);
+                expect(mockParagraphs.Item).toHaveBeenCalledWith(2);
+                expect(result.success).toBe(true);
+                if(result.success) expect(result.data).toBe('Paragraph 2 text');
+                expect(mockReleaseObject).toHaveBeenCalledWith(mockParagraphs.Item(2).Range);
+            });
+
+            test('COM: should use resolveNaturalLanguageRange first', async () => {
+                const naturalRange = { ...mockRange, Text: "Natural language text", _textValue: "Natural language text", release: jest.fn() };
+                mockResolveNaturalLanguageRange.mockReturnValue(naturalRange);
+                const params = getParams('the first sentence');
+                const result = await getText(params);
+                expect(mockResolveNaturalLanguageRange).toHaveBeenCalledWith(mockDoc, params.range, mockWordApp);
+                expect(result.success).toBe(true);
+                if(result.success) expect(result.data).toBe("Natural language text");
+                expect(mockReleaseObject).toHaveBeenCalledWith(naturalRange);
+            });
+
+            test('COM: should return error if file not found', async () => {
+                mockFsPathExists.mockResolvedValue(false);
+                const params = getParams('document');
+                const result = await getText(params);
+                expect(result.success).toBe(false);
+                if(!result.success) expect(result.error.code).toBe('FILE_NOT_FOUND');
+            });
+
+            test('COM: should return error if doc open fails', async () => {
+                mockWordApp.Documents.Open.mockReturnValue(null);
+                const params = getParams('document');
+                const result = await getText(params);
+                expect(result.success).toBe(false);
+                if(!result.success) expect(result.error.code).toBe('FILE_OPEN_FAILED_COM');
+                expect(mockReleaseObject).toHaveBeenCalledWith(mockWordApp); // wordApp is released
+            });
+
+            test('COM: should return error if range not found by either method and getRangeFromSpecifier throws', async () => {
+                mockResolveNaturalLanguageRange.mockReturnValue(null);
+                const params = getParams('paragraph:99'); // This will make getRangeFromSpecifier throw
+                const result = await getText(params);
+                expect(result.success).toBe(false);
+                if(!result.success) {
+                    expect(result.error.code).toBe('GET_TEXT_FAILED_COM');
+                    expect(result.error.message).toContain("Paragraph index 99 is out of bounds");
                 }
-                throw new Error('Mock: Invalid paragraph range');
-            }
-            throw new Error('Mock: Unsupported range format');
-        }),
-    };
+            });
+             test('COM: should return error if range not found by either method and getRangeFromSpecifier returns null (though it should throw)', async () => {
+                mockResolveNaturalLanguageRange.mockReturnValue(null);
+                // Temporarily make getRangeFromSpecifier return null instead of throwing for a specific case
+                const originalGetRange = jest.requireActual('../../../src/tools/word/text.tool').getRangeFromSpecifier;
+                const mockGetRangeFromSpecifier = jest.fn(originalGetRange); // Spy on the original
+                (getRangeFromSpecifier as jest.Mock) = mockGetRangeFromSpecifier; // Re-assign temporarily for this test
+                mockGetRangeFromSpecifier.mockImplementationOnce(() => null); // Make it return null once
+
+                const params = getParams('some_specific_range_that_getRange_handles_but_returns_null');
+                const result = await getText(params);
+                expect(result.success).toBe(false);
+                if(!result.success) {
+                     expect(result.error.code).toBe('RANGE_ERROR_COM'); // Specific error code when range is null
+                     expect(result.error.message).toContain("Could not determine range for extraction via COM");
+                }
+                (getRangeFromSpecifier as jest.Mock) = jest.fn(originalGetRange); // Restore original mock behavior if needed elsewhere, or rely on beforeEach
+            });
+
+
+        } else { // Library path
+            test('Library: should get text from document using Mammoth (default useComInterop:false)', async () => {
+                const params = { ...baseParams, range: 'document' }; // No useComInterop, defaults to false
+                const result = await getText(params);
+                expect(mockFsPathExists).toHaveBeenCalledWith(path.resolve(params.filePath));
+                expect(mockMammothExtractRawText).toHaveBeenCalledWith({ path: path.resolve(params.filePath) });
+                expect(result.success).toBe(true);
+                if(result.success) expect(result.data).toBe('Mammoth extracted text');
+            });
+
+            test('Library: should return error for "selection" range', async () => {
+                const params = getParams('selection');
+                const result = await getText(params);
+                expect(result.success).toBe(false);
+                if (!result.success) expect(result.error.code).toBe('RANGE_REQUIRES_COM_LIB');
+            });
+
+            test('Library: should return error for "paragraph:N" range', async () => {
+                const params = getParams('paragraph:1');
+                const result = await getText(params);
+                expect(result.success).toBe(false);
+                if (!result.success) expect(result.error.code).toBe('RANGE_REQUIRES_COM_LIB');
+            });
+            
+            test('Library: should return error if mammoth fails', async () => {
+                mockMammothExtractRawText.mockRejectedValue(new Error("Mammoth boom"));
+                const params = getParams('document');
+                const result = await getText(params);
+                expect(result.success).toBe(false);
+                if(!result.success) expect(result.error.code).toBe('MAMMOTH_GET_TEXT_FAILED');
+            });
+        }
+    });
+
+    describe.each(testModes)('insertText (mode: $mode, default: $default)', ({ useComInterop }) => {
+        const baseParams = { filePath: 'C:/test/document.docx', text: 'New inserted text' };
+        const getParams = (position: string, format?: 'plaintext' | 'markdown') => ({ ...baseParams, position, format, useComInterop });
+
+        if (useComInterop) {
+            test('COM: should insert text at start (markdown by default)', async () => {
+                const params = getParams('start'); // format defaults to markdown
+                const result = await insertText(params);
+                expect(mockWordApp.Documents.Open).toHaveBeenCalledWith(path.resolve(params.filePath), false, false);
+                expect(mockDoc.Range).toHaveBeenCalledWith(0, 0);
+                const insertionRange = mockDoc.Range.mock.results[0].value;
+                expect(mockApplyMarkdownFormattingToWord).toHaveBeenCalledWith(insertionRange, params.text, mockWordApp, mockDoc);
+                expect(mockDoc.Save).toHaveBeenCalled();
+                expect(result.success).toBe(true);
+            });
+            
+            test('COM: should insert text at end (plaintext)', async () => {
+                const params = getParams('end', 'plaintext');
+                mockDoc.Content.End = 100;
+                const result = await insertText(params);
+                expect(mockDoc.Range).toHaveBeenCalledWith(100, 100);
+                const insertionRange = mockDoc.Range.mock.results[0].value;
+                expect(insertionRange.Text).toBe(params.text);
+                expect(mockDoc.Save).toHaveBeenCalled();
+                expect(result.success).toBe(true);
+            });
+
+            test('COM: should insert text at selection (markdown), Type not IP', async () => {
+                const params = getParams('selection', 'markdown');
+                mockWordApp.Selection.Type = 1; // wdSelectionNormal
+                const result = await insertText(params);
+                expect(mockWordApp.Selection.Range.Collapse).toHaveBeenCalledWith(1);
+                expect(mockApplyMarkdownFormattingToWord).toHaveBeenCalledWith(mockWordApp.Selection.Range, params.text, mockWordApp, mockDoc);
+                expect(result.success).toBe(true);
+            });
+             test('COM: should insert text at selection (markdown), Type IP', async () => {
+                const params = getParams('selection', 'markdown');
+                mockWordApp.Selection.Type = 2; // wdSelectionIP
+                const result = await insertText(params);
+                expect(mockWordApp.Selection.Range.Collapse).not.toHaveBeenCalled();
+                expect(mockApplyMarkdownFormattingToWord).toHaveBeenCalledWith(mockWordApp.Selection.Range, params.text, mockWordApp, mockDoc);
+                expect(result.success).toBe(true);
+            });
+
+            test('COM: should insert text at paragraph:N:start (plaintext)', async () => {
+                const params = getParams('paragraph:2:start', 'plaintext');
+                const mockParaRangeInstance = { Start: 50, End: 60, release: jest.fn() };
+                mockParagraphs.Item.mockImplementation(idx => idx === 2 ? { Range: mockParaRangeInstance, release: jest.fn() } : null);
+                const result = await insertText(params);
+                expect(mockParagraphs.Item).toHaveBeenCalledWith(2);
+                expect(mockDoc.Range).toHaveBeenCalledWith(mockParaRangeInstance.Start, mockParaRangeInstance.Start);
+                const insertionRange = mockDoc.Range.mock.results[0].value;
+                expect(insertionRange.Text).toBe(params.text);
+                expect(result.success).toBe(true);
+                expect(mockReleaseObject).toHaveBeenCalledWith(mockParaRangeInstance);
+            });
+            
+            test('COM: should insert text at paragraph:N:end (markdown)', async () => {
+                const params = getParams('paragraph:3:end', 'markdown');
+                const mockParaRangeInstance = { Start: 70, End: 80, release: jest.fn() };
+                mockParagraphs.Item.mockImplementation(idx => idx === 3 ? { Range: mockParaRangeInstance, release: jest.fn() } : null);
+                const result = await insertText(params);
+                expect(mockParagraphs.Item).toHaveBeenCalledWith(3);
+                expect(mockDoc.Range).toHaveBeenCalledWith(mockParaRangeInstance.End - 1, mockParaRangeInstance.End - 1);
+                const insertionRange = mockDoc.Range.mock.results[0].value;
+                expect(mockApplyMarkdownFormattingToWord).toHaveBeenCalledWith(insertionRange, params.text, mockWordApp, mockDoc);
+                expect(result.success).toBe(true);
+            });
+
+            test('COM: should create file and insert text if file does not exist', async () => {
+                mockFsPathExists.mockResolvedValue(false);
+                const params = getParams('start', 'plaintext');
+                params.filePath = 'C:/test/new_doc_for_insert.docx';
+                const result = await insertText(params);
+                expect(mockWordApp.Documents.Add).toHaveBeenCalled();
+                expect(mockDoc.SaveAs2).toHaveBeenCalledWith(path.resolve(params.filePath), 16);
+                const insertionRange = mockDoc.Range.mock.results[0].value;
+                expect(insertionRange.Text).toBe(params.text);
+                expect(mockDoc.Save).not.toHaveBeenCalled();
+                expect(result.success).toBe(true);
+            });
+            
+            test('COM: should return error for invalid paragraph position format "paragraph:1:middle"', async () => {
+                const params = getParams('paragraph:1:middle');
+                const result = await insertText(params);
+                expect(result.success).toBe(false);
+                if(!result.success) expect(result.error.code).toBe('INVALID_POSITION_COM');
+            });
+             test('COM: should return error for invalid paragraph position format "paragraph:X"', async () => {
+                const params = getParams('paragraph:X'); // Missing :start or :end
+                const result = await insertText(params);
+                expect(result.success).toBe(false);
+                if(!result.success) expect(result.error.code).toBe('INVALID_POSITION_COM'); // Or specific error from resolveNaturalLanguageRange
+            });
+
+
+            test('COM: should return error if selection is null for position:selection', async () => {
+                mockWordApp.Selection = null;
+                const params = getParams('selection');
+                const result = await insertText(params);
+                expect(result.success).toBe(false);
+                if(!result.success) expect(result.error.code).toBe('NO_SELECTION_COM');
+            });
+            
+            test('COM: should return error if opening existing document fails', async () => {
+                mockWordApp.Documents.Open.mockImplementation(() => { throw new Error("Open failed"); });
+                const params = getParams('start');
+                const result = await insertText(params);
+                expect(result.success).toBe(false);
+                if(!result.success) expect(result.error.code).toBe('FILE_OPERATION_FAILED_COM');
+            });
+            
+            test('COM: should return error if creating new document fails', async () => {
+                mockFsPathExists.mockResolvedValue(false);
+                mockWordApp.Documents.Add.mockImplementation(() => { throw new Error("Add failed"); });
+                const params = getParams('start');
+                const result = await insertText(params);
+                expect(result.success).toBe(false);
+                if(!result.success) expect(result.error.code).toBe('FILE_OPERATION_FAILED_COM');
+            });
+
+        } else { // Library path
+            test('Library: should return NOT_IMPLEMENTED_LIB (default useComInterop:false)', async () => {
+                const params = { ...baseParams, position: 'start' };
+                const result = await insertText(params);
+                expect(result.success).toBe(false);
+                if (!result.success) expect(result.error.code).toBe('NOT_IMPLEMENTED_LIB');
+            });
+        }
+    });
+
+    describe.each(testModes)('modifyText (mode: $mode, default: $default)', ({ useComInterop }) => {
+        const baseParams = { filePath: 'C:/test/document.docx', newText: 'Text after modification' };
+        const getParams = (range: string) => ({ ...baseParams, range, useComInterop });
+
+        if (useComInterop) {
+            test('COM: should modify text for "document" range', async () => {
+                const params = getParams('document');
+                const result = await modifyText(params);
+                expect(mockWordApp.Documents.Open).toHaveBeenCalledWith(path.resolve(params.filePath), false, false);
+                expect(mockDoc.Content.Text).toBe(params.newText);
+                expect(mockDoc.Save).toHaveBeenCalled();
+                expect(result.success).toBe(true);
+            });
+
+            test('COM: should modify text for "paragraph:3" range', async () => {
+                const params = getParams('paragraph:3');
+                const result = await modifyText(params);
+                expect(mockParagraphs.Item).toHaveBeenCalledWith(3);
+                const targetRange = mockParagraphs.Item(3).Range;
+                expect(targetRange.Text).toBe(params.newText);
+                expect(mockDoc.Save).toHaveBeenCalled();
+                expect(result.success).toBe(true);
+            });
+
+            test('COM: should return error if file not found', async () => {
+                mockFsPathExists.mockResolvedValue(false);
+                const params = getParams('document');
+                const result = await modifyText(params);
+                expect(result.success).toBe(false);
+                if(!result.success) expect(result.error.code).toBe('FILE_NOT_FOUND');
+            });
+            
+            test('COM: should return error if opening document fails', async () => {
+                mockWordApp.Documents.Open.mockReturnValue(null);
+                const params = getParams('document');
+                const result = await modifyText(params);
+                expect(result.success).toBe(false);
+                if(!result.success) expect(result.error.code).toBe('FILE_OPEN_FAILED_COM');
+            });
+            
+            test('COM: should return error if getRangeFromSpecifier fails', async () => {
+                const params = getParams('paragraph:99'); // Invalid range
+                const result = await modifyText(params);
+                expect(result.success).toBe(false);
+                if(!result.success) expect(result.error.code).toBe('MODIFY_TEXT_FAILED_COM');
+            });
+
+        } else { // Library path
+            test('Library: should return NOT_IMPLEMENTED_LIB (default useComInterop:false)', async () => {
+                const params = { ...baseParams, range: 'document' };
+                const result = await modifyText(params);
+                expect(result.success).toBe(false);
+                if (!result.success) expect(result.error.code).toBe('NOT_IMPLEMENTED_LIB');
+            });
+        }
+    });
+
+    describe.each(testModes)('deleteText (mode: $mode, default: $default)', ({ useComInterop }) => {
+        const baseParams = { filePath: 'C:/test/document.docx' };
+        const getParams = (range: string) => ({ ...baseParams, range, useComInterop });
+
+        if (useComInterop) {
+            test('COM: should delete text for "paragraph:1" range', async () => {
+                const params = getParams('paragraph:1');
+                const result = await deleteText(params);
+                expect(mockWordApp.Documents.Open).toHaveBeenCalledWith(path.resolve(params.filePath), false, false);
+                expect(mockParagraphs.Item).toHaveBeenCalledWith(1);
+                const rangeToDelete = mockParagraphs.Item(1).Range;
+                expect(rangeToDelete.Delete).toHaveBeenCalled();
+                expect(mockDoc.Save).toHaveBeenCalled();
+                expect(result.success).toBe(true);
+            });
+
+            test('COM: should delete text for "document" range', async () => {
+                const params = getParams('document');
+                const result = await deleteText(params);
+                expect(mockDoc.Content.Delete).toHaveBeenCalled();
+                expect(mockDoc.Save).toHaveBeenCalled();
+                expect(result.success).toBe(true);
+            });
+             test('COM: should return error if file not found', async () => {
+                mockFsPathExists.mockResolvedValue(false);
+                const params = getParams('document');
+                const result = await deleteText(params);
+                expect(result.success).toBe(false);
+                if(!result.success) expect(result.error.code).toBe('FILE_NOT_FOUND');
+            });
+        } else { // Library path
+            test('Library: should return NOT_IMPLEMENTED_LIB (default useComInterop:false)', async () => {
+                const params = { ...baseParams, range: 'paragraph:1' };
+                const result = await deleteText(params);
+                expect(result.success).toBe(false);
+                if (!result.success) expect(result.error.code).toBe('NOT_IMPLEMENTED_LIB');
+            });
+        }
+    });
+
+    describe('getRangeFromSpecifier (COM helper)', () => {
+        beforeEach(() => {
+             mockDoc.Paragraphs = mockParagraphs;
+             mockWordApp.Selection = mockSelection;
+        });
+
+        test('should return selection range', () => {
+            const range = getRangeFromSpecifier(mockDoc, 'selection', mockWordApp);
+            expect(range).toBe(mockSelection.Range);
+        });
+
+        test('should return document content range', () => {
+            const range = getRangeFromSpecifier(mockDoc, 'document', mockWordApp);
+            expect(range).toBe(mockDoc.Content);
+        });
+
+        test('should return paragraph range', () => {
+            const range = getRangeFromSpecifier(mockDoc, 'paragraph:1', mockWordApp);
+            expect(mockParagraphs.Item).toHaveBeenCalledWith(1);
+            expect(range).toBe(mockParagraphs.Item(1).Range);
+        });
+
+        test('should throw error for invalid paragraph index format (e.g., "abc")', () => {
+            expect(() => getRangeFromSpecifier(mockDoc, 'paragraph:abc', mockWordApp))
+                .toThrow("Invalid paragraph index format: 'abc'");
+        });
+         test('should throw error for invalid paragraph index format (e.g., "0")', () => {
+            expect(() => getRangeFromSpecifier(mockDoc, 'paragraph:0', mockWordApp))
+                .toThrow("Invalid paragraph index format: '0'");
+        });
+
+        test('should throw error for paragraph index out of bounds', () => {
+            mockParagraphs.Count = 2;
+            expect(() => getRangeFromSpecifier(mockDoc, 'paragraph:3', mockWordApp))
+                .toThrow("Paragraph index 3 is out of bounds. Document has 2 paragraphs.");
+        });
+
+        test('should throw error for unsupported range format', () => {
+            expect(() => getRangeFromSpecifier(mockDoc, 'invalidRange', mockWordApp))
+                .toThrow("Unsupported range format: 'invalidRange'");
+        });
+
+        test('should throw error if selection.Range is null and wordApp.Selection exists', () => {
+            mockWordApp.Selection = { Range: null, release: jest.fn() };
+            expect(() => getRangeFromSpecifier(mockDoc, 'selection', mockWordApp))
+                .toThrow("Could not get range from selection");
+            expect(mockLoggerWarn).toHaveBeenCalledWith(expect.stringContaining("wordApp.Selection.Range was null or undefined"));
+        });
+        
+        test('should throw error if wordApp.Selection itself is null', () => {
+            mockWordApp.Selection = null;
+            expect(() => getRangeFromSpecifier(mockDoc, 'selection', mockWordApp))
+                .toThrow("Could not get range from selection");
+        });
+
+        test('should throw error if doc.Content is null for "document" range', () => {
+            mockDoc.Content = null;
+            expect(() => getRangeFromSpecifier(mockDoc, 'document', mockWordApp))
+                .toThrow("Could not get document content range.");
+        });
+        
+        test('should throw error if doc.Paragraphs is null for "paragraph:N" range', () => {
+            mockDoc.Paragraphs = null;
+            expect(() => getRangeFromSpecifier(mockDoc, 'paragraph:1', mockWordApp))
+                .toThrow("Could not access document paragraphs collection.");
+        });
+    });
 });
-*/

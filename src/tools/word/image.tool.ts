@@ -6,20 +6,24 @@
  * @license MIT
  */
 import { z } from 'zod';
-import { McpResource, ApiResponse, ErrorResponse, SuccessResponse, ToolRequestParams } from '../../types/common.types'; // Normalized relative path
-import { imageContent, TextContent, UserError, Context as FastMCPContext } from 'fastmcp'; // Import TextContent and FastMCPContext
-import { extractImageFromWord, insertImageIntoWord } from '../../utils/officeInterop'; // Normalized relative path
-import { validateFilePath } from '../../utils/security'; // Normalized relative path
-import logger from '../../utils/logger'; // Normalized relative path
+import { Document, Packer, Media, ImageRun } from 'docx';
+import * as mammoth from 'mammoth';
+import { McpResource, ApiResponse, ErrorResponse, SuccessResponse, ToolRequestParams } from '../../types/common.types';
+import { imageContent, TextContent, UserError, Context as FastMCPContext } from 'fastmcp';
+import { extractImageFromWord, insertImageIntoWord } from '../../utils/officeInterop';
+import { validateFilePath } from '../../utils/security';
+import logger from '../../utils/logger';
 import path from 'path';
-import fs from 'fs/promises'; // For reading image data for insertion if needed
+import fs from 'fs/promises';
+import { pathExists } from 'fs-extra'; // Import pathExists from fs-extra
+import { Paragraph } from 'docx'; // Ensure Paragraph is imported
 
 // --- Schema Definitions ---
 
 /**
  * Zod schema for the input parameters of the 'word/image/extract' tool.
  */
-const ExtractImageSchema = z.object({
+export const ExtractImageSchema = z.object({
   /** The path to the Word file (relative to the current workspace directory). */
   filePath: z.string().min(1, "File path cannot be empty.").refine(validateFilePath, {
     message: "Invalid or potentially unsafe file path provided.",
@@ -29,13 +33,14 @@ const ExtractImageSchema = z.object({
     description: "Identifier for the image (e.g., 1-based index or placeholder text/bookmark).",
   }),
   /** Desired output format for the extracted image. */
-  outputFormat: z.enum(['png', 'jpeg', 'gif', 'bmp']).default('png').describe("Desired output format for the extracted image."),
+  outputFormat: z.enum(['png', 'jpeg', 'gif', 'bmp']).default('png').describe("Desired output format for the extracted image. Note: Library path may not fully support all format conversions."),
+  useComInterop: z.boolean().optional().default(false).describe("Specifies the processing path. `true` uses COM Interop. `false` uses platform-independent libraries. Defaults to `false`."),
 });
 
 /**
  * Zod schema for the input parameters of the 'word/image/insert' tool.
  */
-const InsertImageSchema = z.object({
+export const InsertImageSchema = z.object({
   /** The path to the Word file (relative to the current workspace directory). */
   filePath: z.string().min(1, "File path cannot be empty.").refine(validateFilePath, {
     message: "Invalid or potentially unsafe file path provided.",
@@ -51,6 +56,7 @@ const InsertImageSchema = z.object({
   height: z.number().optional().describe("Optional height for the inserted image in points."),
   /** Optional alternative text for the image. */
   altText: z.string().optional().describe("Optional alternative text for the image."),
+  useComInterop: z.boolean().optional().default(false).describe("Specifies the processing path. `true` uses COM Interop. `false` uses platform-independent libraries. Defaults to `false`."),
 });
 
 // --- Tool Handlers ---
@@ -63,60 +69,101 @@ const InsertImageSchema = z.object({
  * @returns A promise resolving to an ApiResponse containing the image buffer or an error.
  * @throws {UserError} If the image is not found or extraction fails.
  */
-async function handleExtractImage(
+export async function handleExtractImage(
   params: ToolRequestParams,
   context?: FastMCPContext<undefined>
-): Promise<ApiResponse<Buffer>> { // Return ApiResponse with Buffer
+): Promise<ApiResponse<Buffer>> {
   const validationResult = ExtractImageSchema.safeParse(params);
   if (!validationResult.success) {
     logger.warn(`[word/image/extract] Invalid parameters`, { errors: validationResult.error.format() });
-    return {
-        success: false,
-        error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Invalid parameters provided.',
-            details: validationResult.error.format(),
-        }
-    } as ErrorResponse;
+    return { success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid parameters provided.', details: validationResult.error.format() } };
   }
-  const args = validationResult.data; // Use validated data
-  logger.info(`[word/image/extract] Received request`, { args });
+  const args = validationResult.data;
+  const { filePath, identifier, outputFormat, useComInterop } = args;
+  const safeFilePath = validateFilePath(filePath); // Already validated by schema, but good for direct use
 
-  try {
-    // validateFilePath is already called by the schema refinement, but calling again here is harmless
-    // await validateFilePath(args.filePath); // Ensure path is safe
+  logger.info(`[word/image/extract] Request received`, { filePath: safeFilePath, identifier, outputFormat, useComInterop });
 
-    // Placeholder: Implement actual COM interop call
-    // The outputFormat is handled by the server loop when wrapping the buffer in imageContent
-    const imageBuffer = await extractImageFromWord(args.filePath, args.identifier);
-
-    if (!imageBuffer || imageBuffer.length === 0) {
-      throw new UserError(`Image with identifier '${args.identifier}' not found or could not be extracted.`);
+  if (useComInterop) {
+    logger.info(`[word/image/extract] Using COM Interop path.`);
+    try {
+      const imageBuffer = await extractImageFromWord(safeFilePath, identifier);
+      if (!imageBuffer || imageBuffer.length === 0) {
+        throw new UserError(`COM: Image with identifier '${identifier}' not found or could not be extracted from ${safeFilePath}.`);
+      }
+      logger.info(`[word/image/extract] COM: Successfully extracted image`, { size: imageBuffer.length });
+      return { success: true, data: imageBuffer };
+    } catch (error: any) {
+      logger.error(`[word/image/extract] COM Error: ${error.message}`, { error });
+      if (error instanceof UserError) throw error;
+      return { success: false, error: { code: 'IMAGE_EXTRACTION_FAILED_COM', message: error.message || 'COM: Unexpected error during image extraction.', details: error } };
     }
+  } else {
+    // Library path (Mammoth for image extraction is indirect)
+    logger.info(`[word/image/extract] Using Library path.`);
+    logger.warn(`[word/image/extract] Library path for precise image extraction by identifier ('${identifier}') is limited. Mammoth extracts images during full conversion. This tool will attempt a best-effort extraction.`);
 
-    logger.info(`[word/image/extract] Successfully extracted image`, { filePath: args.filePath, identifier: args.identifier, format: args.outputFormat, size: imageBuffer.length });
-
-    // Return raw buffer in SuccessResponse
-    return {
-        success: true,
-        data: imageBuffer // The server loop will wrap this in imageContent
-    } as SuccessResponse<Buffer>;
-
-  } catch (error: any) {
-    logger.error(`[word/image/extract] Error: ${error.message}`, { error });
-    // Re-throw FastMCP specific errors
-    if (error instanceof UserError) {
-        throw error;
-    }
-    // Construct standard ErrorResponse for other errors
-    return {
-        success: false,
-        error: {
-            code: 'IMAGE_EXTRACTION_FAILED',
-            message: error.message || 'An unexpected error occurred during image extraction.',
-            details: error, // Include the original error object as details
+    try {
+        if (!await pathExists(safeFilePath)) { // Use pathExists from fs-extra
+            return { success: false, error: { code: 'FILE_NOT_FOUND_LIB', message: `File not found: ${safeFilePath}`}};
         }
-    } as ErrorResponse;
+
+        let imageElementCount = 0;
+        const images: { buffer: Buffer, contentType: string, altText?: string }[] = [];
+
+        const options = {
+            convertImage: mammoth.images.imgElement(async (image) => {
+                imageElementCount++;
+                const imageBuffer = await image.read();
+                images.push({ buffer: imageBuffer, contentType: image.contentType, altText: (image as any).altText || (image as any).title }); // Attempt to get alt text
+                // For mammoth, we don't directly control the output path here, just collect buffers
+                return { src: `data:${image.contentType};base64,${imageBuffer.toString('base64')}` }; // Required by mammoth
+            })
+        };
+
+        await mammoth.convertToHtml({ path: safeFilePath }, options); // Run conversion to trigger image extraction
+
+        if (images.length === 0) {
+            throw new UserError(`Library: No images found in ${safeFilePath}.`);
+        }
+
+        let targetImage: { buffer: Buffer, contentType: string, altText?: string } | undefined;
+
+        if (typeof identifier === 'number') {
+            if (identifier > 0 && identifier <= images.length) {
+                targetImage = images[identifier - 1]; // 1-based index
+            } else {
+                throw new UserError(`Library: Image index ${identifier} is out of bounds. Found ${images.length} images.`);
+            }
+        } else if (typeof identifier === 'string') {
+            // Attempt to match by alt text (case-insensitive)
+            const lowerIdentifier = identifier.toLowerCase();
+            targetImage = images.find(img => img.altText?.toLowerCase().includes(lowerIdentifier));
+            if (!targetImage) {
+                 // Fallback: if no alt text match, and identifier might be a 1-based index as string
+                const potentialIndex = parseInt(identifier, 10);
+                if (!isNaN(potentialIndex) && potentialIndex > 0 && potentialIndex <= images.length) {
+                    targetImage = images[potentialIndex - 1];
+                } else {
+                    throw new UserError(`Library: Image with alt text similar to '${identifier}' not found, and identifier is not a valid index.`);
+                }
+            }
+        }
+
+        if (!targetImage) {
+            throw new UserError(`Library: Could not identify target image with identifier '${identifier}'.`);
+        }
+
+        // Note: outputFormat is difficult to enforce with Mammoth's extraction. It gives original format.
+        // Conversion would require an additional library. For now, we return what Mammoth gives.
+        logger.info(`[word/image/extract] Library: Successfully extracted image (identifier: '${identifier}', found type: ${targetImage.contentType}, requested: ${outputFormat}). Format conversion not applied by library path.`);
+        return { success: true, data: targetImage.buffer };
+
+    } catch (error: any) {
+        logger.error(`[word/image/extract] Library Error: ${error.message}`, { error });
+        if (error instanceof UserError) throw error; // Re-throw UserError to be handled by FastMCP
+        return { success: false, error: { code: 'IMAGE_EXTRACTION_FAILED_LIB', message: error.message || 'Library: Unexpected error during image extraction.', details: error } };
+    }
   }
 }
 
@@ -128,66 +175,87 @@ async function handleExtractImage(
  * @returns A promise resolving to an ApiResponse with a string confirmation or an error.
  * @throws {UserError} If the image data is invalid or insertion fails.
  */
-async function handleInsertImage(
+export async function handleInsertImage(
   params: ToolRequestParams,
   context?: FastMCPContext<undefined>
-): Promise<ApiResponse<string>> { // Return ApiResponse with string confirmation
+): Promise<ApiResponse<string>> {
   const validationResult = InsertImageSchema.safeParse(params);
-   if (!validationResult.success) {
+  if (!validationResult.success) {
     logger.warn(`[word/image/insert] Invalid parameters`, { errors: validationResult.error.format() });
-    return {
-        success: false,
-        error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Invalid parameters provided.',
-            details: validationResult.error.format(),
-        }
-    } as ErrorResponse;
+    return { success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid parameters provided.', details: validationResult.error.format() } };
   }
-  const args = validationResult.data; // Use validated data
-  logger.info(`[word/image/insert] Received request`, { filePath: args.filePath, position: args.position }); // Avoid logging full base64
+  const args = validationResult.data;
+  const { filePath, imageDataBase64, position, width, height, altText, useComInterop } = args;
+  const safeFilePath = validateFilePath(filePath);
 
-  try {
-    // validateFilePath is already called by the schema refinement, but calling again here is harmless
-    // await validateFilePath(args.filePath); // Ensure path is safe
+  logger.info(`[word/image/insert] Request received`, { filePath: safeFilePath, position, useComInterop }); // Avoid logging full base64
 
-    const imageBuffer = Buffer.from(args.imageDataBase64, 'base64');
+  const imageBuffer = Buffer.from(imageDataBase64, 'base64');
+  if (imageBuffer.length === 0) {
+    return { success: false, error: { code: 'INVALID_IMAGE_DATA', message: "Provided image data is empty or invalid base64." } };
+  }
 
-    if (imageBuffer.length === 0) {
-        throw new UserError("Provided image data is empty or invalid base64.");
+  if (useComInterop) {
+    logger.info(`[word/image/insert] Using COM Interop path.`);
+    try {
+      await insertImageIntoWord(safeFilePath, imageBuffer, position, { width, height, altText });
+      logger.info(`[word/image/insert] COM: Successfully inserted image`);
+      return { success: true, data: `COM: Image successfully inserted into ${path.basename(safeFilePath)} at position '${position}'.` };
+    } catch (error: any) {
+      logger.error(`[word/image/insert] COM Error: ${error.message}`, { error });
+      if (error instanceof UserError) throw error;
+      return { success: false, error: { code: 'IMAGE_INSERTION_FAILED_COM', message: error.message || 'COM: Unexpected error during image insertion.', details: error } };
     }
-
-    // Placeholder: Implement actual COM interop call
-    await insertImageIntoWord(args.filePath, imageBuffer, args.position, {
-        width: args.width,
-        height: args.height,
-        altText: args.altText,
-    });
-
-    logger.info(`[word/image/insert] Successfully inserted image`, { filePath: args.filePath, position: args.position });
-
-    // Return simple text confirmation in SuccessResponse
-    const confirmationMessage = `Image successfully inserted into ${path.basename(args.filePath)} at position '${args.position}'.`;
-    return {
-        success: true,
-        data: confirmationMessage // The server loop will return this string directly
-    } as SuccessResponse<string>;
-
-  } catch (error: any) {
-    logger.error(`[word/image/insert] Error: ${error.message}`, { error });
-    // Re-throw FastMCP specific errors
-    if (error instanceof UserError) {
-        throw error;
-    }
-    // Construct standard ErrorResponse for other errors
-    return {
-        success: false,
-        error: {
-            code: 'IMAGE_INSERTION_FAILED',
-            message: error.message || 'An unexpected error occurred during image insertion.',
-            details: error, // Include the original error object as details
+  } else {
+    // Library path (docx)
+    logger.info(`[word/image/insert] Using Library (docx) path.`);
+    try {
+        let doc: Document;
+        const imageRunProperties: any = {
+            data: imageBuffer,
+            transformation: {
+                width: width || 200, // Default width if not provided
+                height: height || 200, // Default height if not provided
+            },
+        };
+        if (altText) {
+            // docx.js doesn't have a direct altText on ImageRun in the same way COM does.
+            // It's usually part of Drawing object properties, which is more complex.
+            // For simplicity, we'll log this.
+            logger.warn(`[word/image/insert] Library (docx) path: altText property is not directly supported on ImageRun in the same way as COM. It might be part of a more complex Drawing object. Alt text "${altText}" will be ignored for now.`);
         }
-    } as ErrorResponse;
+        const image = new ImageRun(imageRunProperties);
+
+
+        if (await pathExists(safeFilePath)) { // Use pathExists from fs-extra
+            // Modifying existing documents to insert at specific positions is complex with docx.js
+            // For now, this path will primarily support creating new documents or simple appends.
+            logger.warn(`[word/image/insert] Library (docx) path: Modifying existing file '${safeFilePath}' to insert image at specific position '${position}' is complex and not fully supported. Attempting to append image or create new if position is 'end' or simple.`);
+            // For a simple append, one might read the existing doc, add a new section/paragraph with the image.
+            // This is non-trivial. For now, let's restrict to new file creation or return error.
+            return { success: false, error: { code: 'NOT_IMPLEMENTED_LIB_MODIFY', message: `Library (docx) path: Inserting images into existing documents at specific positions ('${position}') is not fully implemented. Try creating a new document or use COM Interop.`}};
+        } else {
+            // Create new document
+            if (position.toLowerCase() !== 'end' && !position.toLowerCase().startsWith('paragraph:1')) { // crude check for start
+                logger.warn(`[word/image/insert] Library (docx) path: Position '${position}' for new file ignored. Image will be added as a primary element.`);
+            }
+            doc = new Document({
+                sections: [{
+                    children: [new Paragraph({ children: [image] })],
+                }],
+            });
+        }
+
+        const buffer = await Packer.toBuffer(doc);
+        await fs.writeFile(safeFilePath, buffer);
+        logger.info(`[word/image/insert] Library (docx): Document with image operation completed at ${safeFilePath}`);
+        return { success: true, data: `Library (docx): Image operation completed for ${path.basename(safeFilePath)}.` };
+
+    } catch (error: any) {
+        logger.error(`[word/image/insert] Library Error: ${error.message}`, { error });
+        if (error instanceof UserError) throw error;
+        return { success: false, error: { code: 'IMAGE_INSERTION_FAILED_LIB', message: error.message || 'Library: Unexpected error during image insertion.', details: error } };
+    }
   }
 }
 

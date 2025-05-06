@@ -2,21 +2,24 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import fetch from 'node-fetch';
 
-const MCP_SERVER_URL = 'http://localhost:3000'; // Assuming the server runs on localhost:3000
+const MCP_SERVER_URL = 'http://localhost:3000';
 const TEMP_DIR = path.join(__dirname, '../temp_word_tables_dir');
 const FIXTURES_DIR = path.join(__dirname, '../../fixtures');
-const FIXTURE_WORD_DOC_EMPTY = path.join(FIXTURES_DIR, 'empty_doc.docx'); // Assuming an empty Word doc fixture exists
-const FIXTURE_DOC_WITH_TABLE = path.join(FIXTURES_DIR, 'doc_with_table.docx'); // Assuming a Word doc fixture with a table exists
 
+const FIXTURE_EMPTY_DOC_NAME = 'empty_doc.docx';
+const FIXTURE_EMPTY_DOC_PATH = path.join(FIXTURES_DIR, FIXTURE_EMPTY_DOC_NAME);
+const RELATIVE_FIXTURE_EMPTY_DOC_PATH = `tests/fixtures/${FIXTURE_EMPTY_DOC_NAME}`;
 
-// Define a basic type for the expected successful response
+const FIXTURE_DOC_WITH_TABLE_NAME = 'doc_with_table.docx'; // Contains at least one table
+const FIXTURE_DOC_WITH_TABLE_PATH = path.join(FIXTURES_DIR, FIXTURE_DOC_WITH_TABLE_NAME);
+const RELATIVE_FIXTURE_DOC_WITH_TABLE_PATH = `tests/fixtures/${FIXTURE_DOC_WITH_TABLE_NAME}`;
+
 interface SuccessResponse {
   success: true;
-  data: any; // Use a more specific type if the data structure is known
+  data: any;
   message?: string;
 }
 
-// Define a basic type for the expected error response
 interface ErrorResponse {
   success: false;
   error: {
@@ -28,121 +31,242 @@ interface ErrorResponse {
 
 type ToolResponse = SuccessResponse | ErrorResponse;
 
+const callTool = async (toolName: string, args: Record<string, any>): Promise<ToolResponse> => {
+  const response = await fetch(`${MCP_SERVER_URL}/tool`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tool_name: toolName, arguments: args }),
+  });
+  return response.json() as Promise<ToolResponse>;
+};
 
 describe('word/tables e2e tests', () => {
-
   beforeAll(async () => {
-    // Ensure temp directory does not exist before tests
-    try {
-      await fs.rm(TEMP_DIR, { recursive: true });
-    } catch (error: any) {
-      if (error.code !== 'ENOENT') {
-        console.error(`Error cleaning up temp directory ${TEMP_DIR}:`, error);
-      }
-    }
-    // Create temp directory
+    await fs.rm(TEMP_DIR, { recursive: true, force: true });
     await fs.mkdir(TEMP_DIR, { recursive: true });
 
-    // Check if fixture files exist
-    const fixtures = [FIXTURE_WORD_DOC_EMPTY, FIXTURE_DOC_WITH_TABLE];
-    for (const fixturePath of fixtures) {
+    const fixturesToVerify = [FIXTURE_EMPTY_DOC_PATH, FIXTURE_DOC_WITH_TABLE_PATH];
+    for (const fixturePath of fixturesToVerify) {
       try {
         await fs.stat(fixturePath);
       } catch (error: any) {
         if (error.code === 'ENOENT') {
-           console.error(`Fixture file ${fixturePath} not found. Please ensure it exists for word/tables tests.`);
-           // Depending on test setup, might throw or skip tests
-        } else {
-          console.error(`Error checking fixture file ${fixturePath}:`, error);
+          console.error(`Required fixture file ${fixturePath} not found.`);
+          throw new Error(`Fixture file ${fixturePath} not found.`);
         }
+        throw error;
       }
     }
   });
 
   afterAll(async () => {
-    // Clean up temp directory after tests
-    try {
-      await fs.rm(TEMP_DIR, { recursive: true });
-    } catch (error: any) {
-      if (error.code !== 'ENOENT') {
-        console.error(`Error cleaning up temp directory ${TEMP_DIR}:`, error);
+    await fs.rm(TEMP_DIR, { recursive: true, force: true });
+  });
+
+  const testModes = [
+    { mode: 'COM', useComInterop: true },
+    { mode: 'Library', useComInterop: false },
+    { mode: 'Library (Default)', useComInterop: undefined },
+  ];
+
+  describe.each(testModes)('word/tables/insert (mode: $mode)', ({ useComInterop }) => {
+    test('should insert a table into a Word document', async () => {
+      const outputFileName = `doc_inserted_table_${useComInterop}.docx`;
+      const outputPath = path.join(TEMP_DIR, outputFileName);
+      const relativeOutputPath = `tests/temp_word_tables_dir/${outputFileName}`;
+
+      // COM path modifies existing, Library path creates new
+      if (useComInterop) {
+        await fs.copyFile(FIXTURE_EMPTY_DOC_PATH, outputPath);
       }
+
+      const args = {
+        filePath: relativeOutputPath,
+        rows: 3,
+        columns: 4,
+        position: 'end',
+        style: 'Table Grid', // Style might only be effective in COM
+        useComInterop,
+      };
+      const result = await callTool('word/tables/insert', args);
+
+      if (useComInterop) {
+        expect(result.success).toBe(true);
+        await expect(fs.stat(outputPath)).resolves.toBeTruthy();
+        // TODO: Verify table structure in COM path
+      } else { // Library path
+        let fileExistedBeforeToolCall = false;
+        try {
+            await fs.stat(outputPath);
+            fileExistedBeforeToolCall = true;
+        } catch (e) {
+            // File didn't exist, which is expected for library path to succeed
+        }
+
+        if (fileExistedBeforeToolCall) {
+             expect(result.success).toBe(false);
+             if(!result.success) expect(result.error.code).toBe('LIB_INSERT_EXISTING_FILE_NOT_SUPPORTED');
+        } else {
+            expect(result.success).toBe(true);
+            await expect(fs.stat(outputPath)).resolves.toBeTruthy();
+             // TODO: Verify table structure in new file for Library path
+        }
+      }
+    });
+
+    test('Library path should fail if trying to insert into existing file', async () => {
+        if (useComInterop === false || useComInterop === undefined) {
+            const outputFileName = `existing_doc_lib_insert_fail.docx`;
+            const outputPath = path.join(TEMP_DIR, outputFileName);
+            const relativeOutputPath = `tests/temp_word_tables_dir/${outputFileName}`;
+            await fs.copyFile(FIXTURE_EMPTY_DOC_PATH, outputPath); // Create an existing file
+
+            const args = {
+                filePath: relativeOutputPath,
+                rows: 2,
+                columns: 2,
+                useComInterop,
+            };
+            const result = await callTool('word/tables/insert', args);
+            expect(result.success).toBe(false);
+            if (!result.success) {
+                expect(result.error.code).toBe('LIB_INSERT_EXISTING_FILE_NOT_SUPPORTED');
+            }
+        } else {
+            // This test is only for library path
+            expect(true).toBe(true);
+        }
+    });
+  });
+
+  describe.each(testModes)('word/tables/insertFromArray (mode: $mode)', ({ useComInterop }) => {
+    const tableData = [['Name', 'Age'], ['Alice', 30], ['Bob', 24]];
+    test('should insert a table from array into a Word document', async () => {
+      const outputFileName = `doc_inserted_array_table_${useComInterop}.docx`;
+      const outputPath = path.join(TEMP_DIR, outputFileName);
+      const relativeOutputPath = `tests/temp_word_tables_dir/${outputFileName}`;
+
+      if (useComInterop) {
+        await fs.copyFile(FIXTURE_EMPTY_DOC_PATH, outputPath);
+      }
+
+      const args = {
+        filePath: relativeOutputPath,
+        data: tableData,
+        position: 'end',
+        styleName: 'Light Shading - Accent 1', // Style might only be effective in COM
+        useComInterop,
+      };
+      const result = await callTool('word/tables/insertFromArray', args);
+
+      if (useComInterop) {
+        expect(result.success).toBe(true);
+        await expect(fs.stat(outputPath)).resolves.toBeTruthy();
+        // TODO: Verify table content and structure in COM path
+      } else { // Library path
+        let fileExistedBeforeToolCall = false;
+        try {
+            await fs.stat(outputPath);
+            fileExistedBeforeToolCall = true;
+        } catch (e) {
+            // File didn't exist, which is expected for library path to succeed
+        }
+        if (fileExistedBeforeToolCall) {
+             expect(result.success).toBe(false);
+             if(!result.success) expect(result.error.code).toBe('LIB_INSERT_ARRAY_EXISTING_FILE_NOT_SUPPORTED');
+        } else {
+            expect(result.success).toBe(true);
+            await expect(fs.stat(outputPath)).resolves.toBeTruthy();
+            // TODO: Verify table content and structure in new file for Library path
+        }
+      }
+    });
+     test('Library path should fail if trying to insertFromArray into existing file', async () => {
+        if (useComInterop === false || useComInterop === undefined) {
+            const outputFileName = `existing_doc_lib_insertarray_fail.docx`;
+            const outputPath = path.join(TEMP_DIR, outputFileName);
+            const relativeOutputPath = `tests/temp_word_tables_dir/${outputFileName}`;
+            await fs.copyFile(FIXTURE_EMPTY_DOC_PATH, outputPath); // Create an existing file
+
+            const args = {
+                filePath: relativeOutputPath,
+                data: [['test']],
+                useComInterop,
+            };
+            const result = await callTool('word/tables/insertFromArray', args);
+            expect(result.success).toBe(false);
+            if (!result.success) {
+                expect(result.error.code).toBe('LIB_INSERT_ARRAY_EXISTING_FILE_NOT_SUPPORTED');
+            }
+        } else {
+            expect(true).toBe(true);
+        }
+    });
+  });
+
+  describe.each(testModes)('word/tables/extractData (mode: $mode)', ({ useComInterop }) => {
+    test('should extract data from a table in a Word document', async () => {
+      const args = {
+        filePath: RELATIVE_FIXTURE_DOC_WITH_TABLE_PATH,
+        tableIndex: 1, // Assuming the first table in FIXTURE_DOC_WITH_TABLE_NAME
+        useComInterop,
+      };
+      const result = await callTool('word/tables/extractData', args);
+
+      if (useComInterop) {
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(Array.isArray(result.data)).toBe(true);
+          // Example check, assuming FIXTURE_DOC_WITH_TABLE_NAME has a known table
+          // For 'doc_with_table.docx', let's assume a 2x2 table:
+          // Header1 | Header2
+          // Cell1   | Cell2
+          // This check needs to be adjusted based on the actual content of 'doc_with_table.docx'
+          // For now, a generic check:
+          expect(result.data.length).toBeGreaterThanOrEqual(1); // At least one row
+          if (result.data.length > 0) {
+            expect(result.data[0].length).toBeGreaterThanOrEqual(1); // At least one cell in the first row
+          }
+        }
+      } else { // Library path
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.code).toBe('NOT_IMPLEMENTED_LIB_TABLE_EXTRACTION');
+        }
+      }
+    });
+
+    test('should return error for out-of-bounds table index (COM)', async () => {
+        if (useComInterop) {
+            const args = {
+                filePath: RELATIVE_FIXTURE_DOC_WITH_TABLE_PATH,
+                tableIndex: 999, // Assuming this index is out of bounds
+                useComInterop: true,
+            };
+            const result = await callTool('word/tables/extractData', args);
+            expect(result.success).toBe(false);
+            if (!result.success) {
+                expect(result.error.code).toBe('WORD_TABLE_EXTRACT_DATA_FAILED_COM'); // Or a more specific out of bounds error
+                expect(result.error.message).toContain('out of bounds');
+            }
+        } else {
+            expect(true).toBe(true); // Test only for COM path
+        }
+    });
+  });
+
+  test('word/tables/extractData should fail for non-existent file', async () => {
+    const args = {
+      filePath: 'non_existent_document_for_table_extract.docx',
+      tableIndex: 1,
+      useComInterop: true, // COM path to check file existence handling
+    };
+    const result = await callTool('word/tables/extractData', args);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      // COM error for file open might be generic
+      expect(result.error.code).toBe('WORD_TABLE_EXTRACT_DATA_FAILED_COM');
+      expect(result.error.message).toMatch(/Failed to open document|File not found/i);
     }
   });
-
-  describe('word/tables/insert', () => {
-    test('should insert a table into a Word document (requires fixture)', async () => {
-      const outputPath = path.join(TEMP_DIR, 'doc_with_table.docx');
-      // Copy the empty fixture to the temp directory to avoid modifying the original
-      await fs.copyFile(FIXTURE_WORD_DOC_EMPTY, outputPath);
-
-      const tableData = [['Header 1', 'Header 2'], ['Data 1', 'Data 2']];
-
-      const response = await fetch(`${MCP_SERVER_URL}/tool`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          tool_name: 'word/tables/insert',
-          arguments: {
-            document: 'tests/temp_word_tables_dir/doc_with_table.docx', // Use path relative to workspace
-            data: tableData,
-            // Optional: position, style, etc. - need to confirm from API spec
-          },
-        }),
-      });
-
-      expect(response.ok).toBe(true);
-      const result = await response.json() as ToolResponse;
-
-      expect(result.success).toBe(true);
-
-      // Verify the document was modified (basic check - could check modification time)
-      await expect(fs.stat(outputPath)).resolves.toBeTruthy();
-      // TODO: Add verification that the table was actually inserted (requires inspecting doc content/structure)
-    });
-
-    // TODO: Add tests for inserting tables with different data, positions, and styles
-    // TODO: Add tests for error handling (e.g., non-existent document, invalid data format)
-  });
-
-  describe('word/tables/read', () => {
-    test('should read data from a table in a Word document (requires fixture)', async () => {
-      const response = await fetch(`${MCP_SERVER_URL}/tool`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          tool_name: 'word/tables/read',
-          arguments: {
-            document: 'tests/fixtures/doc_with_table.docx', // Use path relative to workspace
-            tableIndex: 1, // Assuming the first table
-            // Optional: range within the table
-          },
-        }),
-      });
-
-      expect(response.ok).toBe(true);
-      const result = await response.json() as ToolResponse;
-
-      expect(result.success).toBe(true);
-
-      if (result.success) {
-        expect(result.data).toHaveProperty('values');
-        expect(Array.isArray(result.data.values)).toBe(true);
-        // TODO: Add more specific checks based on the expected table content in the fixture
-        // expect(result.data.values.length).toBeGreaterThan(0);
-        // expect(result.data.values[0][0]).toBe('Expected Header');
-      } else {
-        fail('Expected test to succeed but it failed.');
-      }
-    });
-
-    // TODO: Add tests for reading specific tables by index, reading ranges within tables
-    // TODO: Add tests for error handling (e.g., non-existent document, invalid table index)
-  });
-
-  // TODO: Add tests for update and delete table operations
 });

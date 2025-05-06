@@ -19,8 +19,10 @@ jest.mock('path'); // Mock the path module
 const mockGetOfficeApplication = getOfficeApplication as jest.Mock;
 const mockReleaseObject = releaseObject as jest.Mock;
 const mockValidateFilePath = validateFilePath as jest.Mock;
-const mockLogger = logger as jest.Mocked<typeof logger>;
-const mockPath = path as jest.Mocked<typeof path>;
+const mockLoggerInfo = jest.spyOn(logger, 'info');
+const mockLoggerWarn = jest.spyOn(logger, 'warn');
+const mockLoggerError = jest.spyOn(logger, 'error');
+const mockPathBasename = path.basename as jest.Mock; // Mock specific path functions if needed
 
 describe('word/merge integration tests', () => {
     let mockWordApp: any;
@@ -29,187 +31,134 @@ describe('word/merge integration tests', () => {
     let mockSourceDoc2: any;
     let mockTargetDocContentRange: any;
     let mockSourceDocContentRange: any;
-    let mockOfficeAppInstance: any;
     let mockContext: FastMCPContext<undefined>;
 
     beforeEach(() => {
         jest.clearAllMocks();
 
-        // Configurar mocks para simular objetos COM de Word y la interacción con officeInterop
         mockTargetDocContentRange = {
-            End: 100,
-            Collapse: jest.fn(),
-            Paste: jest.fn(),
-            InsertBreak: jest.fn(),
+            End: 100, Collapse: jest.fn(), Paste: jest.fn(), InsertBreak: jest.fn(), Text: "Target Content",
+            release: jest.fn(),
         };
-        mockSourceDocContentRange = {
-            Copy: jest.fn(),
-        };
+        mockSourceDocContentRange = { Copy: jest.fn(), Text: "Source Content", release: jest.fn() };
         mockTargetDoc = {
-            Activate: jest.fn(),
-            Content: mockTargetDocContentRange,
-            SaveAs2: jest.fn(),
-            Close: jest.fn(),
+            Activate: jest.fn(), Content: mockTargetDocContentRange, SaveAs2: jest.fn(), Close: jest.fn(), release: jest.fn(),
         };
-        mockSourceDoc1 = {
-            Content: mockSourceDocContentRange,
-            Close: jest.fn(),
-        };
-        mockSourceDoc2 = {
-            Content: mockSourceDocContentRange,
-            Close: jest.fn(),
-        };
+        mockSourceDoc1 = { Content: mockSourceDocContentRange, Close: jest.fn(), release: jest.fn() };
+        mockSourceDoc2 = { Content: mockSourceDocContentRange, Close: jest.fn(), release: jest.fn() };
         mockWordApp = {
             Documents: {
                 Add: jest.fn().mockReturnValue(mockTargetDoc),
-                Open: jest.fn(),
+                Open: jest.fn(), // Will be configured per test
             },
-            Visible: false,
-            DisplayAlerts: 0,
+            Visible: false, DisplayAlerts: 0, release: jest.fn(),
         };
 
-        // Mock de la estructura de OfficeAppInstance devuelta por getOfficeApplication
-        mockOfficeAppInstance = {
-            app: mockWordApp,
-            openDocument: jest.fn(), // Will be overridden in tests as needed
-            release: jest.fn(), // Simula release de officeInterop
-        };
+        mockGetOfficeApplication.mockResolvedValue(mockWordApp); // getOfficeApplication returns the app directly
+        mockValidateFilePath.mockImplementation(fp => fp); // Assume valid paths
+        mockPathBasename.mockImplementation(p => p.substring(p.lastIndexOf('/') + 1));
 
-        // Default mock implementations
-        mockGetOfficeApplication.mockResolvedValue(mockOfficeAppInstance);
-        mockValidateFilePath.mockReturnValue(true); // Assume valid paths by default
-        mockPath.dirname.mockImplementation((filePath) => `C:/test/dir/${path.basename(filePath)}/..`); // Simple mock for dirname
 
-        // Mock openDocument to return specific source docs based on path
-        mockOfficeAppInstance.openDocument.mockImplementation((filePath: string) => {
+        mockWordApp.Documents.Open.mockImplementation((filePath: string) => {
             if (filePath.includes('doc1.docx')) return mockSourceDoc1;
             if (filePath.includes('doc2.docx')) return mockSourceDoc2;
-            // For the target doc created by Add(), we don't need openDocument to return it
-            return null; // Default for other paths if needed
+            return null;
         });
 
-        // Mock context with log and reportProgress
         mockContext = {
-            log: {
-                info: jest.fn(),
-                warn: jest.fn(),
-                error: jest.fn(),
-                debug: jest.fn(),
-            },
+            log: { info: mockLoggerInfo, warn: mockLoggerWarn, error: mockLoggerError, debug: jest.fn() },
             reportProgress: jest.fn(),
-            userId: 'testUser', // Example userId
-            // Add other context properties if needed by the tool
-        } as unknown as FastMCPContext<undefined>; // Cast to match expected type
+            userId: 'testUser',
+        } as unknown as FastMCPContext<undefined>;
     });
 
-    // --- Pruebas de Integración para mergeDocuments ---
-
-    describe('mergeDocuments', () => {
+    describe('mergeDocuments (COM only)', () => {
         const baseParams = {
             docs: ['C:/test/doc1.docx', 'C:/test/doc2.docx'],
             output: 'C:/test/output.docx',
+            // No useComInterop flag as this tool is COM-only
         };
 
-        test('debería interactuar correctamente con officeInterop para fusionar documentos', async () => {
+        test('should correctly merge documents using COM interop', async () => {
             const params = { ...baseParams };
             const result = await mergeDocuments(params, mockContext);
 
-            // Verificar interacciones con officeInterop y mocks de COM
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.output, expect.any(Array)); // Check output path validation
-            expect(mockPath.dirname).toHaveBeenCalledWith(params.output); // Check dirname call
-            expect(mockValidateFilePath).toHaveBeenCalledWith('C:/test/dir/output.docx/..', expect.any(Array)); // Check output dir validation
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.docs[0], expect.any(Array)); // Check source path validation 1
-            expect(mockValidateFilePath).toHaveBeenCalledWith(params.docs[1], expect.any(Array)); // Check source path validation 2
+            expect(mockValidateFilePath).toHaveBeenCalledWith(params.output);
+            expect(mockValidateFilePath).toHaveBeenCalledWith(params.docs[0]);
+            expect(mockValidateFilePath).toHaveBeenCalledWith(params.docs[1]);
 
             expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockWordApp.Documents.Add).toHaveBeenCalled(); // Target doc created
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.docs[0], false, true); // Source doc 1 opened
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.docs[1], false, true); // Source doc 2 opened
+            expect(mockWordApp.Documents.Add).toHaveBeenCalled();
+            expect(mockWordApp.Documents.Open).toHaveBeenCalledWith(params.docs[0], false, true);
+            expect(mockWordApp.Documents.Open).toHaveBeenCalledWith(params.docs[1], false, true);
 
-            expect(mockSourceDocContentRange.Copy).toHaveBeenCalledTimes(2); // Content copied from both source docs
-            expect(mockTargetDoc.Activate).toHaveBeenCalledTimes(2); // Target doc activated before each paste
-            expect(mockTargetDocContentRange.Collapse).toHaveBeenCalledWith(0); // Collapsed to end before paste
-            expect(mockTargetDocContentRange.Paste).toHaveBeenCalledTimes(2); // Content pasted twice
+            expect(mockSourceDocContentRange.Copy).toHaveBeenCalledTimes(2);
+            expect(mockTargetDoc.Activate).toHaveBeenCalledTimes(2);
+            expect(mockTargetDocContentRange.Collapse).toHaveBeenCalledWith(0); // wdCollapseEnd
+            expect(mockTargetDocContentRange.Paste).toHaveBeenCalledTimes(2);
+            expect(mockTargetDocContentRange.InsertBreak).toHaveBeenCalledTimes(1); // Between doc1 and doc2
 
-            expect(mockTargetDocContentRange.InsertBreak).toHaveBeenCalledTimes(1); // Page break after first doc
+            expect(mockTargetDoc.SaveAs2).toHaveBeenCalledWith(params.output);
+            expect(mockTargetDoc.Close).toHaveBeenCalledWith(false);
+            expect(mockSourceDoc1.Close).toHaveBeenCalledWith(false);
+            expect(mockSourceDoc2.Close).toHaveBeenCalledWith(false);
 
-            expect(mockTargetDoc.SaveAs2).toHaveBeenCalledWith(params.output); // Target doc saved
-            expect(mockTargetDoc.Close).toHaveBeenCalledWith(false); // Target doc closed
+            expect(mockReleaseObject).toHaveBeenCalledWith(mockTargetDoc);
+            expect(mockReleaseObject).toHaveBeenCalledWith(mockSourceDoc1);
+            expect(mockReleaseObject).toHaveBeenCalledWith(mockSourceDoc2);
+            expect(mockReleaseObject).toHaveBeenCalledWith(mockWordApp); // Word app itself
 
-            expect(mockSourceDoc1.Close).toHaveBeenCalledWith(false); // Source doc 1 closed
-            expect(mockSourceDoc2.Close).toHaveBeenCalledWith(false); // Source doc 2 closed
+            expect(mockContext.reportProgress).toHaveBeenCalledWith({ progress: 0, total: 2 });
+            expect(mockContext.reportProgress).toHaveBeenCalledWith({ progress: 1, total: 2 });
+            expect(mockContext.reportProgress).toHaveBeenCalledWith({ progress: 2, total: 2 });
 
-            expect(mockReleaseObject).toHaveBeenCalledWith(mockTargetDoc); // Target doc released
-            expect(mockReleaseObject).toHaveBeenCalledWith(mockSourceDoc1); // Source doc 1 released
-            expect(mockReleaseObject).toHaveBeenCalledWith(mockSourceDoc2); // Source doc 2 released
-            expect(mockReleaseObject).toHaveBeenCalledWith(mockOfficeAppInstance); // Office app instance released
-
-            expect(mockContext.reportProgress).toHaveBeenCalledWith({ progress: 0, total: 2 }); // Initial progress
-            expect(mockContext.reportProgress).toHaveBeenCalledWith({ progress: 1, total: 2 }); // Progress after doc 1
-            expect(mockContext.reportProgress).toHaveBeenCalledWith({ progress: 2, total: 2 }); // Progress after doc 2 and saving
-
-            // Verificar el resultado de la herramienta
-            expect(result).toEqual({ success: true, data: { outputPath: params.output }, message: 'Successfully merged 2 documents into C:/test/output.docx.' });
-            expect(mockContext.log.info).toHaveBeenCalledWith(expect.stringContaining('Starting merge process for 2 documents...'));
-            expect(mockContext.log.info).toHaveBeenCalledWith(expect.stringContaining('Merged document saved successfully.'));
+            expect(result.success).toBe(true);
+            if (result.success) {
+                expect(result.data.outputPath).toBe(params.output);
+                expect(result.message).toContain('Successfully merged 2 documents');
+            }
+            expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining('Starting merge process for 2 documents...'));
+            expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining('Merged document saved successfully.'));
         });
 
-        test('debería manejar un error al abrir un documento fuente durante la interacción', async () => {
-            // Simular fallo al abrir el primer documento fuente
-            mockOfficeAppInstance.openDocument.mockImplementation((filePath: string) => {
-                if (filePath.includes('doc1.docx')) throw new Error('Failed to open doc1');
-                if (filePath.includes('doc2.docx')) return mockSourceDoc2;
-                return null;
+        test('should handle error when opening a source document', async () => {
+            mockWordApp.Documents.Open.mockImplementation((filePath: string) => {
+                if (filePath.includes('doc1.docx')) throw new Error('COM Error: Failed to open doc1');
+                return mockSourceDoc2;
             });
 
             const params = { ...baseParams };
-            try {
-                await mergeDocuments(params, mockContext);
-            } catch (error: any) {
-                expect(error.message).toContain('Failed to open doc1');
-            }
+            await expect(mergeDocuments(params, mockContext)).rejects.toThrow('COM Error: Failed to open doc1');
 
-            expect(mockValidateFilePath).toHaveBeenCalledTimes(3);
             expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockWordApp.Documents.Add).toHaveBeenCalled(); // Target doc created
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(params.docs[0], false, true); // Attempted to open doc1
-            expect(mockOfficeAppInstance.openDocument).not.toHaveBeenCalledWith(params.docs[1], false, true); // Did not attempt to open doc2
+            expect(mockWordApp.Documents.Add).toHaveBeenCalled(); // Target doc still created
+            expect(mockWordApp.Documents.Open).toHaveBeenCalledWith(params.docs[0], false, true); // Attempted doc1
+            expect(mockWordApp.Documents.Open).not.toHaveBeenCalledWith(params.docs[1], false, true); // Not doc2
 
-            // Debería intentar cerrar el documento destino y liberar objetos
-            expect(mockTargetDoc.Close).toHaveBeenCalledWith(false);
+            expect(mockTargetDoc.Close).toHaveBeenCalledWith(false); // Target doc closed on error
             expect(mockReleaseObject).toHaveBeenCalledWith(mockTargetDoc);
-            expect(mockReleaseObject).toHaveBeenCalledWith(mockOfficeAppInstance);
-
-            expect(mockContext.log.error).toHaveBeenCalledWith(expect.stringContaining('Error processing source document'));
-            expect(mockContext.log.error).toHaveBeenCalledWith(expect.stringContaining('Error in mergeDocuments'));
+            expect(mockReleaseObject).toHaveBeenCalledWith(mockWordApp); // Word app released
+            expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining('Error processing source document C:/test/doc1.docx: COM Error: Failed to open doc1'));
+            expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining('Error in mergeDocuments: COM Error: Failed to open doc1'));
         });
 
-        test('debería manejar un error al guardar el documento destino durante la interacción', async () => {
-            mockTargetDoc.SaveAs2.mockImplementation(() => { throw new Error('Failed to save'); });
+        test('should handle error when saving the target document', async () => {
+            mockTargetDoc.SaveAs2.mockImplementation(() => { throw new Error('COM Error: Failed to save target'); });
             const params = { ...baseParams };
-            try {
-                await mergeDocuments(params, mockContext);
-            } catch (error: any) {
-                expect(error.message).toContain('Failed to save');
-            }
 
-            expect(mockValidateFilePath).toHaveBeenCalledTimes(3);
-            expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-            expect(mockWordApp.Documents.Add).toHaveBeenCalled();
-            expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledTimes(2); // Both source docs opened
+            await expect(mergeDocuments(params, mockContext)).rejects.toThrow('COM Error: Failed to save target');
+
+            expect(mockWordApp.Documents.Open).toHaveBeenCalledTimes(2); // Both source docs opened
             expect(mockSourceDocContentRange.Copy).toHaveBeenCalledTimes(2);
             expect(mockTargetDocContentRange.Paste).toHaveBeenCalledTimes(2);
-            expect(mockTargetDocContentRange.InsertBreak).toHaveBeenCalledTimes(1);
+            expect(mockTargetDoc.SaveAs2).toHaveBeenCalledWith(params.output); // Save attempted
 
-            expect(mockTargetDoc.SaveAs2).toHaveBeenCalledWith(params.output); // Attempted to save
-            // Debería intentar cerrar el documento destino y liberar objetos
-            expect(mockTargetDoc.Close).toHaveBeenCalledWith(false);
+            expect(mockTargetDoc.Close).toHaveBeenCalledWith(false); // Target doc closed on error
             expect(mockReleaseObject).toHaveBeenCalledWith(mockTargetDoc);
-            expect(mockReleaseObject).toHaveBeenCalledWith(mockSourceDoc1); // Source doc 1 released
-            expect(mockReleaseObject).toHaveBeenCalledWith(mockSourceDoc2); // Source doc 2 released
-            expect(mockReleaseObject).toHaveBeenCalledWith(mockOfficeAppInstance);
-
-            expect(mockContext.log.error).toHaveBeenCalledWith(expect.stringContaining('Error in mergeDocuments'));
+            expect(mockReleaseObject).toHaveBeenCalledWith(mockSourceDoc1);
+            expect(mockReleaseObject).toHaveBeenCalledWith(mockSourceDoc2);
+            expect(mockReleaseObject).toHaveBeenCalledWith(mockWordApp);
+            expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining('Error in mergeDocuments: COM Error: Failed to save target'));
         });
     });
 });

@@ -7,11 +7,13 @@
  * @license MIT
  */
 import { z } from 'zod';
-import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types'; // Normalized relative path
-import { handleToolError, createErrorResponse } from '../../utils/errorHandler'; // Normalized relative path
-import logger from '../../utils/logger'; // Normalized relative path
-import { getOfficeApplication, releaseObject } from '../../utils/officeInterop'; // Normalized relative path
-import { validateFilePath } from '../../utils/security'; // Normalized relative path
+import fs from 'fs-extra';
+import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
+import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types';
+import { handleToolError, createErrorResponse } from '../../utils/errorHandler';
+import logger from '../../utils/logger';
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
+import { validateFilePath } from '../../utils/security';
 
 // --- Schemas ---
 
@@ -27,6 +29,7 @@ const styleSchema = z.object({
     style: z.string().min(1, 'Style name is required.'),
     /** The range in the document to apply the style to (e.g., 'paragraph:N', 'selection', 'document'). */
     range: z.string().min(1, 'Range specifier is required.'), // e.g., 'paragraph:1', 'selection', 'document'
+    useComInterop: z.boolean().optional().default(false).describe("Specifies the processing path. `true` uses COM Interop. `false` uses platform-independent libraries. Defaults to `false`."),
 });
 
 /**
@@ -37,6 +40,7 @@ const listStyleSchema = z.object({
     filePath: z.string().min(1, 'File path is required.').refine(validateFilePath, {
         message: "Invalid or potentially unsafe file path provided.",
     }),
+    useComInterop: z.boolean().optional().default(false).describe("Specifies the processing path. `true` uses COM Interop. `false` uses platform-independent libraries. Defaults to `false`."),
 });
 
 
@@ -49,97 +53,101 @@ const listStyleSchema = z.object({
  * @returns A promise resolving to an empty ApiResponse indicating success.
  * @throws {Error} If validation fails, the document fails to open, the range is invalid, or style application fails.
  */
-export async function applyStyle(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> { // Use FastMCPContext<undefined>
-    const log = context?.log ?? logger; // Use context logger or fallback
+export async function applyStyle(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> {
+    const log = context?.log ?? logger;
+    const validatedParams = styleSchema.parse(params);
+    const { filePath, style, range, useComInterop } = validatedParams;
+    const safeFilePath = validateFilePath(filePath); // Already validated by Zod refine
 
-    let wordApp: any = null;
-    let doc: any = null;
-    let officeAppInstance: any = null; // To manage the application instance lifecycle
+    log.info(`[word/styles/apply] Request: style='${style}', range='${range}', file='${safeFilePath}', useComInterop=${useComInterop}`);
 
-    try {
-        const validatedParams = styleSchema.parse(params);
-        const safeFilePath = validatedParams.filePath; // Already validated by Zod refine
-        log.info(`[word/styles/apply] Attempting to apply style: ${validatedParams.style} to range: ${validatedParams.range} in document: ${safeFilePath}`);
+    if (useComInterop) {
+        log.info(`[word/styles/apply] Using COM Interop path.`);
+        let wordApp: any = null;
+        let doc: any = null;
+        // officeAppInstance was used to call release() on it, but getOfficeApplication now returns the app directly.
+        // We'll release wordApp directly.
 
-        officeAppInstance = await getOfficeApplication('Word.Application');
-        wordApp = officeAppInstance.app;
-        wordApp.Visible = false; // Run in background
-        wordApp.DisplayAlerts = 0; // wdAlertsNone = 0
-        // Consider making Word visible for debugging: wordApp.Visible = true;
+        try {
+            wordApp = await getOfficeApplication('Word.Application');
+            // wordApp.Visible = false; // Already handled by getOfficeApplication or default behavior
+            // wordApp.DisplayAlerts = 0; // wdAlertsNone = 0 // Consider if this is globally desired
 
-        doc = wordApp.Documents.Open(safeFilePath);
-        if (!doc) {
-            log.error(`[word/styles/apply] Failed to open document: ${safeFilePath}`);
-            throw new Error(`Failed to open document: ${safeFilePath}`);
-        }
-        log.debug(`Document opened successfully.`);
-
-        let selectedRange: any;
-        const rangeStringLower = validatedParams.range.toLowerCase();
-
-        if (rangeStringLower === 'selection') {
-            // Note: 'selection' might be tricky if Word isn't visible or doesn't have focus.
-            // It refers to the current selection in the Word UI.
-            // If running headless, this might not be what the user expects.
-            // Consider if 'document' or specific paragraphs are more reliable.
-            selectedRange = wordApp.Selection.Range; // Get the Range object from the Selection
-             if (!selectedRange) {
-                 log.warn("[word/styles/apply] wordApp.Selection.Range was null or undefined. This might happen if there's no active selection or the app is headless.");
-                 throw new Error("Could not get range from selection. Ensure the document is active and has a selection, or use a different range specifier.");
-             }
-             log.debug(`Applying style to current selection.`);
-        } else if (rangeStringLower === 'document') {
-            selectedRange = doc.Content;
-            log.debug(`Applying style to entire document content.`);
-        } else if (rangeStringLower.startsWith('paragraph:')) {
-            const indexStr = validatedParams.range.split(':')[1];
-            const index = parseInt(indexStr, 10);
-            if (!isNaN(index) && index > 0) { // COM indices are typically 1-based
-                 if (index <= doc.Paragraphs.Count) {
-                    selectedRange = doc.Paragraphs(index).Range;
-                    log.debug(`Applying style to paragraph ${index}.`);
-                 } else {
-                    log.warn(`Paragraph index ${index} is out of bounds. Document has ${doc.Paragraphs.Count} paragraphs.`);
-                    throw new Error(`Paragraph index ${index} is out of bounds. Document has ${doc.Paragraphs.Count} paragraphs.`);
-                 }
-            } else {
-                 log.warn(`Invalid paragraph index format: '${indexStr}'.`);
-                 throw new Error(`Invalid paragraph index format: '${indexStr}'. Use 'paragraph:N' where N is a positive integer.`);
+            doc = wordApp.Documents.Open(safeFilePath);
+            if (!doc) {
+                throw new Error(`COM: Failed to open document: ${safeFilePath}`);
             }
-        } else {
-            log.warn(`Unsupported range format: '${validatedParams.range}'.`);
-            throw new Error(`Unsupported range format: '${validatedParams.range}'. Supported formats: 'selection', 'document', 'paragraph:N'.`);
+            log.debug(`COM: Document opened successfully: ${safeFilePath}`);
+
+            let selectedRange: any;
+            const rangeStringLower = range.toLowerCase();
+
+            if (rangeStringLower === 'selection') {
+                selectedRange = wordApp.Selection.Range;
+                if (!selectedRange) {
+                    throw new Error("COM: Could not get range from selection. Ensure Word is active and has a selection.");
+                }
+            } else if (rangeStringLower === 'document') {
+                selectedRange = doc.Content;
+            } else if (rangeStringLower.startsWith('paragraph:')) {
+                const indexStr = range.split(':')[1];
+                const index = parseInt(indexStr, 10);
+                if (isNaN(index) || index <= 0) {
+                    throw new Error(`COM: Invalid paragraph index format: '${indexStr}'.`);
+                }
+                if (index > doc.Paragraphs.Count) {
+                     throw new Error(`COM: Paragraph index ${index} out of bounds. Document has ${doc.Paragraphs.Count} paragraphs.`);
+                }
+                selectedRange = doc.Paragraphs(index).Range;
+            } else {
+                throw new Error(`COM: Unsupported range format: '${range}'. Supported: 'selection', 'document', 'paragraph:N'.`);
+            }
+
+            log.debug(`COM: Applying style '${style}' to range type: ${rangeStringLower}`);
+            selectedRange.Style = style;
+            // Not saving automatically, as per original logic. User should call save if needed.
+            // doc.Save();
+            log.info(`COM: Successfully applied style '${style}' to range '${range}'.`);
+            return { success: true, data: {} };
+
+        } catch (error: any) {
+            log.error(`[word/styles/apply] COM Error: ${error.message}`, { error });
+            if (doc) {
+                try { doc.Close(false); } catch (e: any) { log.warn(`COM: Error closing document during error handling: ${e.message}`); }
+            }
+            return handleToolError(error, 'WORD_STYLE_ERROR_COM');
+        } finally {
+            if (doc) releaseObject(doc);
+            if (wordApp) releaseObject(wordApp); // Release the app object itself
+            log.debug("[word/styles/apply] COM: Objects released.");
+        }
+    } else {
+        // Library path (docx)
+        log.info(`[word/styles/apply] Using Library (docx) path.`);
+        log.warn(`[word/styles/apply] Library path: Applying arbitrary named styles ('${style}') is complex with 'docx'. Only limited, common styles like 'Heading1', 'Heading2' might be supported by re-creating paragraphs with specific formatting. Range '${range}' support is also limited.`);
+
+        if (range.toLowerCase() === 'selection') {
+            return createErrorResponse("Library path does not support 'selection' range for applying styles. Use COM Interop.", 'LIB_RANGE_NOT_SUPPORTED');
+        }
+        
+        // Example for Heading styles - very limited
+        // A full implementation would require parsing the doc, finding the range, and re-creating elements.
+        // This is highly complex and error-prone for arbitrary styles and ranges.
+        if (style.toLowerCase().startsWith('heading')) {
+            // This is a placeholder for what a very limited implementation might look like.
+            // It would involve reading the file, finding the paragraph(s), changing their properties, and re-saving.
+            // This is beyond a simple diff for now.
+            log.warn(`[word/styles/apply] Library path: Applying heading style '${style}' would require reading, modifying structure, and re-saving the document. This is not fully implemented.`);
+             return createErrorResponse(
+                `Library path for applying style '${style}' to range '${range}' is not fully implemented. For comprehensive style application, please use COM Interop (useComInterop: true).`,
+                'NOT_IMPLEMENTED_LIB_STYLE_APPLY'
+            );
         }
 
-        // Apply the style
-        log.debug(`[word/styles/apply] Applying style '${validatedParams.style}' to range type: ${rangeStringLower}`);
-        selectedRange.Style = validatedParams.style;
-        // Optionally save the document: doc.Save();
-        // For this tool, we typically don't save automatically.
-
-        log.info(`[word/styles/apply] Successfully applied style '${validatedParams.style}' to range '${validatedParams.range}' in document '${safeFilePath}'`);
-        return { success: true, data: {} };
-
-    } catch (error: any) {
-         log.error(`[word/styles/apply] Error applying style via COM: ${error.message}`, { error, params });
-         // Ensure document is closed if it was opened
-         if (doc) {
-             try { doc.Close(false); } catch (e: any) { log.warn(`Error closing document during error handling: ${e.message}`); }
-             releaseObject(doc);
-         }
-         return handleToolError(error, 'WORD_STYLE_ERROR');
-    } finally {
-        // --- CRUCIAL: Release COM Objects ---
-        if (doc) { // Redundant if closed in catch, but safe
-            releaseObject(doc);
-        }
-        if (officeAppInstance) {
-            officeAppInstance.release(); // Release the application instance
-            log.debug("[word/styles/apply] Office application instance released.");
-        }
-        if (wordApp) { // Release the app object reference
-            releaseObject(wordApp);
-        }
+        return createErrorResponse(
+            `Library path for applying style '${style}' is not implemented or the style is not supported directly by the 'docx' library. Use COM Interop for full style support.`,
+            'NOT_IMPLEMENTED_LIB_STYLE_APPLY'
+        );
     }
 }
 
@@ -150,77 +158,80 @@ export async function applyStyle(params: ToolRequestParams, context?: FastMCPCon
  * @returns A promise resolving to an ApiResponse containing an array of style names (strings).
  * @throws {Error} If validation fails, the document fails to open or style listing fails.
  */
-export async function listStyles(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<string[]>> { // Use FastMCPContext<undefined>
-    const log = context?.log ?? logger; // Use context logger or fallback
+export async function listStyles(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<string[]>> {
+    const log = context?.log ?? logger;
+    const validatedParams = listStyleSchema.parse(params);
+    const { filePath, useComInterop } = validatedParams;
+    const safeFilePath = validateFilePath(filePath);
 
-    let wordApp: any = null;
-    let doc: any = null;
-    let officeAppInstance: any = null; // To manage the application instance lifecycle
+    log.info(`[word/styles/list] Request: file='${safeFilePath}', useComInterop=${useComInterop}`);
 
-     try {
-        const validatedParams = listStyleSchema.parse(params);
-        const safeFilePath = validatedParams.filePath; // Already validated
-        log.info(`[word/styles/list] Attempting to list styles for document: ${safeFilePath}`);
+    if (useComInterop) {
+        log.info(`[word/styles/list] Using COM Interop path.`);
+        let wordApp: any = null;
+        let doc: any = null;
 
-        officeAppInstance = await getOfficeApplication('Word.Application');
-        wordApp = officeAppInstance.app;
-        wordApp.Visible = false; // Run in background
-        wordApp.DisplayAlerts = 0; // wdAlertsNone = 0
+        try {
+            wordApp = await getOfficeApplication('Word.Application');
+            // wordApp.Visible = false; // Handled by getOfficeApplication or default
+            // wordApp.DisplayAlerts = 0; // Consider if needed
 
-        doc = wordApp.Documents.Open(safeFilePath);
-        if (!doc) {
-            log.error(`[word/styles/list] Failed to open document: ${safeFilePath}`);
-            throw new Error(`Failed to open document: ${safeFilePath}`);
-        }
-        log.debug(`Document opened successfully.`);
-
-        const styles = doc.Styles;
-        const styleCount = styles.Count;
-        const styleNames: string[] = [];
-
-        log.debug(`[word/styles/list] Found ${styleCount} styles in the collection. Iterating...`);
-        // COM collections are often 1-based
-        for (let i = 1; i <= styleCount; i++) {
-            let style = null;
-            try {
-                 style = styles(i); // Access item by 1-based index
-                 if (style && style.NameLocal) {
-                     styleNames.push(style.NameLocal);
-                 } else {
-                      log.warn(`[word/styles/list] Style at index ${i} was null or had no NameLocal.`);
-                 }
-            } catch (itemError: any) {
-                 log.error(`[word/styles/list] Error accessing style at index ${i}: ${itemError.message}`, { error: itemError });
-                 // Continue to next item if possible
-            } finally {
-                 if (style) releaseObject(style); // Release the individual style object
+            doc = wordApp.Documents.Open(safeFilePath, false, true); // Open read-only
+            if (!doc) {
+                throw new Error(`COM: Failed to open document: ${safeFilePath}`);
             }
-        }
-        releaseObject(styles); // Release styles collection
+            log.debug(`COM: Document opened successfully: ${safeFilePath}`);
 
-        log.info(`[word/styles/list] Successfully listed ${styleNames.length} styles from document '${safeFilePath}'.`);
-        return { success: true, data: styleNames };
+            const stylesCollection = doc.Styles;
+            const styleCount = stylesCollection.Count;
+            const styleNames: string[] = [];
 
-    } catch (error: any) {
-         log.error(`[word/styles/list] Error listing styles via COM: ${error.message}`, { error, params });
-         // Ensure document is closed if it was opened
-         if (doc) {
-             try { doc.Close(false); } catch (e: any) { log.warn(`Error closing document during error handling: ${e.message}`); }
-             releaseObject(doc);
-         }
-        return handleToolError(error, 'WORD_STYLE_ERROR');
-    } finally {
-        // --- CRUCIAL: Release COM Objects ---
-        if (doc) { // Redundant if closed in catch, but safe
-            releaseObject(doc);
+            log.debug(`COM: Found ${styleCount} styles. Iterating...`);
+            for (let i = 1; i <= styleCount; i++) { // COM collections are 1-based
+                let style = null;
+                try {
+                    style = stylesCollection(i);
+                    if (style && style.NameLocal) {
+                        styleNames.push(style.NameLocal);
+                    }
+                } catch (itemError: any) {
+                    log.error(`COM: Error accessing style at index ${i}: ${itemError.message}`);
+                } finally {
+                    if (style) releaseObject(style);
+                }
+            }
+            releaseObject(stylesCollection);
+
+            log.info(`COM: Successfully listed ${styleNames.length} styles.`);
+            return { success: true, data: styleNames };
+
+        } catch (error: any) {
+            log.error(`[word/styles/list] COM Error: ${error.message}`, { error });
+            if (doc) {
+                try { doc.Close(false); } catch (e: any) { log.warn(`COM: Error closing document during error handling: ${e.message}`); }
+            }
+            return handleToolError(error, 'WORD_STYLE_ERROR_COM');
+        } finally {
+            if (doc) releaseObject(doc);
+            if (wordApp) releaseObject(wordApp);
+            log.debug("[word/styles/list] COM: Objects released.");
         }
-        if (officeAppInstance) {
-            officeAppInstance.release(); // Release the application instance
-            log.debug("[word/styles/list] Office application instance released.");
-        }
-        if (wordApp) { // Release the app object reference
-            releaseObject(wordApp);
-        }
+    } else {
+        // Library path (docx)
+        log.info(`[word/styles/list] Using Library (docx) path.`);
+        log.warn(`[word/styles/list] Library path: Listing all styles from a .docx file's definition is not directly supported by 'docx' library. It primarily generates documents, not parses existing style definitions in detail.`);
+        
+        // The 'docx' library does not provide a direct API to list all styles from an existing file.
+        // It can define styles when creating a document, but not easily read them back.
+        // We could return a predefined list of common styles that 'docx' can generate,
+        // but this would not reflect the actual styles in the user's document.
+        
+        // For now, return an error or a very limited set of known styles.
+        // Returning an error is more accurate regarding the capability.
+        return createErrorResponse(
+            "Library path: Listing all styles from an existing document is not supported. This feature relies on COM Interop to inspect the document's style gallery. Please use COM Interop (useComInterop: true).",
+            'NOT_IMPLEMENTED_LIB_STYLE_LIST'
+        );
     }
 }
 

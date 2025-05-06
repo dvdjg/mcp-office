@@ -1,6 +1,11 @@
 # Installation & API Documentation
 
-Get the **Office MCP Server** running and explore its RESTful API for automating Word, Excel, PowerPoint, and more. This guide covers setup, configuration, and detailed API endpoints.
+The **Office MCP Server** provides a powerful RESTful API for automating Microsoft Office applications (Word, Excel, PowerPoint) and manipulating Office document files (.docx, .xlsx, .pptx). This server employs a dual approach for document handling:
+
+1.  **COM (Component Object Model) Automation:** Utilized when the server operates locally and needs to interact with documents currently open by the user, or to create/edit local documents in a shared editing context. This allows for deep integration with the Office applications themselves.
+2.  **Direct File Manipulation (JavaScript/TypeScript Libraries):** Used for most other operations, including creating, reading, and editing Office documents by parsing or generating the files directly. This approach is platform-independent and does not require Office to be installed on the server for many tasks. Libraries such as [`docx`](https://www.npmjs.com/package/docx) for Word document generation, [`exceljs`](https://www.npmjs.com/package/exceljs) or [`xlsx`](https://www.npmjs.com/package/xlsx) for Excel file handling, and [`PptxGenJS`](https://github.com/gitbrent/PptxGenJS) for PowerPoint presentation creation are leveraged for this purpose, as detailed in our [office_library_analysis.md](office_library_analysis.md:0).
+
+This guide covers setup, configuration, and detailed API endpoints for leveraging these capabilities.
 
 ## Table of Contents
 - [Installation](#installation)
@@ -17,7 +22,7 @@ Get the **Office MCP Server** running and explore its RESTful API for automating
 
 ### Prerequisites
 - **Node.js**: v18 or higher
-- **Microsoft Office**: Desktop (for VBA/COM) or Office 365 (for JavaScript APIs)
+- **Microsoft Office (Desktop Version)**: Required if you intend to use features relying on COM automation (e.g., interacting with currently open documents). Not strictly necessary for all direct file manipulation tasks handled by JavaScript/TypeScript libraries, but recommended for full functionality and development/testing of COM-based features.
 - **Git**: For cloning
 
 ### Clone the Repository
@@ -88,9 +93,9 @@ The API uses **FastMCP**, offering type-safe endpoints with `zod` validation. St
 ```mermaid
 graph TD
   A[Client] -->|GET /word/styles/list| B[Office MCP Server]
-  B -->|Validate with zod| C[Office JavaScript API]
-  C -->|Retrieve styles| D[Word Document]
-  D -->|Return styles| C
+  B -->|Validate with zod| C[Office Interaction Layer (COM/JS Libs)]
+  C -->|Process request| D[Office Document/Application]
+  D -->|Return data| C
   C -->|JSON response| B
   B -->|Response: { styles: [...] }| A
 ```

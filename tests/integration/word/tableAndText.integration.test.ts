@@ -1,233 +1,249 @@
-import { insertTable } from '../../../src/tools/word/tables.tool';
-import { modifyText } from '../../../src/tools/word/text.tool';
+import { insertTable, insertTableSchema } from '../../../src/tools/word/tables.tool';
+import { modifyText, modifySchema as modifyTextSchema } from '../../../src/tools/word/text.tool';
 import { getOfficeApplication, releaseObject } from '../../../src/utils/officeInterop';
 import { validateFilePath } from '../../../src/utils/security';
 import logger from '../../../src/utils/logger';
+import * as fs from 'fs-extra';
+import { Packer, Table, TableRow, TableCell, Paragraph, TextRun, Document as DocxDocument } from 'docx';
+import { z } from 'zod';
 
-// Mock de las dependencias externas (simulando la interacción con Office)
+// Mock dependencies
 jest.mock('../../../src/utils/officeInterop');
 jest.mock('../../../src/utils/security');
 jest.mock('../../../src/utils/errorHandler', () => ({
     handleToolError: jest.fn((error, code) => ({ success: false, error: { code, message: error.message } })),
+    createErrorResponse: jest.fn((message, code) => ({ success: false, error: { code, message } })),
 }));
 jest.mock('../../../src/utils/logger');
+jest.mock('fs-extra', () => ({
+    pathExists: jest.fn(),
+    writeFile: jest.fn(),
+    readFile: jest.fn(),
+}));
+jest.mock('docx', () => {
+    const originalDocx = jest.requireActual('docx');
+    return {
+        ...originalDocx,
+        Packer: {
+            toBuffer: jest.fn(),
+        },
+        Table: jest.fn().mockImplementation(props => ({ props, rows: props.rows || [] })),
+        TableRow: jest.fn().mockImplementation(props => ({ props, cells: props.children || [] })),
+        TableCell: jest.fn().mockImplementation(props => ({ props, children: props.children || [] })),
+        Paragraph: jest.fn().mockImplementation(props => ({ props, children: props.children || [] })),
+        TextRun: jest.fn().mockImplementation(props => ({ props, text: props.text || (typeof props === 'string' ? props : '') })),
+        Document: jest.fn().mockImplementation(props => ({ props, sections: props.sections || [] })),
+    };
+});
+
 
 const mockGetOfficeApplication = getOfficeApplication as jest.Mock;
 const mockReleaseObject = releaseObject as jest.Mock;
 const mockValidateFilePath = validateFilePath as jest.Mock;
-const mockLogger = logger as jest.Mocked<typeof logger>;
+const mockLoggerInfo = jest.spyOn(logger, 'info');
+const mockLoggerError = jest.spyOn(logger, 'error');
+const mockFsPathExists = fs.pathExists as jest.Mock;
+const mockFsWriteFile = fs.writeFile as jest.MockedFunction<typeof fs.writeFile>;
+const mockPackerToBuffer = Packer.toBuffer as jest.Mock;
+const mockCreateErrorResponse = require('../../../src/utils/errorHandler').createErrorResponse as jest.Mock;
+
 
 describe('word/tables and word/text integration tests', () => {
     let mockWordApp: any;
     let mockDoc: any;
     let mockSelection: any;
     let mockRange: any;
-    let mockTables: any;
-    let mockTable: any;
-    let mockCell: any;
-    let mockCellRange: any;
-    let mockOfficeAppInstance: any;
+    let mockTablesCollection: any;
+    let mockTableInstance: any;
+    let mockCellInstance: any;
+    let mockCellRangeInstance: any;
+    // let mockOfficeAppInstance: any; // Replaced by direct mockWordApp for COM
 
     beforeEach(() => {
         jest.clearAllMocks();
 
-        // Configurar mocks para simular objetos COM de Word y la interacción con officeInterop
-        mockCellRange = {
-            Text: 'Initial Cell Text', // Texto inicial de la celda
+        mockCellRangeInstance = {
+            _text: 'Initial Cell Text',
+            set Text(value: string) { (this as any)._text = value; },
+            get Text() { return (this as any)._text; },
             Delete: jest.fn(),
             Collapse: jest.fn(),
-        };
-        // Mock setter para Text en mockCellRange
-        Object.defineProperty(mockCellRange, 'Text', {
-            set: jest.fn((value) => { mockCellRange._text = value; }),
-            get: jest.fn(() => mockCellRange._text || 'Initial Cell Text'), // Devolver valor asignado o inicial
-            configurable: true,
-        });
-
-
-        mockCell = {
-            Range: mockCellRange,
-        };
-        mockTable = {
-            Index: 1,
-            Style: '',
-            Cell: jest.fn((row: number, col: number) => {
-                // Devolver la celda mockeada para una celda específica (ej. 1, 1)
-                if (row === 1 && col === 1) {
-                    return mockCell;
-                }
-                // Devolver un mock genérico o undefined para otras celdas si es necesario
-                return { Range: { Text: `Cell ${row},${col}`, Delete: jest.fn(), Collapse: jest.fn() } };
-            }),
-        };
-        mockTables = {
-            Add: jest.fn().mockReturnValue(mockTable), // Devolver la tabla mockeada al añadir
-            Item: jest.fn((index: number) => {
-                 if (index === 1) return mockTable; // Devolver la tabla mockeada por índice
-                 return undefined;
-            }),
-            Count: 1, // Simular que hay una tabla después de insertarla
-        };
-        mockRange = { // Rango para inserción inicial de tabla
-            Start: 0,
-            End: 10,
-            Collapse: jest.fn(),
-            InsertParagraphAfter: jest.fn(),
-        };
-        mockSelection = { // Mock de selección si fuera necesario
-            Range: mockRange,
-            Type: 1, // wdSelectionNormal
-        };
-        mockDoc = {
-            Content: { End: 50 },
-            Tables: mockTables,
-            Range: jest.fn().mockReturnValue(mockRange), // Rango para inserción
-            Save: jest.fn(),
-            Close: jest.fn(),
-        };
-        mockWordApp = {
-            Documents: {
-                Open: jest.fn().mockResolvedValue(mockDoc),
-            },
-            Selection: mockSelection, // Añadir mock de selección
-        };
-
-        // Mock de la estructura de OfficeAppInstance
-        mockOfficeAppInstance = {
-            app: mockWordApp,
-            openDocument: jest.fn().mockReturnValue(mockDoc),
             release: jest.fn(),
         };
 
-        mockGetOfficeApplication.mockResolvedValue(mockOfficeAppInstance);
-        mockValidateFilePath.mockReturnValue(true);
+        mockCellInstance = {
+            Range: mockCellRangeInstance,
+            release: jest.fn(),
+        };
+
+        mockTableInstance = {
+            Index: 1,
+            Style: '',
+            Cell: jest.fn((row: number, col: number) => {
+                if (row === 1 && col === 1) return mockCellInstance;
+                return { Range: { Text: `Cell ${row},${col}`, Delete: jest.fn(), Collapse: jest.fn(), release: jest.fn() }, release: jest.fn() };
+            }),
+            release: jest.fn(),
+        };
+
+        mockTablesCollection = {
+            Add: jest.fn().mockReturnValue(mockTableInstance),
+            Item: jest.fn((index: number) => (index === 1 ? mockTableInstance : undefined)),
+            Count: 1,
+            release: jest.fn(),
+        };
+
+        mockRange = {
+            Start: 0, End: 10, Collapse: jest.fn(), InsertParagraphAfter: jest.fn(), release: jest.fn(),
+        };
+
+        mockSelection = { Range: mockRange, Type: 1, release: jest.fn() };
+
+        mockDoc = {
+            Content: { End: 50, release: jest.fn() },
+            Tables: mockTablesCollection,
+            Range: jest.fn().mockReturnValue(mockRange),
+            Save: jest.fn(),
+            Close: jest.fn(),
+            release: jest.fn(),
+        };
+
+        mockWordApp = {
+            Documents: {
+                Open: jest.fn().mockReturnValue(mockDoc), // For COM path opening existing
+                Add: jest.fn().mockReturnValue(mockDoc),    // For COM path creating new (if insertTable did that)
+            },
+            Selection: mockSelection,
+            release: jest.fn(),
+        };
+
+        mockGetOfficeApplication.mockResolvedValue(mockWordApp); // Simplified: getOfficeApplication returns the app
+        mockValidateFilePath.mockImplementation(fp => fp);
+        mockFsPathExists.mockResolvedValue(true); // Default to file existing for COM modify
+        mockPackerToBuffer.mockResolvedValue(Buffer.from("docx-buffer"));
+        mockFsWriteFile.mockImplementation(() => Promise.resolve());
+        mockCreateErrorResponse.mockImplementation((message, code) => ({ success: false, error: { code, message } }));
     });
 
-    test('debería insertar una tabla y luego modificar el texto de una celda', async () => {
+    const testModes = [
+        { mode: 'COM', useComInterop: true },
+        { mode: 'Library', useComInterop: false },
+    ];
+
+    describe.each(testModes)('Sequential table insert and text modify (mode: $mode)', ({ useComInterop }) => {
         const filePath = 'C:/test/integration_doc.docx';
-        const insertParams = { filePath, rows: 2, columns: 2, position: 'end' };
-        const modifyParams = { filePath, range: 'table:1:cell:1:1', newText: 'Modified Cell Text' }; // Modificar celda (1,1) de la tabla 1
+        const insertParams: z.infer<typeof insertTableSchema> = { filePath, rows: 2, columns: 2, position: 'end', useComInterop };
+        const modifyParams: z.infer<typeof modifyTextSchema> = { filePath, range: 'table:1:cell:1:1', newText: 'Modified Cell Text', useComInterop };
 
-        // --- Paso 1: Insertar la tabla ---
-        const insertResult = await insertTable(insertParams);
-
-        // Verificar la inserción (simplificado, asumimos que funciona basado en pruebas unitarias)
-        expect(insertResult.success).toBe(true);
-        expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-        expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(filePath);
-        expect(mockTables.Add).toHaveBeenCalledWith(mockRange, insertParams.rows, insertParams.columns, 0, 0);
-        expect(mockDoc.Save).toHaveBeenCalledTimes(1); // Guardado después de insertar
-        expect(mockDoc.Close).toHaveBeenCalledTimes(1); // Cerrado después de insertar
-        expect(mockOfficeAppInstance.release).toHaveBeenCalledTimes(1); // Liberado después de insertar
-        expect(mockReleaseObject).toHaveBeenCalledWith(mockTable);
-        expect(mockReleaseObject).toHaveBeenCalledWith(mockRange);
-
-        // Reset mocks para la segunda llamada (simulando reapertura del documento)
-        // Es importante resetear mocks específicos que se esperan ser llamados de nuevo
-        mockOfficeAppInstance.openDocument.mockClear();
-        mockDoc.Save.mockClear();
-        mockDoc.Close.mockClear();
-        mockOfficeAppInstance.release.mockClear();
-        mockReleaseObject.mockClear();
-        // Asegurarse de que getOfficeApplication devuelva la misma instancia mockeada
-        mockGetOfficeApplication.mockResolvedValue(mockOfficeAppInstance);
-        // Asegurarse de que openDocument devuelva el mismo documento mockeado
-        mockOfficeAppInstance.openDocument.mockReturnValue(mockDoc);
+        if (useComInterop) {
+            test('COM: should insert a table and then modify text in a cell', async () => {
+                // --- Step 1: Insert Table (COM) ---
+                const insertResult = await insertTable(insertParams);
+                expect(insertResult.success).toBe(true);
+                expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
+                expect(mockWordApp.Documents.Open).toHaveBeenCalledWith(filePath, false, false); // Assuming insertTable opens for read/write
+                expect(mockTablesCollection.Add).toHaveBeenCalledWith(mockRange, insertParams.rows, insertParams.columns, 0, 0);
+                expect(mockDoc.Save).toHaveBeenCalledTimes(1);
+                expect(mockDoc.Close).toHaveBeenCalledWith(false);
+                expect(mockReleaseObject).toHaveBeenCalledWith(mockTableInstance);
+                expect(mockReleaseObject).toHaveBeenCalledWith(mockRange);
+                expect(mockReleaseObject).toHaveBeenCalledWith(mockDoc);
+                expect(mockReleaseObject).toHaveBeenCalledWith(mockWordApp);
 
 
-        // --- Paso 2: Modificar texto en la celda ---
-        const modifyResult = await modifyText(modifyParams);
+                // Reset mocks for the second COM call
+                jest.clearAllMocks();
+                mockGetOfficeApplication.mockResolvedValue(mockWordApp); // Re-mock for next call
+                mockWordApp.Documents.Open.mockReturnValue(mockDoc); // Ensure Open returns the doc again
+                mockValidateFilePath.mockImplementation(fp => fp);
 
-        // Verificar la modificación
-        expect(modifyResult.success).toBe(true);
-        // Verificar que se volvió a obtener la aplicación y abrir el documento
-        expect(mockGetOfficeApplication).toHaveBeenCalledTimes(2); // Llamado de nuevo
-        expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(filePath, false, false); // Llamado de nuevo para modificar
 
-        // Verificar que se accedió a la tabla y celda correctas
-        expect(mockTables.Item).toHaveBeenCalledWith(1); // Acceder a la tabla 1
-        expect(mockTable.Cell).toHaveBeenCalledWith(1, 1); // Acceder a la celda (1,1)
+                // --- Step 2: Modify Text (COM) ---
+                const modifyResult = await modifyText(modifyParams);
+                expect(modifyResult.success).toBe(true);
+                expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application'); // Called again
+                expect(mockWordApp.Documents.Open).toHaveBeenCalledWith(filePath, false, false); // Opened again for modify
+                expect(mockTablesCollection.Item).toHaveBeenCalledWith(1);
+                expect(mockTableInstance.Cell).toHaveBeenCalledWith(1, 1);
+                expect(mockCellRangeInstance.Text).toBe(modifyParams.newText);
+                expect(mockDoc.Save).toHaveBeenCalledTimes(1);
+                expect(mockDoc.Close).toHaveBeenCalledWith(false);
+                expect(mockReleaseObject).toHaveBeenCalledWith(mockCellRangeInstance);
+                expect(mockReleaseObject).toHaveBeenCalledWith(mockCellInstance);
+                expect(mockReleaseObject).toHaveBeenCalledWith(mockTableInstance);
+                expect(mockReleaseObject).toHaveBeenCalledWith(mockDoc);
+                expect(mockReleaseObject).toHaveBeenCalledWith(mockWordApp);
+            });
+        } else { // Library Path
+            test('Library: should create a new file with a table, then attempt to modify (expecting NOT_IMPLEMENTED_LIB for modify)', async () => {
+                // --- Step 1: Insert Table (Library) ---
+                mockFsPathExists.mockResolvedValue(false); // Simulate file not existing for creation
+                const insertResultLib = await insertTable(insertParams);
 
-        // Verificar que se modificó el texto del rango de la celda
-        expect(mockCell.Range).toBe(mockCellRange);
-        expect(mockCellRange.Text).toBe(modifyParams.newText); // Verificar que el setter fue llamado con el nuevo texto
+                expect(insertResultLib.success).toBe(true);
+                expect(mockFsPathExists).toHaveBeenCalledWith(filePath);
+                expect(mockPackerToBuffer).toHaveBeenCalled();
+                expect(mockFsWriteFile).toHaveBeenCalledWith(filePath, Buffer.from("docx-buffer"));
+                expect(Table).toHaveBeenCalled(); // docx Table constructor
+                expect(TableRow).toHaveBeenCalledTimes(insertParams.rows);
 
-        // Verificar guardado, cierre y liberación final
-        expect(mockDoc.Save).toHaveBeenCalledTimes(1); // Guardado después de modificar
-        expect(mockDoc.Close).toHaveBeenCalledTimes(1); // Cerrado después de modificar
-        expect(mockOfficeAppInstance.release).toHaveBeenCalledTimes(1); // Liberado después de modificar
-        expect(mockReleaseObject).toHaveBeenCalledWith(mockCellRange); // Rango de la celda liberado
-        expect(mockReleaseObject).toHaveBeenCalledWith(mockCell); // Celda liberada
-        expect(mockReleaseObject).toHaveBeenCalledWith(mockTable); // Tabla liberada
 
-        // Verificar logs
-        expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Executing word/tables/insert tool'));
-        expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Executing word/text/modify tool'));
-        expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Successfully modified text in table 1, cell (1, 1)'));
+                // --- Step 2: Modify Text (Library) ---
+                mockFsPathExists.mockResolvedValue(true); // File now exists
+                const modifyResultLib = await modifyText(modifyParams);
+
+                expect(modifyResultLib.success).toBe(false);
+                if (!modifyResultLib.success) {
+                    expect(modifyResultLib.error.code).toBe('NOT_IMPLEMENTED_LIB');
+                }
+                expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining(`Executing word/text/modify for file: ${filePath}, range: ${modifyParams.range}, useComInterop: false`));
+                expect(mockCreateErrorResponse).toHaveBeenCalledWith(
+                    'Library path for modifyText is not yet implemented. Use COM Interop (useComInterop: true) for this functionality.',
+                    'NOT_IMPLEMENTED_LIB'
+                );
+                // Ensure no COM objects were touched for library path
+                expect(mockGetOfficeApplication).not.toHaveBeenCalled();
+            });
+        }
     });
 
-     test('debería manejar un error si la tabla especificada para modificar no existe', async () => {
-        const filePath = 'C:/test/integration_doc.docx';
-        // Intentar modificar una tabla que no existe (mockTables.Item devolverá undefined)
-        const modifyParams = { filePath, range: 'table:2:cell:1:1', newText: 'Modified Cell Text' };
+    // Tests for error handling in COM path (can remain largely similar, just ensure useComInterop: true)
+    describe('Error handling for modifyText (COM path)', () => {
+        const filePath = 'C:/test/integration_doc_errors.docx';
+        const commonModifyParams = { filePath, newText: 'Modified Cell Text', useComInterop: true };
 
-        // Simular que no hay tabla 2
-        mockTables.Item.mockImplementation((index: number) => {
-            if (index === 1) return mockTable;
-            return undefined; // Tabla 2 no encontrada
+        test('COM: should handle error if specified table for modify does not exist', async () => {
+            const modifyParamsTableError = { ...commonModifyParams, range: 'table:2:cell:1:1' };
+            mockTablesCollection.Item.mockImplementation((index: number) => (index === 1 ? mockTableInstance : undefined));
+
+            const modifyResult = await modifyText(modifyParamsTableError);
+            expect(modifyResult.success).toBe(false);
+            if (!modifyResult.success) {
+                expect(modifyResult.error.message).toContain('Failed to get range from specifier'); // Updated to reflect getRangeFromSpecifier's error
+            }
+            expect(mockDoc.Save).not.toHaveBeenCalled();
+            expect(mockDoc.Close).toHaveBeenCalledWith(false);
+            expect(mockReleaseObject).toHaveBeenCalledWith(mockDoc);
+            expect(mockReleaseObject).toHaveBeenCalledWith(mockWordApp);
         });
 
-        const modifyResult = await modifyText(modifyParams);
+        test('COM: should handle error if specified cell for modify does not exist', async () => {
+            const modifyParamsCellError = { ...commonModifyParams, range: 'table:1:cell:9:9' };
+            mockTableInstance.Cell.mockImplementation((row: number, col: number) => {
+                if (row === 1 && col === 1) return mockCellInstance;
+                throw new Error('Mock COM Error: Cell not found');
+            });
 
-        expect(modifyResult.success).toBe(false);
-        expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-        expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(filePath, false, false);
-        expect(mockTables.Item).toHaveBeenCalledWith(2); // Intento de acceder a tabla 2
-        expect(mockTable.Cell).not.toHaveBeenCalled(); // No debería intentar acceder a la celda
-        if (!modifyResult.success) {
-            expect(modifyResult.error.message).toContain('Table index 2 is out of bounds');
-        } else {
-            fail('Expected modifyResult to be an error response');
-        }
-
-        // Verificar cierre y liberación
-        expect(mockDoc.Save).not.toHaveBeenCalled(); // No debería guardar si falla
-        expect(mockDoc.Close).toHaveBeenCalledWith(false);
-        expect(mockOfficeAppInstance.release).toHaveBeenCalled();
-        expect(mockReleaseObject).not.toHaveBeenCalledWith(mockCellRange); // No se llegó a obtener el rango de la celda
-    });
-
-     test('debería manejar un error si la celda especificada para modificar no existe', async () => {
-        const filePath = 'C:/test/integration_doc.docx';
-        // Intentar modificar una celda que no existe (mockTable.Cell devolverá error o undefined)
-        const modifyParams = { filePath, range: 'table:1:cell:9:9', newText: 'Modified Cell Text' };
-
-        // Simular que la celda (9,9) no existe lanzando un error
-        mockTable.Cell.mockImplementation((row: number, col: number) => {
-            if (row === 1 && col === 1) return mockCell;
-            throw new Error('Mock COM Error: Cell not found'); // Simular error COM
+            const modifyResult = await modifyText(modifyParamsCellError);
+            expect(modifyResult.success).toBe(false);
+            if (!modifyResult.success) {
+                expect(modifyResult.error.message).toContain('Failed to get range from specifier'); // Updated to reflect getRangeFromSpecifier's error
+            }
+            expect(mockDoc.Save).not.toHaveBeenCalled();
+            expect(mockDoc.Close).toHaveBeenCalledWith(false);
+            expect(mockReleaseObject).toHaveBeenCalledWith(mockTableInstance); // Table was obtained
+            expect(mockReleaseObject).toHaveBeenCalledWith(mockDoc);
+            expect(mockReleaseObject).toHaveBeenCalledWith(mockWordApp);
         });
-
-
-        const modifyResult = await modifyText(modifyParams);
-
-        expect(modifyResult.success).toBe(false);
-        expect(mockGetOfficeApplication).toHaveBeenCalledWith('Word.Application');
-        expect(mockOfficeAppInstance.openDocument).toHaveBeenCalledWith(filePath, false, false);
-        expect(mockTables.Item).toHaveBeenCalledWith(1); // Acceder a tabla 1
-        expect(mockTable.Cell).toHaveBeenCalledWith(9, 9); // Intento de acceder a celda (9,9)
-        if (!modifyResult.success) {
-            expect(modifyResult.error.message).toContain('Failed to get cell (9, 9) from table 1');
-        } else {
-            fail('Expected modifyResult to be an error response');
-        }
-
-        // Verificar cierre y liberación
-        expect(mockDoc.Save).not.toHaveBeenCalled();
-        expect(mockDoc.Close).toHaveBeenCalledWith(false);
-        expect(mockOfficeAppInstance.release).toHaveBeenCalled();
-        expect(mockReleaseObject).toHaveBeenCalledWith(mockTable); // La tabla se obtuvo y debe liberarse
-        expect(mockReleaseObject).not.toHaveBeenCalledWith(mockCell); // No se obtuvo la celda
     });
-
 });
