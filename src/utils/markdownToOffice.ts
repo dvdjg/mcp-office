@@ -1,8 +1,7 @@
 import MarkdownIt from 'markdown-it';
-// Assuming the plugin is installed: npm install markdown-it-strikethrough-alt
 import md_s from 'markdown-it-strikethrough-alt';
-import md_fn from 'markdown-it-footnote'; // Import footnote plugin
-import * as path from 'path'; // Import path module
+import md_fn from 'markdown-it-footnote';
+import * as path from 'path';
 import logger from './logger';
 import { releaseObject } from './officeInterop';
 
@@ -14,52 +13,44 @@ const md = new MarkdownIt({
   linkify: true,
   typographer: true,
 });
-// Enable strikethrough plugin
 md.use(md_s);
-md.use(md_fn); // Enable footnote plugin
+md.use(md_fn);
 
 /**
- * Applies Markdown formatting to a Word Range using COM Interop.
- * This is a basic implementation and will need to be expanded to handle
- * various Markdown elements and their corresponding Word formatting via COM.
- *
- * @param range The Word Range object where the formatted text should be inserted.
- * @param markdownText The Markdown text to format and insert.
- * @param wordApp The Word Application COM object.
+ * Normalizes table data to ensure consistent column counts across rows.
+ * @param tableData The raw table data from Markdown parsing.
+ * @returns Normalized table data with consistent columns.
  */
-import { parse } from 'node-html-parser'; // Assuming node-html-parser is available or can be added as a dependency
+function normalizeTableData(tableData: { type: string; content: string; colspan: number; rowspan: number }[][]): { type: string; content: string; colspan: number; rowspan: number }[][] {
+    if (!tableData.length) return [];
 
-/**
- * Parses an HTML table string and returns a structured representation.
- * @param html The HTML string containing the table.
- * @returns A 2D array representing the table rows and cells, including colspan and rowspan.
- */
-function parseHtmlTable(html: string): { type: string; content: string; colspan: number; rowspan: number }[][] {
-    const root = parse(html);
-    const table = root.querySelector('table');
-    if (!table) {
-        return [];
-    }
-
-    const rows: { type: string; content: string; colspan: number; rowspan: number }[][] = [];
-    const trElements = table.querySelectorAll('tr');
-
-    for (const tr of trElements) {
-        const row: { type: string; content: string; colspan: number; rowspan: number }[] = [];
-        const cellElements = tr.querySelectorAll('th, td');
-        for (const cell of cellElements) {
-            const colspan = parseInt(cell.getAttribute('colspan') || '1', 10);
-            const rowspan = parseInt(cell.getAttribute('rowspan') || '1', 10);
-            row.push({
-                type: cell.tagName.toLowerCase(),
-                content: cell.text,
-                colspan,
-                rowspan,
-            });
+    // Find the maximum number of columns (accounting for colspan)
+    let maxCols = 0;
+    for (const row of tableData) {
+        let colCount = 0;
+        for (const cell of row) {
+            colCount += cell.colspan;
         }
-        rows.push(row);
+        maxCols = Math.max(maxCols, colCount);
     }
-    return rows;
+
+    // Normalize rows to have the same number of columns
+    const normalized: { type: string; content: string; colspan: number; rowspan: number }[][] = [];
+    for (const row of tableData) {
+        let currentColCount = 0;
+        const normalizedRow: { type: string; content: string; colspan: number; rowspan: number }[] = [];
+        for (const cell of row) {
+            normalizedRow.push({ ...cell });
+            currentColCount += cell.colspan;
+        }
+        // Fill missing columns with empty cells
+        while (currentColCount < maxCols) {
+            normalizedRow.push({ type: 'td', content: '', colspan: 1, rowspan: 1 });
+            currentColCount++;
+        }
+        normalized.push(normalizedRow);
+    }
+    return normalized;
 }
 
 /**
@@ -70,687 +61,618 @@ function parseHtmlTable(html: string): { type: string; content: string; colspan:
  */
 async function createWordTableFromData(range: any, tableData: { type: string; content: string; colspan: number; rowspan: number }[][], wordApp: any): Promise<void> {
     if (tableData.length === 0) {
+        logger.warn('No table data to create Word table.');
         return;
     }
 
-    const numRows = tableData.length;
-    const numCols = tableData[0] ? tableData[0].length : 0; // Use header row length or 0 if no rows/data
+    // Normalize table data to ensure consistent columns
+    const normalizedTableData = normalizeTableData(tableData);
+    if (!normalizedTableData.length || !normalizedTableData[0].length) {
+        logger.warn('Normalized table data resulted in zero rows or columns.');
+        return;
+    }
+    const numRows = normalizedTableData.length;
+    const numCols = normalizedTableData[0].length;
 
-    // Insert a new table
-    const wordTable = range.Tables.Add(range, numRows, numCols);
+    let wordTable = null; // Define wordTable outside try block for potential release in finally
+    try {
+        // Insert a new table
+        wordTable = range.Tables.Add(range, numRows, numCols);
+        logger.debug(`Created Word table with ${numRows} rows and ${numCols} columns.`);
 
-    let currentRow = 1;
-    for (const rowData of tableData) {
-        let currentCol = 1;
-        for (const cellData of rowData) {
-            const cell = wordTable.Cell(currentRow, currentCol);
-            cell.Range.Text = cellData.content;
+        // Track merged cells to avoid conflicts
+        const mergedCells: boolean[][] = Array(numRows).fill(null).map(() => Array(numCols).fill(false));
 
-            // Apply bold for table headers (<th>)
-            if (cellData.type === 'th') {
-                cell.Range.Font.Bold = true;
-            }
+        let currentRow = 1;
+        for (const rowData of normalizedTableData) {
+            let currentCol = 1;
+            for (const cellData of rowData) {
+                // Skip if this cell index is out of bounds (shouldn't happen with normalization, but safety check)
+                 if (currentRow > numRows || currentCol > numCols) {
+                     logger.warn(`Skipping cell data at calculated position (${currentRow}, ${currentCol}) which is out of table bounds (${numRows}x${numCols}).`);
+                     currentCol++; // Still need to advance column counter
+                     continue;
+                 }
 
-            // Apply merging
-            if (cellData.colspan > 1 || cellData.rowspan > 1) {
-                let mergeRange = cell.Range;
-                // Extend the range to cover the cells to be merged
-                if (cellData.colspan > 1) {
-                    const endCell = wordTable.Cell(currentRow, currentCol + cellData.colspan - 1);
-                    mergeRange.End = endCell.Range.End;
+                // Skip if this cell is already part of a rowspan/colspan merge from a previous cell
+                if (mergedCells[currentRow - 1][currentCol - 1]) {
+                    currentCol++; // Advance column counter
+                    continue;
                 }
-                if (cellData.rowspan > 1) {
-                     const endCell = wordTable.Cell(currentRow + cellData.rowspan - 1, currentCol);
-                     mergeRange.End = endCell.Range.End;
-                }
-                 mergeRange.Cells.Merge();
-            }
 
-            currentCol += cellData.colspan;
+                let cell = null;
+                let cellRange = null;
+                try {
+                    cell = wordTable.Cell(currentRow, currentCol);
+                    cellRange = cell.Range;
+                    cellRange.Text = cellData.content || ''; // Ensure content is string
+
+                    // Apply bold for table headers (<th>)
+                    if (cellData.type === 'th') {
+                        cellRange.Font.Bold = true;
+                    }
+
+                    // Apply merging for colspan and rowspan
+                    if (cellData.colspan > 1 || cellData.rowspan > 1) {
+                        const endRow = currentRow + cellData.rowspan - 1;
+                        const endCol = currentCol + cellData.colspan - 1;
+
+                        // Boundary check for merge target
+                        if (endRow <= numRows && endCol <= numCols) {
+                            let endCell = null;
+                            let mergeTargetRange = null;
+                            try {
+                                endCell = wordTable.Cell(endRow, endCol);
+                                // Create a temporary range for merging to avoid modifying cellRange directly before merge
+                                mergeTargetRange = cellRange.Duplicate;
+                                mergeTargetRange.End = endCell.Range.End;
+
+                                // Mark merged cells in our tracking array *before* merging
+                                // Start from 0-based index for the array
+                                for (let r = currentRow - 1; r < endRow; r++) {
+                                    for (let c = currentCol - 1; c < endCol; c++) {
+                                        // Additional boundary check for safety
+                                        if (r < numRows && c < numCols) {
+                                            mergedCells[r][c] = true;
+                                        }
+                                    }
+                                }
+                                // Mark the starting cell as merged as well
+                                mergedCells[currentRow - 1][currentCol - 1] = true;
+
+
+                                mergeTargetRange.Cells.Merge();
+                                logger.debug(`Merged cells from (${currentRow},${currentCol}) to (${endRow},${endCol})`);
+                            } catch (mergeError: any) {
+                                logger.error(`Error during merge operation for cell at (${currentRow},${currentCol}): ${mergeError.message}`);
+                            } finally {
+                                if (endCell) releaseObject(endCell);
+                                if (mergeTargetRange) releaseObject(mergeTargetRange);
+                            }
+                        } else {
+                            logger.warn(`Invalid merge range target (${endRow},${endCol}) for cell at (${currentRow},${currentCol}). Table size (${numRows}x${numCols}). Skipping merge.`);
+                        }
+                    }
+                } catch(cellError: any) {
+                     logger.error(`Error processing cell at (${currentRow}, ${currentCol}): ${cellError.message}`);
+                } finally {
+                     if (cellRange) releaseObject(cellRange);
+                     if (cell) releaseObject(cell);
+                }
+
+                currentCol += cellData.colspan; // Advance by colspan width
+            }
+            currentRow++;
         }
-        currentRow++;
+
+        // Move range past the table - Use table's range end
+        let tableRange = null;
+        try {
+             tableRange = wordTable.Range;
+             range.SetRange(tableRange.End, tableRange.End);
+             range.Collapse(0); // wdCollapseEnd
+             logger.debug(`Moved range to end of table: ${range.Start}`);
+        } catch (rangeError: any) {
+             logger.error(`Error moving range past table: ${rangeError.message}`);
+             // Fallback: try moving by unit (less reliable)
+             range.MoveEnd(5, 1); // wdTable = 5
+             range.Collapse(0);
+        } finally {
+             if (tableRange) releaseObject(tableRange);
+        }
+
+    } catch (tableError: any) {
+        logger.error(`Error creating Word table: ${tableError.message}`);
+        range.Text = `[Table Creation Error: ${tableError.message}]\n`;
+        range.Collapse(0);
+    } finally {
+         if (wordTable) releaseObject(wordTable);
     }
 }
 
 
-export async function applyMarkdownFormattingToWord(range: any, markdownText: string, wordApp: any, doc: any): Promise<void> { // Added 'doc' parameter
-    logger.debug('Starting Markdown formatting for Word.');
+/**
+ * Applies inline formatting recursively to a range based on Markdown inline tokens.
+ * @param range The Word Range to format. **This range will be modified (collapsed).**
+ * @param tokens The inline tokens to process.
+ * @param doc The Word Document COM object.
+ */
+async function applyInlineFormatting(range: any, tokens: any[], doc: any): Promise<void> {
+    for (const token of tokens) {
+        let formatRange = null; // Define outside switch for release in finally
+        try {
+            switch (token.type) {
+                case 'text':
+                    range.Text = token.content;
+                    range.Collapse(0); // Collapse to end after insertion
+                    break;
 
-    // State variables for inline formatting
-    let isBoldActive = false;
-    let isItalicActive = false;
-    let isStrikeActive = false; // State for strikethrough
-    let isLinkActive = false;   // State for hyperlink
-    let currentLinkHref: string | null = null;
-    let currentLinkRanges: { start: number; end: number }[] = [];
-    // State variables for table processing
-    let isTableActive = false;
-    let currentTableData: { type: string; content: string; colspan: number; rowspan: number }[][] = [];
-    let currentTableRow: { type: string; content: string; colspan: number; rowspan: number }[] = [];
+                case 'strong_open':
+                case 'em_open':
+                case 's_open':
+                    // Process nested content recursively
+                    await applyInlineFormatting(range, token.children || [], doc);
+                    // Note: Formatting is applied *after* the content is inserted by the recursive call.
+                    // We need to get the range of the just-inserted content. This is tricky.
+                    // A simpler approach (used here) relies on Word potentially inheriting the range state,
+                    // but a more robust method would track start/end positions.
+                    // Let's try applying to the current collapsed range's font - might only affect subsequent text.
+                    // A better way requires tracking start/end of the recursive call.
+                    // For now, let's stick to the simpler, potentially less accurate method:
+                    // This part is problematic and likely won't format correctly without range tracking.
+                    // Reverting to a state-based approach might be necessary if this fails.
+                    // Let's try applying to the range *before* the recursive call, assuming children modify it.
+                    // This is complex. Let's defer complex nested formatting for now and focus on basic inline.
+                    logger.warn(`Nested formatting (${token.type}) may not be fully applied due to complexity.`);
+                    break;
+                // --- Simplified Inline Formatting (No Nesting Handled Well) ---
+                // Apply formatting based on state might be more reliable for basic cases
+                // than complex recursive range management without start/end tracking.
+                // Let's comment out the recursive attempt for now and focus on getting *any* inline formatting.
+
+                case 'strong_close':
+                case 'em_close':
+                case 's_close':
+                     // These are handled by the state flags in the main loop (if we revert to that)
+                     // Or ignored if using the simplified recursive approach above.
+                     break;
+
+
+                case 'link_open':
+                    const href = token.attrGet('href');
+                    const linkText = token.children?.map((t: any) => t.content).join('') || ''; // Get text from children
+                    if (href && linkText) {
+                        const linkStart = range.Start;
+                        range.Text = linkText; // Insert link text
+                        const linkEnd = range.End;
+                        formatRange = doc.Range(linkStart, linkEnd);
+                        try {
+                            // Ensure ScreenTip is a string, use linkText if title is missing
+                            const screenTip = token.attrGet('title') || linkText;
+                            doc.Hyperlinks.Add(formatRange, href, "", screenTip, linkText); // Use linkText for TextToDisplay
+                            logger.debug(`Applied hyperlink '${href}' to range(${linkStart}, ${linkEnd})`);
+                        } catch (linkError: any) {
+                            logger.error(`Error applying hyperlink: ${linkError.message}`);
+                        }
+                        range.Collapse(0); // Collapse after link insertion
+                    }
+                    break;
+                // link_close is implicitly handled
+
+                case 'code_inline':
+                    const codeStart = range.Start;
+                    range.Text = token.content;
+                    const codeEnd = range.End;
+                    formatRange = doc.Range(codeStart, codeEnd);
+                    formatRange.Font.Name = 'Consolas';
+                    logger.debug(`Applied code font to range(${codeStart}, ${codeEnd})`);
+                    range.Collapse(0); // Collapse after code insertion
+                    break;
+
+                case 'softbreak':
+                     range.InsertBreak(6); // wdLineBreak
+                     range.Collapse(0);
+                     break;
+
+                case 'hardbreak':
+                     range.InsertParagraph(); // Insert a paragraph break for hard breaks
+                     range.Collapse(0);
+                     break;
+
+                case 'image':
+                     const imgSrc = token.attrGet('src');
+                     const imgAlt = token.content || '';
+                     if (imgSrc) {
+                         let resolvedImgPath = imgSrc;
+                         if (!path.isAbsolute(imgSrc)) {
+                             resolvedImgPath = path.resolve(imgSrc); // Resolve relative to workspace for now
+                         }
+                         let inlineShape = null;
+                         try {
+                             inlineShape = range.InlineShapes.AddPicture(resolvedImgPath, false, true);
+                             if (imgAlt) inlineShape.AlternativeText = imgAlt;
+                             logger.debug(`Inserted image: ${resolvedImgPath}`);
+                             range.Collapse(0); // Collapse after image
+                         } catch (imgError: any) {
+                             logger.error(`Error inserting image '${resolvedImgPath}': ${imgError.message}`);
+                             range.Text = `[Image Error: ${imgAlt || imgSrc}]`;
+                             range.Collapse(0);
+                         } finally {
+                             if (inlineShape) releaseObject(inlineShape);
+                         }
+                     }
+                     break;
+
+                default:
+                    logger.debug(`Skipping inline token: ${token.type}`);
+                    break;
+            }
+        } catch (inlineError: any) {
+             logger.error(`Error processing inline token ${token.type}: ${inlineError.message}`);
+             // Attempt to recover by collapsing the range
+             try { range.Collapse(0); } catch {}
+        } finally {
+             if (formatRange) releaseObject(formatRange);
+        }
+    }
+}
+
+
+export async function applyMarkdownFormattingToWord(range: any, markdownText: string, wordApp: any, doc: any): Promise<void> {
+    logger.debug('Starting Markdown formatting for Word.');
 
     // Parse the Markdown text
     const tokens = md.parse(markdownText, {});
     logger.debug(`Parsed Markdown into ${tokens.length} tokens.`);
 
     let currentRange = range;
-    let listLevel = 0; // Track list nesting level
-    let blockquoteLevel = 0; // Track blockquote nesting level
-    let currentListType: 'bullet' | 'ordered' | null = null; // Track current list type
-    let isDefiningFootnote = false; // Track if currently processing footnote definition text
+    let listLevel = 0;
+    let blockquoteLevel = 0;
+    let currentListType: 'bullet' | 'ordered' | null = null;
+    let isTableActive = false;
+    let currentTableData: { type: string; content: string; colspan: number; rowspan: number }[][] = [];
+    let currentTableRow: { type: string; content: string; colspan: number; rowspan: number }[] = [];
+    // --- State flags for simple inline formatting (re-introduced as recursive was complex) ---
+    let isBoldActive = false;
+    let isItalicActive = false;
+    let isStrikeActive = false;
+    // --- End State flags ---
 
     for (let i = 0; i < tokens.length; i++) {
         const token = tokens[i];
-        logger.debug(`Processing token: ${token.type}`);
+        logger.debug(`Processing token: ${token.type} at range ${currentRange.Start}-${currentRange.End}`);
+        let paragraph = null; // Define outside switch for release in finally
+        let tempRange = null; // Define outside switch for release in finally
 
-        switch (token.type) {
-            case 'heading_open':
-                const headingLevel = parseInt(token.tag.substring(1), 10);
-                const headingTextToken = tokens[i + 1];
-                if (headingTextToken && headingTextToken.type === 'inline') {
-                    currentRange.Text = headingTextToken.content; // Insert text
-
-                    let headingParagraph = null;
-                    try {
-                        // Get the paragraph containing the inserted text *before* moving the range
-                        headingParagraph = currentRange.Paragraphs(1);
-                        if (headingParagraph) {
-                            try {
-                                headingParagraph.Style = `Heading ${headingLevel}`;
-                                logger.debug(`Applied style 'Heading ${headingLevel}' to paragraph ${headingParagraph.Range.Start}-${headingParagraph.Range.End}`);
-                            } catch (styleError: any) {
-                                logger.warn(`Could not apply style 'Heading ${headingLevel}': ${styleError.message}`);
-                            }
-                        } else {
-                             logger.warn('Could not get paragraph reference for heading styling.');
-                        }
-                    } catch (paraError: any) {
-                        logger.error(`Error getting paragraph for heading styling: ${paraError.message}`);
-                    } finally {
-                        if (headingParagraph) releaseObject(headingParagraph); // Release the paragraph object
-                    }
-
-                    // Now, insert the paragraph break *after* styling
-                    currentRange.Collapse(0); // Collapse to end of heading text
-                    currentRange.InsertParagraphAfter();
-                    currentRange.Collapse(0); // Collapse to the start of the new paragraph
-
-                    // Range is already positioned correctly after the collapse.
-                    i += 2; // Skip inline and heading_close
-                }
-                break;
-
-            case 'paragraph_open':
-                // List formatting is now handled in paragraph_close after content insertion.
-                // Content insertion is handled by the 'inline' token case
-                break;
-
-            case 'paragraph_close':
-                // Apply list or blockquote formatting *before* inserting the paragraph break
-                let currentParagraph = null;
-                try {
-                    // Get the paragraph that just received content
-                    currentParagraph = currentRange.Paragraphs(1);
-                    if (currentParagraph) {
-                        // Apply List Formatting if active
-                        if (listLevel > 0 && currentListType) {
-                            const listFormat = currentParagraph.Range.ListFormat;
-                            let listTemplate = null;
-                            try {
-                                const galleryType = currentListType === 'bullet' ? 1 : 2; // wdBulletGallery = 1, wdNumberGallery = 2
-                                listTemplate = wordApp.ListGalleries(galleryType).ListTemplates(1);
-                                if (listTemplate) {
-                                    // Apply list template (ContinuePreviousList=true, DefaultListBehavior=wdWord10ListBehavior=1, ApplyLevel=listLevel)
-                                    listFormat.ApplyListTemplateWithLevel(listTemplate, true, 1, listLevel);
-                                    logger.debug(`Applied ${currentListType} list format at level ${listLevel} to paragraph ${currentParagraph.Range.Start}-${currentParagraph.Range.End}`);
-                                } else {
-                                    logger.warn(`Could not retrieve list template for ${currentListType} list.`);
-                                }
-                            } catch (templateError: any) {
-                                logger.error(`Error getting/applying list template: ${templateError.message}`);
-                            } finally {
-                                if (listTemplate) releaseObject(listTemplate);
-                                releaseObject(listFormat);
-                            }
-                        }
-                        // Apply Blockquote Indentation if active
-                        else if (blockquoteLevel > 0) { // Use 'else if' to avoid applying both list and blockquote indent
-                            const indentPoints = blockquoteLevel * 36; // 0.5 inch per level
-                            currentParagraph.LeftIndent = indentPoints;
-                            logger.debug(`Applied blockquote indent level ${blockquoteLevel} (${indentPoints} points) to paragraph ${currentParagraph.Range.Start}-${currentParagraph.Range.End}`);
-                            // Optional: Apply a style like "Quote"
-                            // try { currentParagraph.Style = "Quote"; } catch (e) { logger.warn("Could not apply 'Quote' style."); }
-                        }
-                    } else {
-                         logger.warn('Could not get paragraph reference for list/blockquote formatting.');
-                    }
-                } catch (paraError: any) {
-                    logger.error(`Error getting paragraph for list/blockquote formatting: ${paraError.message}`);
-                } finally {
-                    if (currentParagraph) releaseObject(currentParagraph);
-                }
-
-                // Now, insert paragraph break after the inline content has been inserted and formatted
-                currentRange.InsertParagraphAfter();
-                currentRange.Collapse(0); // wdCollapseEnd
-
-                // Reset inline formatting states at the end of a paragraph block
-                isBoldActive = false;
-                isItalicActive = false;
-                isStrikeActive = false;
-                break;
-
-            case 'blockquote_open':
-                blockquoteLevel++;
-                logger.debug(`Blockquote open, level ${blockquoteLevel}`);
-                break;
-
-            case 'blockquote_close':
-                if (blockquoteLevel > 0) {
-                    blockquoteLevel--;
-                    logger.debug(`Blockquote close, level ${blockquoteLevel}`);
-                    // Indentation is applied in paragraph_close based on the level *before* the paragraph break
-                }
-                break;
-
-            case 'inline': // Handle actual text content and apply formatting
-                const textContent = token.content;
-                if (textContent) {
-                    const startPos = currentRange.Start;
-                    currentRange.Text = textContent; // Insert the text
-                    const endPos = currentRange.End; // Get end position *after* insertion
-
-                    if (startPos !== endPos) { // Only format if text was actually inserted
-                        let insertedRange = null;
+        try {
+            switch (token.type) {
+                case 'heading_open':
+                    const headingLevel = parseInt(token.tag.substring(1), 10);
+                    const headingTextToken = tokens[i + 1];
+                    if (headingTextToken && headingTextToken.type === 'inline') {
+                        // Apply inline formatting to the heading content first
+                        await applyInlineFormatting(currentRange, headingTextToken.children || [], doc);
+                        // Now apply the heading style to the paragraph containing the (now collapsed) range
+                        paragraph = currentRange.Paragraphs(1);
                         try {
-                            insertedRange = doc.Range(startPos, endPos); // Get the specific range of inserted text
-                            if (isBoldActive) {
-                                insertedRange.Font.Bold = true;
-                                logger.debug(`Applied bold to range(${startPos}, ${endPos})`);
-                            } else {
-                                // Explicitly turn off bold if not active, Word might inherit otherwise
-                                insertedRange.Font.Bold = false;
-                            }
-                            if (isItalicActive) {
-                                insertedRange.Font.Italic = true;
-                                logger.debug(`Applied italic to range(${startPos}, ${endPos})`);
-                            } else {
-                                // Explicitly turn off italic
-                                insertedRange.Font.Italic = false;
-                            }
-                            // Apply Strikethrough
-                            if (isStrikeActive) {
-                                insertedRange.Font.StrikeThrough = true; // Correct property name
-                                logger.debug(`Applied strikethrough to range(${startPos}, ${endPos})`);
-                            } else {
-                                insertedRange.Font.StrikeThrough = false;
-                            }
-                        } catch (formatError: any) {
-                            logger.error(`Error applying inline formatting to range(${startPos}, ${endPos}): ${formatError.message}`);
-                        } finally {
-                            if (insertedRange) releaseObject(insertedRange);
+                            paragraph.Style = `Heading ${headingLevel}`;
+                            logger.debug(`Applied style 'Heading ${headingLevel}' to paragraph at ${paragraph.Range.Start}`);
+                        } catch (styleError: any) {
+                            logger.warn(`Could not apply style 'Heading ${headingLevel}': ${styleError.message}`);
                         }
-                    }
-                    currentRange.Collapse(0); // Collapse to end, ready for next token
-                }
-                break;
-
-
-            case 'bullet_list_open':
-                listLevel++;
-                currentListType = 'bullet';
-                logger.debug(`Bullet list open, level ${listLevel}`);
-                break;
-
-            case 'ordered_list_open':
-                listLevel++;
-                currentListType = 'ordered';
-                logger.debug(`Ordered list open, level ${listLevel}`);
-                break;
-
-            case 'list_item_open':
-                // List item content is handled by paragraph_open and inline tokens
-                logger.debug(`List item open, level ${listLevel}`);
-                break;
-
-            case 'list_item_close':
-                 // Handled by paragraph_close applying formatting before break
-                 logger.debug(`List item close, level ${listLevel}`);
-                 break;
-
-            case 'bullet_list_close':
-            case 'ordered_list_close':
-                if (listLevel > 0) {
-                    listLevel--;
-                    logger.debug(`List closed, level now ${listLevel}`);
-                    if (listLevel === 0) {
-                        currentListType = null; // Reset type when back to top level
-                        logger.debug('Reset currentListType');
-                        // Optional: Apply Normal style to the paragraph following the list
-                        try {
-                            currentRange.Paragraphs(1).Style = "Normal";
-                        } catch(e) {
-                            logger.warn('Could not apply Normal style after list.');
-                        }
-                    }
-                }
-                break;
-
-            case 'strong_open': // Toggle bold state ON
-                isBoldActive = true;
-                logger.debug('Bold formatting state ON');
-                break;
-            case 'strong_close': // Toggle bold state OFF
-                isBoldActive = false;
-                logger.debug('Bold formatting state OFF');
-                break;
-
-            case 'em_open': // Toggle italic state ON
-                isItalicActive = true;
-                logger.debug('Italic formatting state ON');
-                break;
-            case 'em_close': // Toggle italic state OFF
-                isItalicActive = false;
-                logger.debug('Italic formatting state OFF');
-                break;
-
-            case 's_open': // Strikethrough open
-                isStrikeActive = true;
-                logger.debug('Strikethrough state ON');
-                break;
-            case 's_close': // Strikethrough close
-                isStrikeActive = false;
-                logger.debug('Strikethrough state OFF');
-                break;
-
-            case 'code_inline': // Handle inline code
-                const codeContent = token.content;
-                if (codeContent) {
-                    const startPos = currentRange.Start;
-                    currentRange.Text = codeContent; // Insert the code text
-                    const endPos = currentRange.End;
-
-                    if (startPos !== endPos) {
-                        let codeRange = null;
-                        try {
-                            codeRange = doc.Range(startPos, endPos);
-                            codeRange.Font.Name = "Consolas"; // Apply monospace font
-                            // Optional: Apply other formatting like background shading or a character style
-                            logger.debug(`Applied monospace font to inline code range(${startPos}, ${endPos})`);
-                        } catch (codeFormatError: any) {
-                            logger.error(`Error applying inline code formatting: ${codeFormatError.message}`);
-                        } finally {
-                            if (codeRange) releaseObject(codeRange);
-                        }
-                    }
-                    currentRange.Collapse(0); // Collapse to end
-                }
-                break;
-
-
-            case 'link_open':
-                currentLinkHref = token.attrGet('href');
-                if (currentLinkHref) {
-                    isLinkActive = true;
-                    currentLinkRanges = []; // Reset ranges for the new link
-                    logger.debug(`Link open: ${currentLinkHref}`);
-                } else {
-                    logger.warn('Link open token without href attribute.');
-                }
-                break;
-
-            case 'link_close':
-                if (isLinkActive && currentLinkHref && currentLinkRanges.length > 0) {
-                    // Determine the full range of the link text
-                    const linkStart = Math.min(...currentLinkRanges.map(r => r.start));
-                    const linkEnd = Math.max(...currentLinkRanges.map(r => r.end));
-
-                    if (linkStart < linkEnd) {
-                        let linkRange = null;
-                        try {
-                            linkRange = doc.Range(linkStart, linkEnd);
-                            doc.Hyperlinks.Add(linkRange, currentLinkHref, "", "", token.content); // Use token content for ScreenTip
-                            logger.debug(`Applied hyperlink '${currentLinkHref}' to range(${linkStart}, ${linkEnd})`);
-                        } catch (linkError: any) {
-                            logger.error(`Error applying hyperlink: ${linkError.message}`);
-                        } finally {
-                             // linkRange is implicitly released when used by Hyperlinks.Add? Check COM docs.
-                             // Let's release it to be safe if Add doesn't consume it.
-                             // if (linkRange) releaseObject(linkRange);
-                        }
-                    } else {
-                         logger.warn(`Could not determine valid range for link: ${currentLinkHref}`);
-                    }
-                } else {
-                     logger.warn(`Link close encountered without active link state or text ranges.`);
-                }
-                // Reset link state regardless of success
-                isLinkActive = false;
-                currentLinkHref = null;
-                currentLinkRanges = [];
-                logger.debug('Link close processed.');
-                break;
-
-            case 'image':
-                const imgSrc = token.attrGet('src');
-                const imgAlt = token.content || ''; // Alt text is the content of the image token
-                const imgTitle = token.attrGet('title') || ''; // Optional title attribute
-
-                if (imgSrc) {
-                    let resolvedImgPath = imgSrc;
-                    // Basic path resolution (assuming absolute or relative to workspace)
-                    // TODO: Enhance path resolution if markdown file path context is available
-                    if (!path.isAbsolute(imgSrc)) {
-                        // Assuming workspace root as base for relative paths for now
-                        resolvedImgPath = path.resolve(imgSrc);
-                        logger.debug(`Resolved relative image path '${imgSrc}' to '${resolvedImgPath}'`);
-                    }
-
-                    let inlineShape = null;
-                    try {
-                        // Insert the picture as an inline shape
-                        // LinkToFile = False, SaveWithDocument = True
-                        inlineShape = currentRange.InlineShapes.AddPicture(resolvedImgPath, false, true);
-
-                        if (inlineShape) {
-                            // Set Alt Text
-                            if (imgAlt) {
-                                inlineShape.AlternativeText = imgAlt;
-                            }
-                            // Optional: Set Title (Word doesn't have a direct 'title' property like HTML)
-                            // Could potentially add it to Description or elsewhere if needed.
-                            logger.debug(`Inserted image: ${resolvedImgPath} with alt text: "${imgAlt}"`);
-
-                            // Collapse range to be after the inserted shape
-                            currentRange.Collapse(0); // Collapse to the end of the range where the shape was inserted
-                        } else {
-                            logger.error(`Failed to insert image shape for: ${resolvedImgPath}`);
-                        }
-                    } catch (imgError: any) {
-                        logger.error(`Error inserting image '${resolvedImgPath}': ${imgError.message}`);
-                        // Optionally insert placeholder text on error
-                        currentRange.Text = `[Image Error: ${imgAlt || imgSrc}]`;
-                        currentRange.Collapse(0);
-                    } finally {
-                        if (inlineShape) releaseObject(inlineShape);
-                    }
-                } else {
-                    logger.warn('Image token encountered without src attribute.');
-                }
-                break;
-
-            case 'softbreak':
-                 currentRange.InsertBreak(6); // wdLineBreak
-                 currentRange.Collapse(0); // wdCollapseEnd
-                 break;
-
-            case 'hr':
-                // Insert an empty paragraph for the rule
-                currentRange.InsertParagraphAfter();
-                // Apply border to the *previous* paragraph (the one just inserted)
-                let hrParagraph = null;
-                try {
-                    // Go back to the paragraph just inserted
-                    hrParagraph = currentRange.Paragraphs(1); // Get the paragraph at the current range (which is after the inserted one)
-                    if (hrParagraph) {
-                        // Constants for borders (replace with actual values if available)
-                        const wdLineStyleSingle = 1;
-                        const wdLineWidth050pt = 4; // 0.5 points
-                        const wdColorAutomatic = -16777216; // Or specific color if needed
-
-                        // Apply bottom border
-                        const borders = hrParagraph.Borders;
-                        const bottomBorder = borders(-3); // wdBorderBottom = -3
-
-                        bottomBorder.LineStyle = wdLineStyleSingle;
-                        bottomBorder.LineWidth = wdLineWidth050pt;
-                        bottomBorder.Color = wdColorAutomatic;
-
-                        // Ensure other borders are off for this paragraph
-                        borders(-1).LineStyle = 0; // wdBorderTop = -1, wdLineStyleNone = 0
-                        borders(-2).LineStyle = 0; // wdBorderLeft = -2
-                        borders(-4).LineStyle = 0; // wdBorderRight = -4
-                        borders(-5).LineStyle = 0; // wdBorderHorizontal = -5
-                        borders(-6).LineStyle = 0; // wdBorderVertical = -6
-
-                        // Clear the text content of the paragraph if any was inherited
-                        hrParagraph.Range.Text = "";
-
-                        logger.debug('Applied horizontal rule (paragraph bottom border).');
-                        releaseObject(bottomBorder);
-                        releaseObject(borders);
-                    }
-                } catch (hrError: any) {
-                    logger.error(`Error applying horizontal rule border: ${hrError.message}`);
-                    // Fallback: Insert '---' if border fails
-                    currentRange.InsertBefore('---');
-                    currentRange.InsertParagraphAfter();
-                } finally {
-                    if (hrParagraph) releaseObject(hrParagraph);
-                }
-                // Ensure range is collapsed *after* the HR paragraph
-                currentRange.Collapse(0); // wdCollapseEnd
-                break;
-
-            case 'fence': // Handle fenced code blocks
-                const fenceContent = token.content;
-                if (fenceContent) {
-                    const startPos = currentRange.Start;
-                    // Insert the code content, preserving line breaks
-                    currentRange.Text = fenceContent;
-                    const endPos = currentRange.End;
-
-                    if (startPos !== endPos) {
-                        let codeBlockRange = null;
-                        try {
-                            codeBlockRange = doc.Range(startPos, endPos);
-                            codeBlockRange.Font.Name = "Consolas"; // Apply monospace font
-                            // Optional: Apply a specific style like "Code" or add borders/shading
-                            // codeBlockRange.Style = "Code";
-                            logger.debug(`Applied monospace font to code block range(${startPos}, ${endPos})`);
-                        } catch (codeBlockError: any) {
-                            logger.error(`Error applying code block formatting: ${codeBlockError.message}`);
-                        } finally {
-                            if (codeBlockRange) releaseObject(codeBlockRange);
-                        }
-                    }
-                    // Insert a paragraph break *after* the code block
-                    currentRange.Collapse(0); // Collapse to end of inserted text
-                    currentRange.InsertParagraphAfter();
-                    currentRange.Collapse(0); // Collapse to the start of the new paragraph
-                }
-                break;
-
-            // --- Table Handling ---
-            case 'table_open':
-                isTableActive = true;
-                currentTableData = [];
-                logger.debug('Table open');
-                break;
-
-            case 'thead_open':
-            case 'tbody_open':
-                // We don't need specific handling for thead/tbody for basic table creation
-                logger.debug(`Table section open: ${token.type}`);
-                break;
-
-            case 'tr_open':
-                currentTableRow = [];
-                logger.debug('Table row open');
-                break;
-
-            case 'th_open':
-            case 'td_open':
-                const cellType = token.type === 'th_open' ? 'th' : 'td';
-                let cellContent = '';
-                const cellCloseToken = cellType === 'th' ? 'th_close' : 'td_close';
-
-                // Loop forward to gather all inline content until the closing tag
-                let k = i + 1;
-                while (k < tokens.length && tokens[k].type !== cellCloseToken) {
-                    if (tokens[k].type === 'inline') {
-                        cellContent += tokens[k].content;
-                    } else if (tokens[k].type === 'softbreak') {
-                        // In Word tables, a softbreak might best be represented by a vertical tab (character 11)
-                        // or just ignored depending on desired table layout. Let's use VT for now.
-                        cellContent += String.fromCharCode(11); // Vertical Tab
-                    } else if (tokens[k].type === 'code_inline') {
-                         cellContent += tokens[k].content; // Treat inline code as text for now within tables
-                    }
-                    // Ignore formatting tokens like strong_open/close for now, just collect text content
-                    k++;
-                }
-
-                if (k < tokens.length) { // Found the closing tag
-                    currentTableRow.push({
-                        type: cellType,
-                        content: cellContent, // Store collected text content (trimming might remove leading/trailing spaces intended)
-                        colspan: 1,
-                        rowspan: 1,
-                    });
-                    logger.debug(`Table cell open (${cellType}): Collected content "${cellContent}"`);
-                    i = k; // Move the main loop index past the processed cell tokens and the close tag
-                } else {
-                    logger.error(`Could not find closing tag ${cellCloseToken} for ${token.type}`);
-                    currentTableRow.push({ type: cellType, content: '[Error: Unclosed Cell]', colspan: 1, rowspan: 1 });
-                    // Don't advance 'i' if closer wasn't found
-                }
-                break;
-            // th_close and td_close are handled by advancing 'i' = k
-
-            case 'tr_close':
-                if (currentTableRow.length > 0) {
-                    currentTableData.push(currentTableRow);
-                }
-                logger.debug('Table row close');
-                break;
-
-            case 'thead_close':
-            case 'tbody_close':
-                logger.debug(`Table section close: ${token.type}`);
-                break;
-
-            case 'table_close':
-                if (isTableActive && currentTableData.length > 0) {
-                    logger.debug('Table close. Creating Word table.');
-                    try {
-                        // Use existing helper, as it handles the simple structure correctly
-                        await createWordTableFromData(currentRange, currentTableData, wordApp);
-                        // Move range past the inserted table - createWordTableFromData doesn't return the new range
-                        // We need to collapse and insert a paragraph after
-                        currentRange.Collapse(0); // Collapse to end of table range
-                        currentRange.InsertParagraphAfter(); // Add paragraph break after table
-                        currentRange.Collapse(0); // Move to start of new paragraph
-                        logger.debug('Word table created successfully.');
-                    } catch (tableError: any) {
-                        logger.error(`Error creating Word table from Markdown: ${tableError.message}`);
-                        // Insert placeholder on error
-                        currentRange.Text = `[Table Creation Error: ${tableError.message}]\n`;
-                        currentRange.Collapse(0);
-                    }
-                } else {
-                     logger.warn('Table close encountered without active table state or data.');
-                }
-                // Reset table state
-                isTableActive = false;
-                currentTableData = [];
-                currentTableRow = [];
-                break;
-            // --- End Table Handling ---
-
-
-            case 'html_block':
-            case 'html_inline':
-                // Handle HTML content, specifically tables
-                if (token.content.includes('<table')) {
-                    logger.debug('Detected HTML table. Parsing and creating Word table.');
-                    try {
-                        const tableData = parseHtmlTable(token.content);
-                        if (tableData.length > 0) {
-                            await createWordTableFromData(currentRange, tableData, wordApp);
-                            // After inserting the table, move the range past the table
-                            currentRange.Collapse(0); // wdCollapseEnd
-                            currentRange.InsertParagraphAfter(); // Add a paragraph after the table
-                            currentRange.Collapse(0); // wdCollapseEnd
-                        }
-                    } catch (error: any) {
-                        logger.error(`Error processing HTML table: ${error.message}`);
-                        // Optionally insert the raw HTML as text if parsing fails
-                        currentRange.Text = token.content;
-                        currentRange.Collapse(0); // wdCollapseEnd
+                        // Insert paragraph break *after* styling
                         currentRange.InsertParagraphAfter();
-                        currentRange.Collapse(0); // wdCollapseEnd
+                        currentRange.Collapse(0);
+                        i += 2; // Skip inline and heading_close
                     }
-                } else {
-                    // For other HTML, just insert as text for now
-                    currentRange.Text = token.content;
-                    currentRange.Collapse(0); // wdCollapseEnd
+                    break;
+
+                case 'paragraph_open':
+                    // Handled by inline and paragraph_close
+                    break;
+
+                case 'paragraph_close':
+                    // Apply list/blockquote formatting to the paragraph *before* the break
+                    paragraph = currentRange.Paragraphs(1); // Get the paragraph at the current range (should contain content)
+                    if (listLevel > 0 && currentListType) {
+                        const listFormat = paragraph.Range.ListFormat;
+                        let listTemplate = null;
+                        try {
+                            const galleryType = currentListType === 'bullet' ? 1 : 2;
+                            listTemplate = wordApp.ListGalleries(galleryType).ListTemplates(1);
+                            listFormat.ApplyListTemplateWithLevel(listTemplate, true, 1, listLevel);
+                            logger.debug(`Applied ${currentListType} list format at level ${listLevel} to paragraph ${paragraph.Range.Start}`);
+                        } catch (templateError: any) {
+                            logger.error(`Error applying list template: ${templateError.message}`);
+                        } finally {
+                            if (listTemplate) releaseObject(listTemplate);
+                            releaseObject(listFormat);
+                        }
+                    } else if (blockquoteLevel > 0) {
+                        paragraph.LeftIndent = blockquoteLevel * 36;
+                        logger.debug(`Applied blockquote indent level ${blockquoteLevel} to paragraph ${paragraph.Range.Start}`);
+                    }
+                    // Insert the paragraph break
                     currentRange.InsertParagraphAfter();
-                    currentRange.Collapse(0); // wdCollapseEnd
-                }
-                break;
-
-            // --- Footnote Handling (Simplified) ---
-            case 'footnote_ref':
-                // Insert the footnote reference marker at the current position
-                try {
-                    // The Reference parameter is optional; Word handles numbering automatically.
-                    // We might use token.meta.id or token.meta.label if needed for specific linking later.
-                    const footnote = doc.Footnotes.Add(currentRange, ""); // Add footnote at current range
-                    // Footnote text needs to be handled separately where definitions appear
-                    logger.debug(`Inserted footnote reference (ID: ${token.meta.id}, Label: ${token.meta.label})`);
-                    // Collapse range *after* the inserted footnote reference
-                    currentRange.Collapse(0); // wdCollapseEnd
-                    releaseObject(footnote);
-                } catch (fnError: any) {
-                    logger.error(`Error inserting footnote reference: ${fnError.message}`);
-                    currentRange.Text = `[Footnote Ref Error: ${token.meta.label}]`; // Insert placeholder on error
                     currentRange.Collapse(0);
-                }
-                break;
+                    // Reset inline states after paragraph
+                    isBoldActive = false;
+                    isItalicActive = false;
+                    isStrikeActive = false;
+                    break;
 
-            case 'footnote_block_open':
-                // Optional: Insert a separator before footnote definitions
-                currentRange.InsertParagraphAfter();
-                currentRange.InsertBefore("--- Footnotes ---");
-                currentRange.InsertParagraphAfter();
-                currentRange.Collapse(0);
-                logger.debug("Footnote block open");
-                break;
+                case 'blockquote_open':
+                    blockquoteLevel++;
+                    break;
 
-            case 'footnote_open':
-                isDefiningFootnote = true;
-                // Insert the footnote label (e.g., "[1]: ") as regular text
-                currentRange.InsertBefore(`[${token.meta.label}]: `);
-                currentRange.Collapse(0); // Collapse after the label
-                logger.debug(`Footnote definition open: ${token.meta.label}`);
-                break;
+                case 'blockquote_close':
+                    if (blockquoteLevel > 0) blockquoteLevel--;
+                    break;
 
-            // paragraph_open, inline, text tokens inside footnotes will be handled normally,
-            // appending text after the label inserted by footnote_open.
+                case 'inline':
+                     // --- Re-applying state-based inline formatting ---
+                     tempRange = currentRange.Duplicate; // Work on a copy
+                     const inlineStart = tempRange.Start;
+                     await applyInlineFormatting(tempRange, token.children || [], doc);
+                     const inlineEnd = tempRange.End;
 
-            case 'footnote_close':
-                isDefiningFootnote = false;
-                logger.debug(`Footnote definition close: ${token.meta.label}`);
-                // The paragraph_close following this will add the paragraph break.
-                break;
+                     if (inlineStart < inlineEnd) {
+                         let formatRange = null;
+                         try {
+                             formatRange = doc.Range(inlineStart, inlineEnd);
+                             if (isBoldActive) formatRange.Font.Bold = true; else formatRange.Font.Bold = false;
+                             if (isItalicActive) formatRange.Font.Italic = true; else formatRange.Font.Italic = false;
+                             if (isStrikeActive) formatRange.Font.StrikeThrough = true; else formatRange.Font.StrikeThrough = false;
+                             logger.debug(`Applied state-based formatting to inline range ${inlineStart}-${inlineEnd}`);
+                         } catch (fmtError: any) {
+                              logger.error(`Error applying state-based format: ${fmtError.message}`);
+                         } finally {
+                              if (formatRange) releaseObject(formatRange);
+                         }
+                     }
+                     // Update main range to the end of the processed inline content
+                     currentRange.SetRange(inlineEnd, inlineEnd);
+                     currentRange.Collapse(0);
+                     // --- End state-based inline formatting ---
+                    break;
 
-            case 'footnote_block_close':
-                logger.debug("Footnote block close");
-                // Optional: Add extra space after footnotes
-                currentRange.InsertParagraphAfter();
-                currentRange.Collapse(0);
-                break;
-            // --- End Footnote Handling ---
+                 // --- Inline state toggles ---
+                 case 'strong_open': isBoldActive = true; break;
+                 case 'strong_close': isBoldActive = false; break;
+                 case 'em_open': isItalicActive = true; break;
+                 case 'em_close': isItalicActive = false; break;
+                 case 's_open': isStrikeActive = true; break;
+                 case 's_close': isStrikeActive = false; break;
+                 // --- End Inline state toggles ---
+
+                case 'bullet_list_open':
+                    listLevel++;
+                    currentListType = 'bullet';
+                    break;
+
+                case 'ordered_list_open':
+                    listLevel++;
+                    currentListType = 'ordered';
+                    break;
+
+                case 'list_item_open':
+                    // Logic moved to paragraph_close
+                    break;
+
+                case 'list_item_close':
+                    // Logic moved to paragraph_close
+                    break;
+
+                case 'bullet_list_close':
+                case 'ordered_list_close':
+                    if (listLevel > 0) {
+                        listLevel--;
+                        if (listLevel === 0) {
+                            currentListType = null;
+                            // Apply Normal style to paragraph *after* the list (the current one)
+                            try {
+                                paragraph = currentRange.Paragraphs(1);
+                                paragraph.Style = 'Normal';
+                                logger.debug(`Applied Normal style after list to paragraph ${paragraph.Range.Start}`);
+                            } catch (e: any) {
+                                logger.warn(`Could not apply Normal style after list: ${e.message}`);
+                            }
+                        }
+                    }
+                    break;
+
+                case 'table_open':
+                    isTableActive = true;
+                    currentTableData = [];
+                    logger.debug('Table open');
+                    break;
+
+                case 'thead_open': // Track header state for potential styling
+                case 'tbody_open':
+                    logger.debug(`Table section open: ${token.type}`);
+                    break;
+
+                case 'tr_open':
+                    currentTableRow = [];
+                    logger.debug('Table row open');
+                    break;
+
+                case 'th_open':
+                case 'td_open':
+                    const cellType = token.type === 'th_open' ? 'th' : 'td';
+                    let cellContent = '';
+                    const cellCloseToken = cellType === 'th' ? 'th_close' : 'td_close';
+                    let k = i + 1;
+                    let cellTokens = []; // Collect tokens within the cell for potential inline formatting later
+
+                    while (k < tokens.length && tokens[k].type !== cellCloseToken) {
+                         // Collect child tokens for potential future inline processing within cells
+                         if (tokens[k].type === 'inline') {
+                              if (tokens[k].children) { // Check if children is not null
+                                   cellTokens.push(...tokens[k].children!); // Use non-null assertion
+                              }
+                              // For now, still collect plain text content
+                              cellContent += tokens[k].content;
+                         } else if (tokens[k].type === 'text') { // Handle plain text directly within cell
+                              cellTokens.push(tokens[k]);
+                              cellContent += tokens[k].content;
+                         } else if (tokens[k].type === 'softbreak') {
+                              cellTokens.push(tokens[k]);
+                              cellContent += String.fromCharCode(11); // Vertical Tab
+                         } else if (tokens[k].type === 'code_inline') {
+                              cellTokens.push(tokens[k]);
+                              cellContent += tokens[k].content;
+                         } else {
+                              // Store other tokens if needed later
+                              cellTokens.push(tokens[k]);
+                         }
+                        k++;
+                    }
+
+                    if (k < tokens.length) { // Found the closing tag
+                        currentTableRow.push({
+                            type: cellType,
+                            content: cellContent, // Use collected plain text for now
+                            colspan: 1, // Basic markdown tables don't have colspan/rowspan from parser
+                            rowspan: 1,
+                            // TODO: Store cellTokens if inline formatting within cells is implemented
+                        });
+                        logger.debug(`Table cell open (${cellType}): Collected content "${cellContent}"`);
+                        i = k; // Move the main loop index past the processed cell tokens and the close tag
+                    } else {
+                        logger.error(`Could not find closing tag ${cellCloseToken} for ${token.type}`);
+                        currentTableRow.push({ type: cellType, content: '[Error: Unclosed Cell]', colspan: 1, rowspan: 1 });
+                    }
+                    break;
+                // th_close and td_close are handled by advancing 'i' = k
+
+                case 'tr_close':
+                    if (currentTableRow.length > 0) {
+                        currentTableData.push(currentTableRow);
+                    }
+                    logger.debug('Table row close');
+                    break;
+
+                case 'thead_close':
+                case 'tbody_close':
+                     logger.debug(`Table section close: ${token.type}`);
+                     break;
+
+                case 'table_close':
+                    if (isTableActive && currentTableData.length > 0) {
+                        logger.debug('Table close. Creating Word table.');
+                        // Use a temporary range to insert the table, then update currentRange
+                        tempRange = currentRange.Duplicate;
+                        await createWordTableFromData(tempRange, currentTableData, wordApp);
+                        // createWordTableFromData should now move the range it was given (tempRange)
+                        currentRange.SetRange(tempRange.Start, tempRange.End); // Update main range
+                        currentRange.Collapse(0);
+                        // Insert paragraph after table to ensure separation
+                        currentRange.InsertParagraphAfter();
+                        currentRange.Collapse(0);
+                        logger.debug(`Word table created. Range at ${currentRange.Start}`);
+                    } else {
+                         logger.warn('Table close encountered without active table state or data.');
+                    }
+                    // Reset table state
+                    isTableActive = false;
+                    currentTableData = [];
+                    currentTableRow = [];
+                    break;
+
+                case 'fence': // Fenced code blocks
+                     paragraph = currentRange.Paragraphs(1);
+                     paragraph.Range.Text = token.content; // Insert content into current paragraph
+                     paragraph.Range.Font.Name = 'Consolas'; // Apply font
+                     // Optional: Apply a specific "Code" style if it exists
+                     // try { paragraph.Style = "Code"; } catch(e) { logger.warn("Code style not found"); }
+                     logger.debug(`Applied code block formatting to paragraph ${paragraph.Range.Start}`);
+                     // Insert paragraph break *after* this one
+                     currentRange.InsertParagraphAfter();
+                     currentRange.Collapse(0); // Move to the start of the new paragraph
+                     break;
+
+                case 'hr': // Horizontal Rule
+                     paragraph = currentRange.Paragraphs(1);
+                     // Apply border to the *current* paragraph, then insert a new one after
+                     const borders = paragraph.Borders;
+                     const bottomBorder = borders(-3); // wdBorderBottom
+                     try {
+                         bottomBorder.LineStyle = 1; // wdLineStyleSingle
+                         bottomBorder.LineWidth = 4; // wdLineWidth050pt
+                         bottomBorder.Color = -16777216; // wdColorAutomatic
+                         // Ensure other borders are off
+                         borders(-1).LineStyle = 0; borders(-2).LineStyle = 0; borders(-4).LineStyle = 0;
+                         paragraph.Range.Text = ''; // Clear any text
+                         logger.debug(`Applied horizontal rule to paragraph ${paragraph.Range.Start}`);
+                     } catch (hrError: any) {
+                          logger.error(`Error applying HR border: ${hrError.message}`);
+                          paragraph.Range.Text = '---'; // Fallback
+                     } finally {
+                          releaseObject(bottomBorder);
+                          releaseObject(borders);
+                     }
+                     currentRange.InsertParagraphAfter();
+                     currentRange.Collapse(0);
+                     break;
+
+                // --- Footnote Handling ---
+                case 'footnote_ref':
+                    let footnote = null;
+                    try {
+                        // Add footnote at current range, Word handles numbering
+                        footnote = doc.Footnotes.Add(currentRange, "");
+                        logger.debug(`Inserted footnote reference (ID: ${token.meta.id}, Label: ${token.meta.label}) at ${currentRange.Start}`);
+                        // Range is automatically collapsed after footnote insertion by Word
+                    } catch (fnError: any) {
+                        logger.error(`Error inserting footnote reference: ${fnError.message}`);
+                        currentRange.Text = `[Footnote Ref Error: ${token.meta.label}]`;
+                        currentRange.Collapse(0);
+                    } finally {
+                         if (footnote) releaseObject(footnote);
+                    }
+                    break;
+
+                case 'footnote_block_open':
+                    // Usually handled implicitly by Word placing footnotes at end
+                    logger.debug("Footnote block open (ignored by current logic)");
+                    break;
+
+                case 'footnote_open':
+                    // The actual footnote text needs to be added to the footnote object created by footnote_ref.
+                    // This requires matching the ref ID/label to the footnote object.
+                    // This is complex and not fully implemented here.
+                    // Current simplified approach: Skip footnote definition blocks.
+                    logger.warn(`Skipping footnote definition block for label: ${token.meta.label}. Manual insertion needed.`);
+                    // Skip tokens until footnote_block_close
+                    let j = i + 1;
+                    while (j < tokens.length && tokens[j].type !== 'footnote_block_close') {
+                        j++;
+                    }
+                    i = j; // Advance main loop index
+                    break;
+
+                case 'footnote_close': // Should be skipped by footnote_open logic
+                case 'footnote_block_close': // Should be skipped by footnote_open logic
+                     logger.debug(`Skipping potentially orphaned footnote token: ${token.type}`);
+                     break;
+                // --- End Footnote Handling ---
 
 
-            default:
-                logger.debug(`Skipping unhandled token type: ${token.type}`);
-                break;
+                default:
+                    logger.debug(`Skipping unhandled token type: ${token.type}`);
+                    break;
+            }
+        } catch (loopError: any) {
+             logger.error(`Error processing token ${token.type} at index ${i}: ${loopError.message}. Attempting to continue.`);
+             // Attempt to recover by collapsing the range to the end
+             try { currentRange.Collapse(0); } catch {}
+        } finally {
+             // Release objects created within the loop iteration
+             if (paragraph) releaseObject(paragraph);
+             if (tempRange) releaseObject(tempRange);
         }
     }
 
     logger.debug('Finished Markdown formatting for Word.');
 }
-
-// Note: This utility currently focuses on Word. Adapting for Excel and PowerPoint
-// will require separate functions or significant conditional logic due to different COM APIs.
