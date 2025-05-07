@@ -1,14 +1,22 @@
+import { jest, describe, expect, test, beforeEach } from '@jest/globals';
 import { generalParseTextTool } from '../../../src/tools/office/generalParseText.tool';
 import officeparser from 'officeparser';
 import fs from 'fs-extra';
 import { ZodError } from 'zod';
 
 // Mock dependencies
+// Mock dependencies
 jest.mock('officeparser');
 jest.mock('fs-extra');
 
-const mockParseOfficeAsync = officeparser.parseOfficeAsync as jest.Mock;
-const mockPathExists = fs.pathExists as jest.Mock;
+// Use jest.fn() directly for mocks
+const mockParseOfficeAsync = jest.fn();
+const mockPathExists = jest.fn();
+
+// Assign the mocks to the original functions (using unknown to bypass type checking here)
+(officeparser.parseOfficeAsync as unknown) = mockParseOfficeAsync;
+(fs.pathExists as unknown) = mockPathExists;
+
 
 describe('generalParseTextTool', () => {
   const { handler, schema } = generalParseTextTool;

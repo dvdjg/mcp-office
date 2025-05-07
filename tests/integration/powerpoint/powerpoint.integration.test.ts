@@ -1,3 +1,8 @@
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import fetch from 'node-fetch'; // Assuming node-fetch is available for making HTTP requests

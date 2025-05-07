@@ -16,7 +16,8 @@
       "@/*": ["src/*"] // Example path mapping
     },
     "sourceMap": true, // Generate source maps for debugging
-    "declaration": true // Generate .d.ts files
+    "declaration": true, // Generate .d.ts files
+    "isolatedModules": true // Recommended by ts-jest for NodeNext module kind
   },
   "include": ["src/**/*"], // Include all files in src
   "exclude": ["node_modules", "dist", "tests"] // Exclude unnecessary directories

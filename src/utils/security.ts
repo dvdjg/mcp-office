@@ -63,7 +63,15 @@ if (allowedFsPathsEnv === 'none') {
  * @returns The resolved, absolute path if valid.
  * @throws {Error} An error if file system access is disabled, the path is invalid, or outside allowed directories when restrictions are in place.
  */
-export function validateFilePath(filePath: string): string {
+/**
+ * Validates if a given file path is within the allowed base directories.
+ * Prevents directory traversal attacks.
+ * @param filePath - The absolute or relative file path to validate.
+ * @param allowedBasePathsOverride - Optional array of base paths to use instead of the global ALLOWED_BASE_PATHS (primarily for testing).
+ * @returns The resolved, absolute path if valid.
+ * @throws {Error} An error if file system access is disabled, the path is invalid, or outside allowed directories.
+ */
+export function validateFilePath(filePath: string, allowedBasePathsOverride?: string[]): string {
     // If file system access is globally disabled, throw an error immediately.
     if (!isFsAccessAllowed) {
         throw new Error(`File system access is disabled. Path '${filePath}' cannot be accessed.`);
@@ -72,14 +80,20 @@ export function validateFilePath(filePath: string): string {
     // Resolve the input path to get a canonical absolute path
     const resolvedInputPath = resolvePath(resolveHome(filePath));
 
-    // If ALLOWED_BASE_PATHS is empty, it means no restrictions are in place (ALLOWED_FS_PATHS was not set or empty string),
-    // so any path is considered allowed.
-    if (ALLOWED_BASE_PATHS.length === 0) {
+    // Determine which set of allowed paths to use
+    const effectiveAllowedPaths = allowedBasePathsOverride ?? ALLOWED_BASE_PATHS;
+
+    // If the effective list is empty, it means no restrictions are in place
+    if (effectiveAllowedPaths.length === 0) {
+        // Log a warning if using the global list and it's empty (meaning ALLOWED_FS_PATHS wasn't set)
+        if (!allowedBasePathsOverride) {
+             logger.warn(`[Security] validateFilePath called without override and global ALLOWED_BASE_PATHS is empty. Allowing path: ${resolvedInputPath}`);
+        }
         return resolvedInputPath; // Return the resolved path as it's allowed
     }
 
-    // If ALLOWED_BASE_PATHS is not empty, validate against the list.
-    const isAllowed = ALLOWED_BASE_PATHS.some(basePath => {
+    // If effectiveAllowedPaths is not empty, validate against the list.
+    const isAllowed = effectiveAllowedPaths.some(basePath => {
         // Check if the resolved input path starts with the allowed base path.
         // This is more robust than path.relative for checking containment.
         // Ensure basePath ends with a separator to avoid partial matches

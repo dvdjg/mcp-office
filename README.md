@@ -30,9 +30,51 @@ Get started in minutes:
    ```
 
 3. **Run the Server**:
+
+   The server can be run in several ways:
+
+   **a) Standard Start (Network Mode for Tests/Remote Access):**
+   By default, if no port is specified, the server starts in STDIO mode. To run it on `http://localhost:3000` (which disables FS tools, a consideration for tests relying on them), set the `OFFICE_MCP_PORT` environment variable:
+
+   *Nix & macOS:*
    ```bash
-   npm start
+   OFFICE_MCP_PORT=3000 npm start
    ```
+
+   *Windows (Command Prompt):*
+   ```bash
+   set OFFICE_MCP_PORT=3000 && npm start
+   ```
+
+   *Windows (PowerShell):*
+   ```bash
+   $env:OFFICE_MCP_PORT="3000"; npm start
+   ```
+   This uses the compiled output in `dist/server/index.js`.
+
+   **b) Development Mode with `fastmcp dev` (using `mcp-cli`):**
+   For interactive testing and debugging in your terminal during development, you can use `fastmcp dev`. This command runs your server with `mcp-cli`, allowing you to directly interact with it. It's excellent for quickly testing tools and seeing live responses.
+
+   *Using the compiled JavaScript output:*
+   ```bash
+   npx fastmcp dev dist/server/index.js
+   ```
+   *Or, directly with the TypeScript source (requires `tsx` or similar to be available if not handled by `fastmcp` internally for `.ts` files):*
+   ```bash
+   npx fastmcp dev src/server/index.ts
+   ```
+   *(Note: The `INSTALLATION_AND_API.md` refers to `dist/server/index.js` for `fastmcp dev`)*
+
+   **c) Inspecting with `MCP Inspector`:**
+   To inspect your server's capabilities (tools, resources, prompts) with a Web UI, use `fastmcp inspect`. This is very useful for understanding what the server offers and for debugging definitions.
+
+   *Typically, you inspect the source file where tools are aggregated or the main server file:*
+   ```bash
+   npx fastmcp inspect src/server/index.ts
+   ```
+   *(Note: The `INSTALLATION_AND_API.md` refers to `src/tools/index.ts` for inspection, which might be more focused if that's where all tool definitions are centralized. We'll use `src/server/index.ts` for broader inspection unless `src/tools/index.ts` is confirmed as the primary definition point for all MCP elements.)*
+
+   You can also use `npm run dev` for development with automatic recompilation and server restart on file changes.
 
 Try listing Word styles:
 ```bash

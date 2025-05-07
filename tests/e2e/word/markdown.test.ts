@@ -1,6 +1,10 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
 import fetch from 'node-fetch'; // Assuming node-fetch is available for making HTTP requests
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const MCP_SERVER_URL = 'http://localhost:3000'; // Adjust if your server runs elsewhere
 const TEMP_DIR = path.join(__dirname, '../temp_word_markdown_dir');
