@@ -8,7 +8,7 @@
  * @license MIT
  */
 import { z } from 'zod';
-import { McpResource, ToolRequestParams } from '../../types/common.types';
+import { McpResource, ToolRequestParams, ApiResponse } from '../../types/common.types';
 import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
 import { saveResource } from '../dynamic/resources.tool'; // Import saveResource
 import * as fs from 'fs-extra'; // Import fs to read the Excel file
@@ -44,12 +44,24 @@ export const excelWorksheetsTool: McpResource[] = [{
   path: 'excel/worksheets', // Add the tool path
   description: 'Manages worksheets in Excel files.',
   schema: ExcelWorksheetsInputSchema, // Change inputSchema to schema
-  handler: async (params: ToolRequestParams) => { // Type params
-    const { filePath, operation, sheetName, newSheetName, sheetIndex, beforeSheet, afterSheet, useComInterop } = params as ExcelWorksheetsInput; // Cast params
-    let resultData: string | object = ''; // Use a more flexible type for the result
+  handler: async (params: ToolRequestParams): Promise<ApiResponse<any>> => {
+    let input: ExcelWorksheetsInput;
+    try {
+      input = ExcelWorksheetsInputSchema.parse(params);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return { success: false, error: { code: 'VALIDATION_ERROR', message: 'Input validation failed', details: error.errors } };
+      }
+      return { success: false, error: { code: 'UNEXPECTED_PARSING_ERROR', message: `An unexpected error occurred during input parsing: ${error.message}` } };
+    }
 
-    if (useComInterop) {
-      let excelApp: any;
+    const { filePath, operation, sheetName, newSheetName, sheetIndex, beforeSheet, afterSheet, useComInterop } = input;
+    let resultData: string | object = '';
+    const absoluteFilePath = path.resolve(filePath); // Define absoluteFilePath
+
+    try { // Outer try for the whole handler logic
+      if (useComInterop) {
+        let excelApp: any;
       let workbook: any;
       let sheets: any;
       let sheet: any;
@@ -59,15 +71,15 @@ export const excelWorksheetsTool: McpResource[] = [{
 
         try {
           // Attempt to open the existing workbook
-          workbook = excelApp.Workbooks.Open(filePath);
+          workbook = excelApp.Workbooks.Open(absoluteFilePath); // Use absoluteFilePath
         } catch (error: any) {
           // If it doesn't exist, create a new one (only for the 'add' operation)
           if (operation === 'add') {
             workbook = excelApp.Workbooks.Add();
             // Save the new workbook immediately to be able to add sheets
-            workbook.SaveAs(filePath);
+            workbook.SaveAs(absoluteFilePath); // Use absoluteFilePath
           } else {
-            throw new Error(`The Excel file was not found at the specified path: ${filePath}`);
+            throw new Error(`File not found: ${absoluteFilePath}`);
           }
         }
 
@@ -177,16 +189,9 @@ export const excelWorksheetsTool: McpResource[] = [{
         workbook.Save();
         workbook.Close();
 
-      } catch (error: any) {
-        console.error('Error in excel/worksheets tool (COM Interop):', error);
-        return {
-          success: false,
-          error: {
-            code: 'EXCEL_WORKSHEETS_COM_ERROR',
-            message: error.message || 'An error occurred while managing Excel worksheets using COM Interop.',
-            details: { filePath, operation, sheetName, sheetIndex }
-          }
-        };
+      } catch (comError: any) { // Specific catch for COM block
+        // console.error('Error in excel/worksheets tool (COM Interop):', comError); // console.error removed
+        throw comError; // Re-throw to be caught by outer try-catch
       } finally {
         // Release COM objects
         if (sheet) releaseObject(sheet);
@@ -197,12 +202,12 @@ export const excelWorksheetsTool: McpResource[] = [{
     } else {
       // Use exceljs
       const excelWorkbook = new ExcelJS.Workbook();
-      try {
-        const fileExists = await fs.pathExists(filePath);
+      // try { // Inner try for exceljs specific logic, will be caught by outer handler try
+        const fileExists = await fs.pathExists(absoluteFilePath); // Use absoluteFilePath
         if (fileExists) {
-          await excelWorkbook.xlsx.readFile(filePath);
+          await excelWorkbook.xlsx.readFile(absoluteFilePath); // Use absoluteFilePath
         } else if (operation !== 'add') {
-          throw new Error(`The Excel file was not found at the specified path: ${filePath}`);
+          throw new Error(`File not found: ${absoluteFilePath}`);
         }
         // If operation is 'add' and file doesn't exist, a new workbook is already instantiated.
 
@@ -252,7 +257,8 @@ export const excelWorksheetsTool: McpResource[] = [{
               excelWorkbook.removeWorksheet(sheetToDelete.id); // Use id to remove
               resultData = { message: `Sheet '${deletedSheetNameActual}' (identified by ${sheetName ? `name '${sheetName}'` : `index ${sheetIndex}`}) deleted successfully using exceljs.` };
             } else {
-              throw new Error(`Sheet not found with name '${sheetName}' or index ${sheetIndex}.`);
+              const id = sheetName ? `'${sheetName}'` : `index ${sheetIndex}`;
+              throw new Error(`Sheet ${id} not found.`);
             }
             break;
           }
@@ -277,30 +283,26 @@ export const excelWorksheetsTool: McpResource[] = [{
               sheetToRename.name = newSheetName;
               resultData = { message: `Sheet '${oldSheetNameActual}' renamed to '${newSheetName}' successfully using exceljs.` };
             } else {
-              throw new Error(`Sheet not found with name '${sheetName}' or index ${sheetIndex}.`);
+              const id = sheetName ? `'${sheetName}'` : `index ${sheetIndex}`;
+              throw new Error(`Sheet ${id} not found.`);
             }
             break;
           }
           case 'set': {
-            // 'Set active' in exceljs means setting the view properties for when the file is opened.
             if (!sheetName && sheetIndex === undefined) {
               throw new Error('sheetName or sheetIndex is required for the set operation.');
             }
             let sheetToActivate: ExcelJS.Worksheet | undefined;
-            let identifier: string | number = '';
 
             if (sheetName) {
               sheetToActivate = excelWorkbook.getWorksheet(sheetName);
-              identifier = sheetName;
             } else if (sheetIndex !== undefined) {
               if (sheetIndex > 0 && sheetIndex <= excelWorkbook.worksheets.length) {
                 sheetToActivate = excelWorkbook.worksheets[sheetIndex - 1]; // Adjust to 0-based
-                identifier = sheetIndex;
               }
             }
 
             if (sheetToActivate) {
-              // Set this sheet as the active one in the workbook's view properties
               const sheetIndexInWorkbook = excelWorkbook.worksheets.indexOf(sheetToActivate);
               if (sheetIndexInWorkbook !== -1) {
                 excelWorkbook.views = [
@@ -312,39 +314,28 @@ export const excelWorksheetsTool: McpResource[] = [{
               }
               resultData = { message: `Sheet '${sheetToActivate.name}' (identified by ${sheetName ? `name '${sheetName}'` : `index ${sheetIndex}`}) set as active (view) successfully using exceljs.` };
             } else {
-              throw new Error(`Sheet not found with name '${sheetName}' or index ${sheetIndex}.`);
+              const id = sheetName ? `'${sheetName}'` : `index ${sheetIndex}`;
+              throw new Error(`Sheet ${id} not found.`);
             }
             break;
           }
           default:
             throw new Error(`Unsupported operation: ${operation}`);
         }
-        await excelWorkbook.xlsx.writeFile(filePath);
-      } catch (error: any) {
-        console.error('Error in excel/worksheets tool (exceljs):', error);
-        return {
-          success: false,
-          error: {
-            code: 'EXCEL_WORKSHEETS_EXCELJS_ERROR',
-            message: error.message || 'An error occurred while managing Excel worksheets using exceljs.',
-            details: { filePath, operation, sheetName, sheetIndex }
-          }
-        };
-      }
-    }
+        await excelWorkbook.xlsx.writeFile(absoluteFilePath); // Use absoluteFilePath
+      // } catch (exceljsError: any) { // Inner try for exceljs specific logic
+      //   throw exceljsError; // Re-throw to be caught by outer try-catch
+      // } // End of inner try for exceljs specific logic
+    } // End of if-else for COM/exceljs
 
     // Save the modified Excel file as a dynamic resource
-    // Only if the operation modified the file (add, delete, rename)
     // This part is common for both COM and exceljs paths if successful
-    if (operation === 'add' || operation === 'delete' || operation === 'rename') {
+    if (operation === 'add' || operation === 'delete' || operation === 'rename' || operation === 'set') { // Added 'set'
         try {
-            const excelContent = await fs.readFile(filePath, null); // Read as Buffer
-            await saveResource('excel/worksheets', path.basename(filePath), excelContent);
-            // logger.info(`Saved ${filePath} as a dynamic resource.`); // Logger not available directly here
+            const excelContent = await fs.readFile(absoluteFilePath, null); // Read as Buffer
+            await saveResource('excel/worksheets', path.basename(absoluteFilePath), excelContent);
         } catch (resourceSaveError: any) {
-            // logger.error(`Failed to save ${filePath} as a dynamic resource: ${resourceSaveError.message}`);
-            console.warn(`Failed to save ${filePath} as a dynamic resource: ${resourceSaveError.message}`);
-            // Continue execution even if resource saving fails, but add to resultData
+            // console.warn removed
             if (typeof resultData === 'object' && resultData !== null) {
                 (resultData as any).warning = `File operation successful, but failed to save as dynamic resource: ${resourceSaveError.message}`;
             } else if (typeof resultData === 'string') {
@@ -353,5 +344,17 @@ export const excelWorksheetsTool: McpResource[] = [{
         }
     }
     return { success: true, data: resultData };
-  },
+
+  } catch (error: any) { // Outer catch for the whole handler
+    // console.error removed
+    return {
+      success: false,
+      error: {
+        code: useComInterop ? 'EXCEL_WORKSHEETS_COM_ERROR' : 'EXCEL_WORKSHEETS_EXCELJS_ERROR',
+        message: error.message || `An error occurred while managing Excel worksheets.`,
+        details: { filePath: absoluteFilePath, operation, sheetName, sheetIndex }
+      }
+    };
+  }
+},
 }];

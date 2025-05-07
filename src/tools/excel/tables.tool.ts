@@ -45,7 +45,18 @@ const excelTablesTool: McpResource = {
   description: 'Manages tables in Excel files (insert, modify, add/delete rows/columns, delete table).',
   schema: ExcelTablesInputSchema,
   handler: async (params: ToolRequestParams): Promise<ApiResponse<any>> => {
-    const input = ExcelTablesInputSchema.parse(params);
+    let input: ExcelTablesInput;
+    try {
+      input = ExcelTablesInputSchema.parse(params);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        logger.error(`Input validation failed for excel/tables: ${error.message}`, { errors: error.errors });
+        return { success: false, error: { code: 'VALIDATION_ERROR', message: 'Input validation failed', details: error.errors } };
+      }
+      logger.error(`Unexpected error during input parsing for excel/tables: ${error.message}`, { error });
+      return { success: false, error: { code: 'UNEXPECTED_PARSING_ERROR', message: `An unexpected error occurred during input parsing: ${error.message}` } };
+    }
+
     const { filePath, operation, sheetName, sheetIndex, rangeAddress, tableName, data, location, count, position, useComInterop } = input;
     const absoluteFilePath = path.resolve(filePath);
     let message = '';
@@ -224,9 +235,10 @@ const excelTablesTool: McpResource = {
           // This is a simplified interpretation. A robust solution needs clear data for columns/rows.
           const columns = data && data.length > 0 && data[0].length > 0 ? data[0].map(header => ({ name: String(header), filterButton: true })) : [{name: 'Column1', filterButton: true}];
           const rowsData = data && data.length > 1 ? data.slice(1) : [];
+          const actualTableName = tableName || `Table${Date.now()}`;
           
           ws.addTable({
-            name: tableName || `Table${Date.now()}`, // exceljs requires a name
+            name: actualTableName,
             ref: rangeAddress,
             headerRow: true,
             totalsRow: false, // example
@@ -237,7 +249,7 @@ const excelTablesTool: McpResource = {
             columns: columns,
             rows: rowsData,
           });
-          message = `exceljs: Table inserted in range ${rangeAddress}. Name: ${tableName || 'auto-generated'}. Note: Column/row data inferred or defaulted.`;
+          message = `exceljs: Table inserted in range ${rangeAddress}. Name: ${actualTableName}. Note: Column/row data inferred or defaulted.`;
           break;
 
         case 'modify':
@@ -274,12 +286,12 @@ const excelTablesTool: McpResource = {
         case 'delete':
           if (!tableName) throw new Error('exceljs: tableName is required for "delete".');
           const tableToDelJs = ws.getTable(tableName);
-          if (!tableToDelJs && !location) { // If table not found and it's a full table delete op
-             throw new Error(`exceljs: Table "${tableName}" not found for deletion.`);
+
+          if (!tableToDelJs) {
+            throw new Error(`exceljs: Table "${tableName}" not found.`);
           }
 
           if (location === 'rows') {
-            if (!tableToDelJs) throw new Error(`exceljs: Table "${tableName}" not found for deleting rows.`);
             if (!count || count <= 0) throw new Error('exceljs: count is required for deleting rows.');
             const startIdx = position ? position - 1 : tableToDelJs.rows.length - count; // 0-indexed
             if (startIdx < 0 || startIdx + count > tableToDelJs.rows.length) {
@@ -288,15 +300,14 @@ const excelTablesTool: McpResource = {
             tableToDelJs.removeRows(startIdx, count);
             message = `exceljs: ${count} row(s) deleted from table "${tableName}".`;
           } else if (location === 'columns') {
-            if (!tableToDelJs) throw new Error(`exceljs: Table "${tableName}" not found for deleting columns.`);
             if (!count || count <= 0) throw new Error('exceljs: count is required for deleting columns.');
             const colStartIdx = position ? position -1 : tableToDelJs.columns.length - count;
              if (colStartIdx < 0 || colStartIdx + count > tableToDelJs.columns.length) {
                 throw new Error(`exceljs: Invalid column deletion range for table "${tableName}".`);
             }
-            tableToDelJs.removeColumns(colStartIdx, count); // This updates column definitions and data
+            tableToDelJs.removeColumns(colStartIdx, count);
             message = `exceljs: ${count} column(s) deleted from table "${tableName}".`;
-          } else { // Delete whole table
+          } else { // Delete whole table (location is undefined or not 'rows'/'columns')
             ws.removeTable(tableName);
             message = `exceljs: Table "${tableName}" deleted.`;
           }

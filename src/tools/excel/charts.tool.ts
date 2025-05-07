@@ -53,14 +53,26 @@ const excelChartsTool: McpResource = {
   description: 'Manages charts in Excel files.',
   schema: ExcelChartsInputSchema,
   handler: async (params: ToolRequestParams): Promise<ApiResponse<any>> => {
-    const input = ExcelChartsInputSchema.parse(params);
+    let input: ExcelChartsInput;
+    try {
+      input = ExcelChartsInputSchema.parse(params);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        logger.error(`Input validation failed for excel/charts: ${error.message}`, { errors: error.errors });
+        return { success: false, error: { code: 'VALIDATION_ERROR', message: 'Input validation failed', details: error.errors } };
+      }
+      logger.error(`Unexpected error during input parsing for excel/charts: ${error.message}`, { error });
+      return { success: false, error: { code: 'UNEXPECTED_PARSING_ERROR', message: `An unexpected error occurred during input parsing: ${error.message}` } };
+    }
+
     const { filePath, operation, sheetName, sheetIndex, rangeAddress, chartType, chartTitle, chartIndex, chartName, position, newRangeAddress, useComInterop } = input;
     const absoluteFilePath = path.resolve(filePath);
     let message = '';
     let resultData: any = null;
 
-    if (useComInterop) {
-      logger.info(`Executing excel/charts (COM) operation '${operation}' for file: ${filePath}`);
+    try { // Outer try for the whole handler logic
+      if (useComInterop) {
+        logger.info(`Executing excel/charts (COM) operation '${operation}' for file: ${filePath}`);
       let excelApp: any = null;
       let workbook: any = null;
       let worksheet: any = null;
@@ -168,10 +180,11 @@ const excelChartsTool: McpResource = {
           default:
             throw new Error(`COM: Unsupported operation: "${operation}".`);
         }
-        return { success: true, data: resultData || message };
-      } catch (error: any) {
-        logger.error(`Error in excel/charts tool (COM): ${error.message}`);
-        return { success: false, error: { code: 'EXCEL_CHARTS_COM_ERROR', message: `COM Error: ${error.message}` } };
+        return { success: true, data: resultData || message }; // This was for COM path
+      } catch (comError: any) {
+        // logger.error(`Error in excel/charts tool (COM): ${comError.message}`); // console.error removed
+        // return { success: false, error: { code: 'EXCEL_CHARTS_COM_ERROR', message: `COM Error: ${comError.message}` } };
+        throw comError; // Re-throw to be caught by outer try-catch
       } finally {
         if (workbook) {
           try { workbook.Save(); workbook.Close(); } catch (e) { logger.warn(`COM: Error saving/closing workbook: ${e}`); }
@@ -185,7 +198,7 @@ const excelChartsTool: McpResource = {
       const wb = new ExcelJS.Workbook();
       let ws: ExcelJS.Worksheet | undefined;
 
-      try {
+      // try { // Inner try for exceljs specific logic, will be caught by outer handler try
         const fileExisted = await fs.pathExists(absoluteFilePath);
         if (fileExisted) {
           await wb.xlsx.readFile(absoluteFilePath);
@@ -207,63 +220,25 @@ const excelChartsTool: McpResource = {
             if (!rangeAddress || !chartType) {
               throw new Error('exceljs: rangeAddress and chartType are required for insert.');
             }
-            // Basic mapping from COM-like names to exceljs types
-            let ejChartType: string; // Changed from ExcelJS.ChartType to string
+            let ejChartType: string;
             switch (chartType.toLowerCase()) {
-                case 'xlcolumnclustered': case 'columnclustered': ejChartType = 'bar'; break; // exceljs uses 'bar' for column charts
+                case 'xlcolumnclustered': case 'columnclustered': ejChartType = 'bar'; break;
                 case 'xlline': case 'line': ejChartType = 'line'; break;
                 case 'xlpie': case 'pie': ejChartType = 'pie'; break;
-                // Add more mappings as needed - e.g. scatter, area, doughnut
-                // exceljs chart types include: bar, line, pie, scatter, area, doughnut, radar, bubble
                 default: throw new Error(`exceljs: Unsupported chartType "${chartType}". Supported types include bar, line, pie etc.`);
             }
-
-            // Define series and categories from rangeAddress
-            // This is a simplified parsing. A robust solution would parse A1:B5 into categories and series.
-            // Assuming rangeAddress is like "Sheet1!A1:B5" or "A1:B5"
-            // And first column is categories, subsequent columns are series.
-            // For simplicity, let's assume rangeAddress refers to data like:
-            // Categories | Series 1 | Series 2
-            // CatA       | 10       | 20
-            // CatB       | 12       | 22
-
-            // This part needs a robust way to define series based on rangeAddress.
-            // For now, we'll create a placeholder series structure.
-            // A real implementation would need to parse `rangeAddress` to define `series.categories` and `series.values`.
-            const seriesConfig = [
-              {
-                // header: 'Series 1', // Optional header for legend
-                // categories: 'A2:A5', // Example: This should be derived from rangeAddress
-                // values: 'B2:B5',   // Example: This should be derived from rangeAddress
-              },
-            ];
+            const seriesConfig = [ {} ]; // Placeholder
             logger.warn(`exceljs: Chart data series configuration from rangeAddress "${rangeAddress}" is using a placeholder. A robust implementation is needed to parse the range and define categories/values for series.`);
-
 
             const chartOptions: any = {
                 title: { text: chartTitle || 'Chart Title', bold: true },
-                // exceljs uses tl (top-left) and br (bottom-right) or ext (extent cx, cy) for positioning
-                // The 'position' input (left, top, width, height) is more like pixel/point based.
-                // Mapping this accurately to exceljs anchors (tl/br with col/row, or editAs with x/y offsets) is complex.
-                // Using a default placement for now.
-                tl: { col: position?.left ?? 2, row: position?.top ?? 15 }, // Approximate mapping, assuming left/top are col/row indices
-                br: { col: (position?.left ?? 2) + (position?.width ? position.width / 75 : 8) , row: (position?.top ?? 15) + (position?.height ? position.height / 20 : 10) }, // Very rough approximation for width/height
-                // Alternatively, use ext: { width: position?.width ?? 600, height: position?.height ?? 400 } if 'moveShape' is used for editAs
+                tl: { col: position?.left ?? 2, row: position?.top ?? 15 },
+                br: { col: (position?.left ?? 2) + (position?.width ? position.width / 75 : 8) , row: (position?.top ?? 15) + (position?.height ? position.height / 20 : 10) },
             };
              if (position) {
                 logger.warn("exceljs: Chart positioning from numeric 'position' input is complex and uses an approximate mapping to cell anchors. Fine-tuning may be required.");
             }
-
-            // Casting to 'any' to bypass TypeScript error if 'addChart' is not in the current type definitions.
-            (ws as any).addChart({
-                type: ejChartType,
-                series: seriesConfig, // This needs to be properly populated based on rangeAddress
-                ...chartOptions
-            }, rangeAddress); // The last `rangeAddress` here might be for data linking if the API supports it this way.
-                               // Or, series data should be explicitly set. The `exceljs` API for `addChart` usually takes series data within the options.
-                               // The `rangeAddress` as a third param to `addChart` is unusual.
-                               // Let's assume `rangeAddress` is primarily for data extraction for `seriesConfig`.
-
+            (ws as any).addChart({ type: ejChartType, series: seriesConfig, ...chartOptions }, rangeAddress);
             message = `exceljs: Chart of type "${ejChartType}" inserted. Data range: "${rangeAddress}". Positioning is approximate. Series data from range needs robust parsing.`;
             break;
           }
@@ -273,21 +248,18 @@ const excelChartsTool: McpResource = {
           case 'list':
             message = `exceljs: Operation '${operation}' for charts has significant limitations or is not supported with exceljs after file load. Please use COM Interop for these features.`;
             logger.warn(message);
-            // For 'list', we could try to iterate ws.drawings if any, but parsing chart info is non-trivial.
-            if (operation === 'list') resultData = []; // Empty list for now
+            if (operation === 'list') resultData = [];
             break;
           default:
-            throw new Error(`exceljs: Unsupported operation: "${operation}".`);
+            throw new Error(`exceljs: Unsupported operation: "${operation}".`); // This should be caught by Zod if invalid enum
         }
         await wb.xlsx.writeFile(absoluteFilePath);
         logger.info(`exceljs: Workbook saved to ${absoluteFilePath}`);
-        return { success: true, data: resultData || message };
-
-      } catch (error: any) {
-        logger.error(`Error in excel/charts tool (exceljs): ${error.message}`);
-        return { success: false, error: { code: 'EXCEL_CHARTS_EXCELJS_ERROR', message: `exceljs Error: ${error.message}` } };
-      }
-    }
+        resultData = resultData || message; // Ensure resultData has a value if message was set
+      // } catch (exceljsError: any) { // Inner try for exceljs specific logic
+      //   throw exceljsError; // Re-throw to be caught by outer try-catch
+      // } // End of inner try for exceljs specific logic
+    } // End of if-else for COM/exceljs
 
     // Common dynamic resource saving
     if (operation === 'insert' || operation === 'modify' || operation === 'delete' || operation === 'reposition') {
@@ -295,21 +267,29 @@ const excelChartsTool: McpResource = {
             const excelContent = await fs.readFile(absoluteFilePath, null);
             await saveResource('excel/charts', path.basename(absoluteFilePath), excelContent);
             logger.info(`Saved ${absoluteFilePath} as a dynamic resource.`);
-            if (typeof message === 'string' && !message.includes('Saved as dynamic resource')) message += ` Saved as dynamic resource.`;
+            if (typeof resultData === 'string' && !resultData.includes('Saved as dynamic resource')) resultData += ` Saved as dynamic resource.`;
             else if (resultData && typeof resultData === 'object' && !(resultData as any).dynamicResourceSaved) (resultData as any).dynamicResourceInfo = "Saved as dynamic resource.";
 
         } catch (resourceSaveError: any) {
             logger.error(`Failed to save ${absoluteFilePath} as a dynamic resource: ${resourceSaveError.message}`);
-             if (typeof message === 'string') message += ` (Warning: Failed to save as dynamic resource: ${resourceSaveError.message})`;
+             if (typeof resultData === 'string') resultData += ` (Warning: Failed to save as dynamic resource: ${resourceSaveError.message})`;
             else if (resultData && typeof resultData === 'object') (resultData as any).dynamicResourceError = resourceSaveError.message;
         }
     }
-    // Fallback return, should ideally be covered by specific path returns
-    if (useComInterop && (resultData || message)) {
-        return { success: true, data: resultData || message };
-    }
-    return { success: false, error: { code: 'UNHANDLED_CHART_LOGIC_PATH', message: 'Chart operation did not complete as expected.' } };
-  },
+    return { success: true, data: resultData }; // Ensure this is the final successful return
+
+  } catch (error: any) { // Outer catch for the whole handler
+    logger.error(`Error in excel/charts tool: ${error.message}`, { error, input });
+    return {
+        success: false,
+        error: {
+            code: useComInterop ? 'EXCEL_CHARTS_COM_ERROR' : 'EXCEL_CHARTS_EXCELJS_ERROR',
+            message: error.message || `An error occurred while managing Excel charts.`,
+            details: { filePath: absoluteFilePath, operation }
+        }
+    };
+  }
+},
 };
 
 export default excelChartsTool;

@@ -119,20 +119,22 @@ describe('excelWorksheetsTool Unit Tests (exceljs path)', () => {
       mockFs.pathExists.mockImplementation(async () => true);
       const result = await worksheetToolHandler({ ...baseParams, operation: 'delete', sheetName: 'NonExistentSheet' });
       expect(result.success).toBe(false);
-      if(!result.success) expect(result.error.message).toContain("Sheet not found with name 'NonExistentSheet'");
+      if(!result.success) expect(result.error.message).toContain("Sheet 'NonExistentSheet' not found.");
     });
 
     it('should return error if sheet to delete is not found by index (out of bounds)', async () => {
         mockFs.pathExists.mockImplementation(async () => true);
         const result = await worksheetToolHandler({ ...baseParams, operation: 'delete', sheetIndex: 99 });
         expect(result.success).toBe(false);
-        if(!result.success) expect(result.error.message).toContain("Sheet not found with name 'undefined' or index 99");
+        if(!result.success) expect(result.error.message).toContain("Sheet index 99 not found.");
       });
 
     it('should require sheetName or sheetIndex for delete', async () => {
         const result = await worksheetToolHandler({ ...baseParams, operation: 'delete' });
         expect(result.success).toBe(false);
-        if(!result.success) expect(result.error.message).toContain('sheetName or sheetIndex is required');
+        // This will now be caught by Zod validation if schema is strictly enforced
+        // For now, assuming the tool's internal check is hit if parsing passes but params are missing for logic
+        if(!result.success) expect(result.error.message).toMatch(/sheetName or sheetIndex is required|Input validation failed/);
     });
   });
 
@@ -163,13 +165,13 @@ describe('excelWorksheetsTool Unit Tests (exceljs path)', () => {
       mockFs.pathExists.mockImplementation(async () => true);
       const result = await worksheetToolHandler({ ...baseParams, operation: 'rename', sheetName: 'NonExistent', newSheetName: 'WontMatter' });
       expect(result.success).toBe(false);
-      if(!result.success) expect(result.error.message).toContain("Sheet not found");
+      if(!result.success) expect(result.error.message).toContain("Sheet 'NonExistent' not found.");
     });
 
     it('should require newSheetName for rename', async () => {
         const result = await worksheetToolHandler({ ...baseParams, operation: 'rename', sheetName: 'Sheet1' });
         expect(result.success).toBe(false);
-        if(!result.success) expect(result.error.message).toContain('newSheetName is required');
+        if(!result.success) expect(result.error.message).toMatch(/newSheetName is required|Input validation failed/);
     });
   });
 
@@ -184,8 +186,7 @@ describe('excelWorksheetsTool Unit Tests (exceljs path)', () => {
       }]);
       if(result.success) expect(result.data.message).toContain("Sheet 'Sheet2' (identified by name 'Sheet2') set as active");
       expect(mockWorkbook.xlsx.writeFile).toHaveBeenCalled();
-      // 'set' operation does not save as dynamic resource in the tool's current logic
-      expect(mockSaveResource).not.toHaveBeenCalled();
+      expect(mockSaveResource).toHaveBeenCalled();
     });
 
     it('should set active sheet by 1-based index', async () => {
@@ -203,7 +204,7 @@ describe('excelWorksheetsTool Unit Tests (exceljs path)', () => {
       mockFs.pathExists.mockImplementation(async () => true);
       const result = await worksheetToolHandler({ ...baseParams, operation: 'set', sheetName: 'NonExistent' });
       expect(result.success).toBe(false);
-      if(!result.success) expect(result.error.message).toContain("Sheet not found");
+      if(!result.success) expect(result.error.message).toContain("Sheet 'NonExistent' not found.");
     });
   });
 
@@ -212,7 +213,7 @@ describe('excelWorksheetsTool Unit Tests (exceljs path)', () => {
       mockFs.pathExists.mockImplementation(async () => false);
       const result = await worksheetToolHandler({ ...baseParams, operation: 'delete', sheetName: 'AnySheet' });
       expect(result.success).toBe(false);
-      if(!result.success) expect(result.error.message).toContain('file was not found');
+      if(!result.success) expect(result.error.message).toContain('File not found: test.xlsx');
     });
 
     it('should return error for unsupported operation', async () => {

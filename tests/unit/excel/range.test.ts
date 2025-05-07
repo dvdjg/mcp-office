@@ -243,7 +243,8 @@ describe('excelRangeTool Unit Tests (exceljs path)', () => {
         const result = await excelRangeTool.handler({ ...baseParams, operation: 'unsupported_op' as any });
         expect(result.success).toBe(false);
         if (!result.success) {
-            expect(result.error.message).toContain('exceljs: Unsupported operation: "unsupported_op".');
+            expect(result.error.code).toBe('VALIDATION_ERROR');
+            expect(result.error.message).toContain('Input validation failed');
         }
     });
   });

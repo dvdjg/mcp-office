@@ -83,7 +83,7 @@ describe('excelTablesTool Unit Tests (exceljs path)', () => {
       expect(mockWorksheet.addTable).toHaveBeenCalledWith(expect.objectContaining({
         name: 'NewSalesTable',
         ref: 'A1:D10',
-        columns: expect.arrayContaining([expect.objectContaining({ name: 'Header1' })]),
+        columns: [{ name: 'Header1', filterButton: true }, { name: 'Header2', filterButton: true }],
         rows: [['Val1', 'Val2']],
       }));
       if (result.success) {
@@ -108,7 +108,7 @@ describe('excelTablesTool Unit Tests (exceljs path)', () => {
           ref: 'B2:E5',
         }));
         if (result.success) {
-            expect(result.data).toContain('Name: Table1234567890123');
+            expect(result.data).toContain('exceljs: Table inserted in range B2:E5. Name: Table1234567890123');
           }
       });
 
@@ -219,7 +219,7 @@ describe('excelTablesTool Unit Tests (exceljs path)', () => {
         const params = { ...baseParams, operation: 'delete', tableName: 'GhostTable', location: 'rows', count:1 };
         const result = await excelTablesTool.handler(params);
         expect(result.success).toBe(false);
-        if(!result.success) expect(result.error.message).toContain('exceljs: Table "GhostTable" not found for deleting rows.');
+        if(!result.success) expect(result.error.message).toContain('exceljs: Table "GhostTable" not found.');
     });
   });
   
@@ -233,9 +233,7 @@ describe('excelTablesTool Unit Tests (exceljs path)', () => {
             expect(result.data).toContain('exceljs: Table "TestTable" found. Modification capabilities are specific');
         }
         expect(mockWorkbook.xlsx.writeFile).toHaveBeenCalled();
-        // Modify does not save resource in current tool logic unless specific changes are made
-        // For this basic "found" message, it might not save.
-        // expect(mockSaveResource).toHaveBeenCalled(); 
+        expect(mockSaveResource).toHaveBeenCalled();
     });
 
     it('should return error if table to modify is not found', async () => {

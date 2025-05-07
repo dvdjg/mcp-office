@@ -174,7 +174,8 @@ describe('excelChartsTool Unit Tests (exceljs path)', () => {
         const result = await excelChartsTool.handler(params);
         expect(result.success).toBe(false);
         if (!result.success) {
-            expect(result.error.message).toContain('exceljs: Unsupported operation: "unsupported_op_string".');
+            expect(result.error.code).toBe('VALIDATION_ERROR');
+            expect(result.error.message).toContain('Input validation failed');
         }
     });
   });

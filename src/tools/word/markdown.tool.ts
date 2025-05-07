@@ -846,16 +846,30 @@ export async function exportToMarkdown(params: ToolRequestParams, context?: Fast
                     log.warn(`Mammoth Path: Image directory not found, skipping zipping: ${extractedImagesDir}`);
                 }
 
-                // Finalize the archive and wait for it to complete
-                await archive.finalize();
-                // Wait for the stream to close to ensure all data is written
-                await new Promise<void>((resolve, reject) => {
+                // Set up listeners before finalizing
+                const zipPromise = new Promise<void>((resolve, reject) => {
                     outputStream.on('close', () => {
                         log.info(`Mammoth Path: ZIP archive created: ${archive.pointer()} total bytes`);
                         resolve();
                     });
-                    outputStream.on('error', reject); // Handle stream errors
+                    outputStream.on('finish', () => { // 'finish' is often more reliable for knowing all data is flushed
+                        log.info(`Mammoth Path: ZIP output stream finished.`);
+                        // resolve(); // Resolve on 'close' is usually sufficient
+                    });
+                    archive.on('error', (err: any) => {
+                        log.error(`Mammoth Path: Archiver error: ${err.message}`);
+                        reject(err);
+                    });
+                    outputStream.on('error', (err: any) => { // Handle stream errors specifically for outputStream
+                        log.error(`Mammoth Path: Output stream error: ${err.message}`);
+                        reject(err);
+                    });
                 });
+
+                // Finalize the archive
+                await archive.finalize();
+                // Wait for the stream to close to ensure all data is written
+                await zipPromise;
 
                 finalOutputPath = zipPath;
                 log.info(`Mammoth Path: ZIP archive finalized: ${finalOutputPath}`);
