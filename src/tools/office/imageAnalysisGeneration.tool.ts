@@ -1,10 +1,10 @@
 import { z } from 'zod';
-import { McpResource, ApiResponse, ToolRequestParams, ErrorResponse, SuccessResponse } from '../../types/common.types';
+import { McpResource, ApiResponse, ToolRequestParams, ErrorResponse, SuccessResponse } from '../../types/common.types.js';
 import { Context as FastMCPContext } from 'fastmcp'; // Removed imageContent import as it's not a type
-import logger from '../../utils/logger';
-import { validateFilePath } from '../../utils/security';
-import { extractImageFromWord, insertImageIntoWord } from '../../utils/officeInterop'; // Import office interop functions
-import { generateText, analyzeImageWithText, generateImageFromText } from '../../utils/llmClient'; // Import new LLM client functions
+import logger from '../../utils/logger.js';
+import { validateFilePath } from '../../utils/security.js';
+import { extractImageFromWord, insertImageIntoWord } from '../../utils/officeInterop.js'; // Import office interop functions
+import { generateText, analyzeImageWithText, generateImageFromText } from '../../utils/llmClient.js'; // Import new LLM client functions
 import axios from 'axios'; // Import axios for fetching from URLs
 import fs from 'fs/promises'; // Import fs for reading local files
 

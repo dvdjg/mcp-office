@@ -2,13 +2,14 @@
   "name": "msoffice-mcp",
   "version": "1.0.0",
   "description": "MCP Server for Microsoft Office Automation using FastMCP",
+  "type": "module",
   "main": "dist/server/index.js",
   "scripts": {
     "build": "tsc && tsc-alias",
     "start": "node dist/server/index.js",
     "dev": "tsc-watch --onSuccess \"tsc-alias && node dist/server/index.js\"",
-    "test": "jest",
-    "test:coverage": "jest --coverage",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --coverage",
     "lint": "eslint . --ext .ts",
     "docs:api": "typedoc --out docs/api --entryPoints src/tools src/resources --excludePrivate"
   },

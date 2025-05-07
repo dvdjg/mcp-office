@@ -9,13 +9,15 @@
 import { FastMCP, UserError, UnexpectedStateError, Context as FastMCPContext, ContentResult, TextContent, ToolParameters, audioContent, imageContent, SerializableValue, ResourceResult } from 'fastmcp';
 import { StandardSchemaV1 } from '@standard-schema/spec';
 import { IncomingMessage } from 'http';
-import { allRegisteredTools, aiAssistantGuideResource, registerWordCodeFormatTool, registerArchiveTools } from '@/tools'; // Import registerArchiveTools
-import logger from '@/utils/logger';
-import { handleToolError, createErrorResponse } from '@/utils/errorHandler';
-import { validateFilePath, isFsAccessAllowed } from '@/utils/security';
-import { getWordElementContent as getOfficeElementContentInterop } from '@/utils/officeInterop';
-import { McpResource, ToolRequestParams, ApiResponse } from '@/types/common.types';
-import { version as packageVersion, name as packageName } from '../../package.json';
+import { allRegisteredTools, aiAssistantGuideResource, registerWordCodeFormatTool, registerArchiveTools } from '@/tools/index.js'; // Import registerArchiveTools
+import logger from '@/utils/logger.js';
+import { handleToolError, createErrorResponse } from '@/utils/errorHandler.js';
+import { validateFilePath, isFsAccessAllowed } from '@/utils/security.js';
+import { getWordElementContent as getOfficeElementContentInterop } from '@/utils/officeInterop.js';
+import { McpResource, ToolRequestParams, ApiResponse } from '@/types/common.types.js';
+import packageInfo from '../../package.json' assert { type: 'json' };
+const packageVersion = packageInfo.version;
+const packageName = packageInfo.name;
 import * as fs from 'fs/promises'; // Import fs.promises for async file operations
 import * as path from 'path'; // Import path module
 
@@ -538,7 +540,7 @@ function hideSensitiveParams(params: ToolRequestParams): ToolRequestParams {
 
 
 // --- COM Interop Test (Optional with winax) ---
-import { getOfficeApplication, releaseObject } from '@/utils/officeInterop'; // Use alias
+import { getOfficeApplication, releaseObject } from '@/utils/officeInterop.js'; // Use alias
 
 /**
  * Performs a basic test of COM Interop by attempting to get a Word application instance.

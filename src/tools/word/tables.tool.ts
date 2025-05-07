@@ -17,11 +17,11 @@ import * as mammoth from 'mammoth';
 import {
     getOfficeApplication,
     releaseObject,
-} from '../../utils/officeInterop';
-import { handleToolError } from '../../utils/errorHandler';
-import { validateFilePath } from '../../utils/security';
-import { ApiResponse, McpResource, FastMCPContext } from '../../types/common.types';
-import logger from '../../utils/logger';
+} from '../../utils/officeInterop.js';
+import { handleToolError } from '../../utils/errorHandler.js';
+import { validateFilePath } from '../../utils/security.js';
+import { ApiResponse, McpResource, FastMCPContext } from '../../types/common.types.js';
+import logger from '../../utils/logger.js';
 
 // --- Zod Schema for Input Validation ---
 export const insertTableSchema = z.object({

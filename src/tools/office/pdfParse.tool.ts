@@ -8,7 +8,7 @@
  * @license MIT
  */
 import { z } from 'zod';
-import { McpResource, ApiResponse, ToolRequestParams } from '../../types/common.types'; // Import ToolRequestParams
+import { McpResource, ApiResponse, ToolRequestParams } from '../../types/common.types.js'; // Import ToolRequestParams
 import { Context } from 'fastmcp'; // Import Context
 import pdfParse from 'pdf-parse';
 import { fromPath } from 'pdf2pic'; // Remove WriteImageResponse from import

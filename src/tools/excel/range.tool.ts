@@ -8,14 +8,14 @@
  * @license MIT
  */
 import { z } from 'zod';
-import { McpResource, ToolRequestParams, ApiResponse, FastMCPContext } from '../../types/common.types'; // Added ApiResponse, FastMCPContext
-import { getOfficeApplication, releaseObject } from '../../utils/officeInterop'; // Added releaseObject
-import { saveResource } from '../dynamic/resources.tool';
+import { McpResource, ToolRequestParams, ApiResponse, FastMCPContext } from '../../types/common.types.js'; // Added ApiResponse, FastMCPContext
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop.js'; // Added releaseObject
+import { saveResource } from '../dynamic/resources.tool.js';
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import ExcelJS from 'exceljs'; // Import exceljs
-import logger from '../../utils/logger'; // Added logger import
-import { validateFilePath } from '../../utils/security'; // Added security import
+import logger from '../../utils/logger.js'; // Added logger import
+import { validateFilePath } from '../../utils/security.js'; // Added security import
 
 // Helper to create standard error responses
 const createErrorResponse = (message: string, code = 'TOOL_EXECUTION_ERROR', details?: unknown): ApiResponse<never> => ({

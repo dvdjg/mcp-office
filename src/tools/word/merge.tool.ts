@@ -6,14 +6,14 @@
  * @license MIT
  */
 import { z } from 'zod';
-import { getOfficeApplication, releaseObject } from '../../utils/officeInterop'; // Normalized relative path
-import { validateFilePath } from '../../utils/security'; // Normalized relative path
-import { ApiResponse, McpResource, ToolRequestParams } from '../../types/common.types'; // Normalized relative path
-import { saveResource } from '../dynamic/resources.tool'; // Normalized relative path
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop.js'; // Normalized relative path
+import { validateFilePath } from '../../utils/security.js'; // Normalized relative path
+import { ApiResponse, McpResource, ToolRequestParams } from '../../types/common.types.js'; // Normalized relative path
+import { saveResource } from '../dynamic/resources.tool.js'; // Normalized relative path
 import { Context as FastMCPContext } from 'fastmcp'; // Import FastMCP Context
-import { handleToolError, createErrorResponse } from '../../utils/errorHandler'; // Normalized relative path
+import { handleToolError, createErrorResponse } from '../../utils/errorHandler.js'; // Normalized relative path
 import path from 'path';
-import logger from '../../utils/logger'; // Normalized relative path
+import logger from '../../utils/logger.js'; // Normalized relative path
 
 // 1. Define the Input Schema
 /**

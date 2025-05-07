@@ -7,9 +7,9 @@
  */
 import { promises as fs } from 'fs';
 import path from 'path';
-import { McpResource, ApiResponse, ToolRequestParams } from '../../types/common.types';
-import { handleToolError } from '../../utils/errorHandler';
-import logger from '../../utils/logger'; // Changed to default import
+import { McpResource, ApiResponse, ToolRequestParams } from '../../types/common.types.js';
+import { handleToolError } from '../../utils/errorHandler.js';
+import logger from '../../utils/logger.js'; // Changed to default import
 import { Context as FastMCPContext } from 'fastmcp'; // Import FastMCP Context
 
 const guidePath = path.resolve(__dirname, '../../docs/ai_assistant_guide.md');

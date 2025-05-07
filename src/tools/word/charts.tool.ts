@@ -7,12 +7,12 @@
  * @license MIT
  */
 import { z, ZodError } from 'zod';
-import { McpResource, ApiResponse, ToolRequestParams, SuccessResponse, ErrorResponse, FastMCPContext } from '../../types/common.types'; // Importar FastMCPContext, quitar ToolContext
-import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
-import { validateFilePath } from '../../utils/security';
-import { handleToolError } from '../../utils/errorHandler'; // Importar handleToolError
+import { McpResource, ApiResponse, ToolRequestParams, SuccessResponse, ErrorResponse, FastMCPContext } from '../../types/common.types.js'; // Importar FastMCPContext, quitar ToolContext
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop.js';
+import { validateFilePath } from '../../utils/security.js';
+import { handleToolError } from '../../utils/errorHandler.js'; // Importar handleToolError
 import path from 'path';
-import logger from '../../utils/logger'; // Importar logger global si context.logger no está disponible
+import logger from '../../utils/logger.js'; // Importar logger global si context.logger no está disponible
 
 /** Basic mapping of chart types to XlChartType values. */
 const chartTypeMap: { [key: string]: number } = {

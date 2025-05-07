@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { getOfficeApplication } from '../../utils/officeInterop';
+import { getOfficeApplication } from '../../utils/officeInterop.js';
 
 // Define el esquema de entrada para la herramienta word/analyze
 const AnalyzeToolInputSchema = z.object({

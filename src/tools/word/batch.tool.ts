@@ -7,10 +7,10 @@
  * @license MIT
  */
 import { z } from 'zod';
-import { McpResource, ToolRequestParams, ApiResponse, ErrorResponse } from '../../types/common.types'; // Import ToolRequestParams, ApiResponse, ErrorResponse
-import logger from '../../utils/logger';
-import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
-import { handleToolError } from '../../utils/errorHandler';
+import { McpResource, ToolRequestParams, ApiResponse, ErrorResponse } from '../../types/common.types.js'; // Import ToolRequestParams, ApiResponse, ErrorResponse
+import logger from '../../utils/logger.js';
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop.js';
+import { handleToolError } from '../../utils/errorHandler.js';
 
 // Import handlers for other Word tools that can be executed in a batch.
 // Note: This is a placeholder. The actual implementation would need a way to map

@@ -8,11 +8,11 @@
 import { z } from 'zod';
 import { Document, Packer, Media, ImageRun } from 'docx';
 import * as mammoth from 'mammoth';
-import { McpResource, ApiResponse, ErrorResponse, SuccessResponse, ToolRequestParams } from '../../types/common.types';
+import { McpResource, ApiResponse, ErrorResponse, SuccessResponse, ToolRequestParams } from '../../types/common.types.js';
 import { imageContent, TextContent, UserError, Context as FastMCPContext } from 'fastmcp';
-import { extractImageFromWord, insertImageIntoWord } from '../../utils/officeInterop';
-import { validateFilePath } from '../../utils/security';
-import logger from '../../utils/logger';
+import { extractImageFromWord, insertImageIntoWord } from '../../utils/officeInterop.js';
+import { validateFilePath } from '../../utils/security.js';
+import logger from '../../utils/logger.js';
 import path from 'path';
 import fs from 'fs/promises';
 import { pathExists } from 'fs-extra'; // Import pathExists from fs-extra

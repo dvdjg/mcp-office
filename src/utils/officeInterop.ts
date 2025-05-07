@@ -6,10 +6,10 @@
  * @license MIT
  */
 import * as winax from 'winax';
-import * as fs from 'fs/promises'; // For async file operations
-import * as path from 'path';     // For path manipulation
-import * as os from 'os';         // For temporary directory
-import logger from './logger';     // Ensure logger path is correct
+import { mkdir, readFile, writeFile, stat, unlink } from 'fs/promises'; // For async file operations
+import { resolve as resolvePath, join as joinPath } from 'path';     // For path manipulation
+import { tmpdir } from 'os';         // For temporary directory
+import logger from './logger.js';     // Ensure logger path is correct
 
 export type OfficeAppName = 'Word.Application' | 'Excel.Application' | 'PowerPoint.Application';
 
@@ -108,7 +108,7 @@ export function releaseObject(comObject: any): void {
  */
 export async function openWordDocument(wordApp: any, filePath: string, readOnly: boolean = false, visible: boolean = false): Promise<any> {
   logger.info(`[OfficeInterop] Attempting to open document: ${filePath}`);
-  const absoluteFilePath = path.resolve(filePath);
+  const absoluteFilePath = resolvePath(filePath);
   try {
     const doc = wordApp.Documents.Open(absoluteFilePath, false, readOnly, false, "", "", false, "", "", 0, visible);
     if (!doc) {
@@ -150,17 +150,17 @@ export async function extractImageFromWord(
 
   let wordApp: any = null;
   let doc: any = null;
-  const tempDir = os.tmpdir();
+  const tempDirectory = tmpdir();
   // Using a relatively safe temporary filename pattern
   const tempFileName = `mcp_office_img_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.png`;
-  const tempFilePath = path.join(tempDir, tempFileName);
+  const tempFilePath = joinPath(tempDirectory, tempFileName);
   let imageBuffer: Buffer | null = null;
 
   try {
     wordApp = await getOfficeApplication('Word.Application');
     // Open the document as read-only if possible, make it invisible during processing
     // Use absolute path for COM
-    const absoluteFilePath = path.resolve(filePath);
+    const absoluteFilePath = resolvePath(filePath);
     logger.debug(`[OfficeInterop] Opening document: ${absoluteFilePath}`);
     doc = wordApp.Documents.Open(absoluteFilePath, false, true, false); // ReadOnly=true, Visible=false
 
@@ -210,7 +210,7 @@ export async function extractImageFromWord(
 
     // Export the chart area (which now contains the image)
     // Ensure the temp directory exists
-    await fs.mkdir(tempDir, { recursive: true });
+    await mkdir(tempDirectory, { recursive: true });
     tempChartShape.Chart.Export(tempFilePath, "PNG"); // Export as PNG
     logger.debug(`[OfficeInterop] Chart exported to temporary file: ${tempFilePath}`);
 
@@ -220,7 +220,7 @@ export async function extractImageFromWord(
 
     // Read the exported image file into a buffer
     logger.debug('[OfficeInterop] Reading temporary image file into buffer...');
-    imageBuffer = await fs.readFile(tempFilePath);
+    imageBuffer = await readFile(tempFilePath);
 
     logger.info(`[OfficeInterop] Successfully extracted image ${imageIdentifier} to buffer.`);
 
@@ -231,8 +231,8 @@ export async function extractImageFromWord(
   } finally {
     // Clean up temporary file if it exists
     try {
-      if (await fs.stat(tempFilePath).catch(() => false)) {
-        await fs.unlink(tempFilePath);
+      if (await stat(tempFilePath).catch(() => false)) {
+        await unlink(tempFilePath);
         logger.debug(`[OfficeInterop] Deleted temporary image file: ${tempFilePath}`);
       }
     } catch (cleanupError) {
@@ -280,21 +280,21 @@ export async function insertImageIntoWord(
 
   let wordApp: any = null;
   let doc: any = null;
-  const tempDir = os.tmpdir();
+  const tempDirectory = tmpdir();
   // Using a relatively safe temporary filename pattern
   const tempFileName = `mcp_office_img_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.tmp`; // Use generic extension
-  const tempFilePath = path.join(tempDir, tempFileName);
+  const tempFilePath = joinPath(tempDirectory, tempFileName);
 
   try {
     // Ensure the temp directory exists
-    await fs.mkdir(tempDir, { recursive: true });
+    await mkdir(tempDirectory, { recursive: true });
     // Write the buffer to a temporary file
-    await fs.writeFile(tempFilePath, imageBuffer);
+    await writeFile(tempFilePath, imageBuffer);
     logger.debug(`[OfficeInterop] Image buffer saved to temporary file: ${tempFilePath}`);
 
     wordApp = await getOfficeApplication('Word.Application');
     // Use absolute path for COM
-    const absoluteFilePath = path.resolve(filePath);
+    const absoluteFilePath = resolvePath(filePath);
     logger.debug(`[OfficeInterop] Opening document for editing: ${absoluteFilePath}`);
     doc = wordApp.Documents.Open(absoluteFilePath); // Open normally for editing
 
@@ -377,8 +377,8 @@ export async function insertImageIntoWord(
   } finally {
     // Clean up temporary file if it exists
     try {
-      if (await fs.stat(tempFilePath).catch(() => false)) {
-        await fs.unlink(tempFilePath);
+      if (await stat(tempFilePath).catch(() => false)) {
+        await unlink(tempFilePath);
         logger.debug(`[OfficeInterop] Deleted temporary image file: ${tempFilePath}`);
       }
     } catch (cleanupError) {
@@ -428,7 +428,7 @@ export async function getWordElementContent(
     try {
         wordApp = await getOfficeApplication('Word.Application');
         // Open read-only and invisible
-        const absoluteFilePath = path.resolve(filePath);
+        const absoluteFilePath = resolvePath(filePath);
         logger.debug(`[OfficeInterop] Opening document read-only: ${absoluteFilePath}`);
         doc = wordApp.Documents.Open(absoluteFilePath, false, true, false); // ReadOnly=true, Visible=false
 

@@ -10,8 +10,8 @@ import { z } from 'zod';
 import * as fs from 'fs-extra';
 import path from 'path';
 import NodeCache from 'node-cache';
-import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '@/types/common.types';
-import logger from '@/utils/logger'; // Import logger
+import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '@/types/common.types.js';
+import logger from '@/utils/logger.js'; // Import logger
 
 // Base directory for storing dynamic resources
 const DYNAMIC_STORAGE_DIR = path.join(__dirname, '..', '..', '..', 'dynamic_storage');

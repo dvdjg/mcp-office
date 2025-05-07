@@ -7,9 +7,9 @@
  * @license MIT
  */
 import { z } from 'zod';
-import { McpResource, ToolRequestParams, ApiResponse } from '../../types/common.types';
-import { OfficeAppName, getOfficeApplication } from '../../utils/officeInterop'; // Import correct names
-import { saveResource } from '../dynamic/resources.tool'; // Import saveResource
+import { McpResource, ToolRequestParams, ApiResponse } from '../../types/common.types.js';
+import { OfficeAppName, getOfficeApplication } from '../../utils/officeInterop.js'; // Import correct names
+import { saveResource } from '../dynamic/resources.tool.js'; // Import saveResource
 import * as fs from 'fs-extra'; // Import fs to read the PDF file
 import * as path from 'path'; // Import path
 

@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import officeparser from 'officeparser';
 import fs from 'fs-extra';
-import { McpResource, ToolRequestParams, ApiResponse, FastMCPContext } from '@/types/common.types';
-import { createErrorResponse, handleToolError } from '@/utils/errorHandler';
-import logger from '@/utils/logger'; // Import logger for more detailed logging if needed
+import { McpResource, ToolRequestParams, ApiResponse, FastMCPContext } from '@/types/common.types.js';
+import { createErrorResponse, handleToolError } from '@/utils/errorHandler.js';
+import logger from '@/utils/logger.js'; // Import logger for more detailed logging if needed
 
 const generalParseTextToolInputSchema = z.object({
   filePath: z.string().min(1, 'File path cannot be empty.'),

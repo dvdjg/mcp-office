@@ -6,12 +6,12 @@
  * @license MIT
  */
 import { z } from 'zod';
-import { McpResource, ApiResponse, ToolRequestParams } from '../../types/common.types'; // Import McpResource and necessary types
+import { McpResource, ApiResponse, ToolRequestParams } from '../../types/common.types.js'; // Import McpResource and necessary types
 import path from 'path';
 import fs from 'fs/promises';
-import { getOfficeApplication, releaseObject } from '../../utils/officeInterop'; // Import specific officeInterop functions
-import pdfParseTool from './pdfParse.tool'; // Import the pdfParse tool by default
-import logger from '../../utils/logger'; // Import logger
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop.js'; // Import specific officeInterop functions
+import pdfParseTool from './pdfParse.tool.js'; // Import the pdfParse tool by default
+import logger from '../../utils/logger.js'; // Import logger
 
 // Input schema for the office/combine tool
 const CombineToolInputSchema = z.object({

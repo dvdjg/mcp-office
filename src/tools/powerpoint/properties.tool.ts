@@ -9,14 +9,14 @@
  * @license MIT
  */
 import { z } from 'zod';
-import PptxGenJS from 'pptxgenjs';
-import { McpResource, ApiResponse, FastMCPContext as Context, ToolRequestParams } from '../../types/common.types';
-import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
-import { handleToolError, createErrorResponse as createErrorResponseUtil } from '../../utils/errorHandler'; // Renamed to avoid conflict
-import logger from '../../utils/logger'; // Import logger
-import * as fs from 'fs-extra'; // Import fs for file operations
-import * as path from 'path'; // Import path for resolving
-import { saveResource } from '../dynamic/resources.tool'; // Import saveResource
+import PptxGenJS from 'pptxgenjs'; // Assuming this should be the class
+import { McpResource, ApiResponse, FastMCPContext as Context, ToolRequestParams } from '../../types/common.types.js';
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop.js';
+import { handleToolError, createErrorResponse as createErrorResponseUtil } from '../../utils/errorHandler.js'; // Renamed to avoid conflict
+import logger from '../../utils/logger.js'; // Import logger
+import fs from 'fs-extra'; // Import fs for file operations
+import { resolve as resolvePath, basename as basenamePath } from 'path'; // Import path for resolving
+import { saveResource } from '../dynamic/resources.tool.js'; // Import saveResource
 
 // Helper to create standard error responses (if not already defined or imported from a shared util)
 const createErrorResponse = (code: string, message: string, details?: unknown): ApiResponse<never> => ({
@@ -53,7 +53,7 @@ type PowerPointPropertiesInput = z.infer<typeof PowerPointPropertiesInputSchema>
 const handler = async (params: ToolRequestParams, context?: Context<any>): Promise<ApiResponse<any>> => {
   const input = PowerPointPropertiesInputSchema.parse(params);
   const { filePath, operation, propertyName, propertyValue, size, useComInterop } = input;
-  const absoluteFilePath = path.resolve(filePath);
+  const absoluteFilePath = resolvePath(filePath);
 
   if (useComInterop) {
     // COM Interop Path
@@ -157,8 +157,8 @@ const handler = async (params: ToolRequestParams, context?: Context<any>): Promi
       presentation.Save();
       // Save resource for modification operations
       if (['set', 'configure', 'add'].includes(operation)) {
-          const pptContent = await fs.readFile(absoluteFilePath, null);
-          await saveResource('powerpoint/properties', path.basename(absoluteFilePath), pptContent);
+          const pptContent = await fs.readFile(absoluteFilePath);
+          await saveResource('powerpoint/properties', basenamePath(absoluteFilePath), pptContent);
       }
       presentation.Close();
       return { success: true, data: `COM: Operation '${operation}' completed for file '${absoluteFilePath}'.` };
@@ -173,7 +173,7 @@ const handler = async (params: ToolRequestParams, context?: Context<any>): Promi
   } else {
     // PptxGenJS Path
     try {
-      const pptx = new PptxGenJS();
+      const pptx = new (PptxGenJS as any)(); // Cast to any for constructor
       let presentationDefinitionModified = false; // Flag to track if metadata/layout was changed
 
       // PptxGenJS modifies properties of the pptx instance before writing the file.
@@ -254,8 +254,8 @@ const handler = async (params: ToolRequestParams, context?: Context<any>): Promi
         logger.info(`PptxGenJS: Added a default slide as presentation properties/layout were modified.`);
         
         await pptx.writeFile({ fileName: absoluteFilePath });
-        const pptContent = await fs.readFile(absoluteFilePath, null);
-        await saveResource('powerpoint/properties', path.basename(absoluteFilePath), pptContent);
+        const pptContent = await fs.readFile(absoluteFilePath);
+        await saveResource('powerpoint/properties', basenamePath(absoluteFilePath), pptContent);
         return { success: true, data: `PptxGenJS: Operation '${operation}' completed. File saved to '${absoluteFilePath}'.` };
       } else {
         return { success: true, data: `PptxGenJS: Operation '${operation}' did not result in file modification (e.g., 'get' or no valid properties set).` };

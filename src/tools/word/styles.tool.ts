@@ -9,11 +9,11 @@
 import { z } from 'zod';
 import fs from 'fs-extra';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
-import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types';
-import { handleToolError, createErrorResponse } from '../../utils/errorHandler';
-import logger from '../../utils/logger';
-import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
-import { validateFilePath } from '../../utils/security';
+import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types.js';
+import { handleToolError, createErrorResponse } from '../../utils/errorHandler.js';
+import logger from '../../utils/logger.js';
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop.js';
+import { validateFilePath } from '../../utils/security.js';
 
 // --- Schemas ---
 

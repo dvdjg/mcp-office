@@ -6,9 +6,9 @@
  * @license MIT
  */
 import { z, ZodError } from 'zod';
-import { McpResource, ApiResponse, SuccessResponse, ErrorResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types';
-import { getOfficeApplication, releaseObject } from '../../utils/officeInterop'; // Import releaseObject
-import logger from '../../utils/logger'; // Import logger
+import { McpResource, ApiResponse, SuccessResponse, ErrorResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types.js';
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop.js'; // Import releaseObject
+import logger from '../../utils/logger.js'; // Import logger
 import ExcelJS from 'exceljs'; // Import exceljs
 import * as fs from 'fs-extra'; // Import fs to read the Excel file
 import * as path from 'path'; // Import path

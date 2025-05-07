@@ -8,10 +8,10 @@
  * @license MIT
  */
 import { z } from 'zod';
-import { McpResource, ToolRequestParams, ApiResponse } from '../../types/common.types';
-import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
-import logger from '../../utils/logger'; // Import logger
-import { saveResource } from '../dynamic/resources.tool'; // Import saveResource
+import { McpResource, ToolRequestParams, ApiResponse } from '../../types/common.types.js';
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop.js';
+import logger from '../../utils/logger.js'; // Import logger
+import { saveResource } from '../dynamic/resources.tool.js'; // Import saveResource
 import * as fs from 'fs-extra'; // Import fs to read the Excel file
 import * as path from 'path'; // Import path
 import ExcelJS from 'exceljs'; // Import exceljs

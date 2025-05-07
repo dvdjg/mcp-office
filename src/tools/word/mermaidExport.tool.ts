@@ -6,14 +6,14 @@
  * @license MIT
  */
 import { z } from 'zod';
-import { McpResource, ToolRequestParams, ApiResponse } from '../../types/common.types'; // Normalized relative path
+import { McpResource, ToolRequestParams, ApiResponse } from '../../types/common.types.js'; // Normalized relative path
 import { Context as FastMCPContext } from 'fastmcp'; // Import FastMCP Context
 import * as fs from 'fs/promises'; // For saving the file
 import * as path from 'path'; // Import path module
-import { handleToolError } from '../../utils/errorHandler'; // Normalized relative path
-import { validateFilePath } from '../../utils/security'; // Normalized relative path
-import logger from '../../utils/logger'; // Normalized relative path
-import { getOfficeApplication, releaseObject } from '../../utils/officeInterop'; // Use COM Interop utilities
+import { handleToolError } from '../../utils/errorHandler.js'; // Normalized relative path
+import { validateFilePath } from '../../utils/security.js'; // Normalized relative path
+import logger from '../../utils/logger.js'; // Normalized relative path
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop.js'; // Use COM Interop utilities
 
 // Input schema for the word/mermaid/export tool
 /**

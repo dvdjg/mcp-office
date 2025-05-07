@@ -7,8 +7,8 @@
  * @license MIT
  */
 import { z } from 'zod';
-import { McpResource, ToolRequestParams, ApiResponse, FastMCPContext } from '@/types/common.types'; // Import McpResource, ToolRequestParams, ApiResponse and FastMCPContext
-import { getOfficeApplication, OfficeAppName } from '../../utils/officeInterop'; // Import OfficeAppName
+import { McpResource, ToolRequestParams, ApiResponse, FastMCPContext } from '@/types/common.types.js'; // Import McpResource, ToolRequestParams, ApiResponse and FastMCPContext
+import { getOfficeApplication, OfficeAppName } from '../../utils/officeInterop.js'; // Import OfficeAppName
 import { TextContent, ContentResult } from 'fastmcp'; // Import TextContent and ContentResult
 
 // Define the input schema for the office/ai-suggest tool

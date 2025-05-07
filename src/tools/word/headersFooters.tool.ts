@@ -6,11 +6,11 @@
  * @license MIT
  */
 import { z } from "zod";
-import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types';
-import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
-import { handleToolError, createErrorResponse } from '../../utils/errorHandler';
-import { validateFilePath } from '../../utils/security';
-import logger from '../../utils/logger'; // Default import
+import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types.js';
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop.js';
+import { handleToolError, createErrorResponse } from '../../utils/errorHandler.js';
+import { validateFilePath } from '../../utils/security.js';
+import logger from '../../utils/logger.js'; // Default import
 
 // --- COM Constants (Examples, verify in Word documentation) ---
 // https://learn.microsoft.com/en-us/office/vba/api/word.wdheaderfootertype

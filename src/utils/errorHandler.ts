@@ -6,8 +6,8 @@
  * @license MIT
  */
 import { ZodError } from 'zod';
-import { ErrorResponse } from '@/types/common.types';
-import logger from './logger';
+import { ErrorResponse } from '@/types/common.types.js';
+import logger from './logger.js';
 
 /**
  * Creates a standardized error response object.

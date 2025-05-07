@@ -9,10 +9,10 @@
 import fs from 'fs-extra';
 import path from 'path';
 import { z } from 'zod';
-import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '@/types/common.types'; // Import FastMCPContext, remove ToolContext
-import { createErrorResponse, handleToolError } from '@/utils/errorHandler';
-import { validateFilePath } from '@/utils/security';
-import logger from '@/utils/logger';
+import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '@/types/common.types.js'; // Import FastMCPContext, remove ToolContext
+import { createErrorResponse, handleToolError } from '@/utils/errorHandler.js';
+import { validateFilePath } from '@/utils/security.js';
+import logger from '@/utils/logger.js';
 
 // --- Schemas ---
 

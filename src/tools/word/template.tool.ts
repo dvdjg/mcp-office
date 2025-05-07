@@ -1,9 +1,9 @@
 import { z } from 'zod';
-import { McpResource, ApiResponse, FastMCPContext } from '../../types/common.types'; // Import FastMCPContext, remove ToolContext
-import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
-import { validateFilePath } from '../../utils/security';
-import { createErrorResponse, handleToolError } from '../../utils/errorHandler'; // Added createErrorResponse
-import logger from '../../utils/logger'; // Corrected import style
+import { McpResource, ApiResponse, FastMCPContext } from '../../types/common.types.js'; // Import FastMCPContext, remove ToolContext
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop.js';
+import { validateFilePath } from '../../utils/security.js';
+import { createErrorResponse, handleToolError } from '../../utils/errorHandler.js'; // Added createErrorResponse
+import logger from '../../utils/logger.js'; // Corrected import style
 
 // 1. Define el Schema de Entrada
 const analyzeSchema = z.object({

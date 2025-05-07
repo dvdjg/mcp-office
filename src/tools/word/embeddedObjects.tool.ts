@@ -7,12 +7,12 @@
  * @license MIT
  */
 import { z } from 'zod';
-import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types'; // Import necessary types
-import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
-import { validateFilePath } from '../../utils/security'; // Corrected: Function name
+import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types.js'; // Import necessary types
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop.js';
+import { validateFilePath } from '../../utils/security.js'; // Corrected: Function name
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import logger from '../../utils/logger'; // Corrected: Default import
+import logger from '../../utils/logger.js'; // Corrected: Default import
 
 // --- Input Schema (Zod) ---
 

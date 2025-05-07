@@ -10,12 +10,12 @@
  */
 import { z } from 'zod';
 import PptxGenJS from 'pptxgenjs';
-import { McpResource, ApiResponse, ToolRequestParams } from '../../types/common.types';
-import { getOfficeApplication, releaseObject } from '../../utils/officeInterop'; // Added releaseObject
-import logger from '../../utils/logger'; // Import logger
-import * as fs from 'fs-extra'; // Import fs for file existence check
-import * as path from 'path'; // Import path for resolving
-import { saveResource } from '../dynamic/resources.tool'; // Import saveResource
+import { McpResource, ApiResponse, ToolRequestParams } from '../../types/common.types.js';
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop.js'; // Added releaseObject
+import logger from '../../utils/logger.js'; // Import logger
+import fs from 'fs-extra'; // Import fs for file existence check
+import { resolve as resolvePath, basename as basenamePath } from 'path'; // Import path for resolving
+import { saveResource } from '../dynamic/resources.tool.js'; // Import saveResource
 
 // Helper to create standard error responses
 const createErrorResponse = (message: string, code = 'TOOL_EXECUTION_ERROR', details?: unknown): ApiResponse<never> => ({
@@ -64,7 +64,7 @@ const animationsTool: McpResource = {
         newObjectText, newObjectOptions
     } = input;
 
-    const absoluteFilePath = path.resolve(filePath);
+    const absoluteFilePath = resolvePath(filePath);
 
     if (useComInterop) {
       // COM Interop Path
@@ -176,8 +176,8 @@ const animationsTool: McpResource = {
           try {
             if (operation === 'add' || operation === 'configure' || operation === 'remove') {
                 presentation.Save();
-                const pptContent = await fs.readFile(absoluteFilePath, null);
-                await saveResource('powerpoint/animations', path.basename(absoluteFilePath), pptContent);
+                const pptContent = await fs.readFile(absoluteFilePath);
+                await saveResource('powerpoint/animations', basenamePath(absoluteFilePath), pptContent);
             }
             presentation.Close();
           } catch (saveCloseError: any) {
@@ -195,7 +195,7 @@ const animationsTool: McpResource = {
       logger.info(`PptxGenJS path for animations: Operation '${operation}'. Note: PptxGenJS is best for adding animations during new presentation/object generation.`);
 
       try {
-        const pptx = new PptxGenJS();
+        const pptx = new (PptxGenJS as any)(); // Cast to any for constructor
         let message = '';
 
         switch (operation) {
@@ -212,15 +212,15 @@ const animationsTool: McpResource = {
             if (effectParameters?.delay) animationObject.delay = effectParameters.delay;
             if (effectParameters?.direction) animationObject.direction = effectParameters.direction; // Common animation param
 
-            const textOpts: PptxGenJS.TextPropsOptions = {
+            const textOpts: any = { // Use any for TextPropsOptions
                 ...(newObjectOptions || { x: 1, y: 1, w: 8, h: 1 }), // Default position/size
                 animation: animationObject // Assign the correctly structured animation object
             };
             slideLib.addText(newObjectText, textOpts);
             message = `PptxGenJS: Added new text object with animation '${animationType}' to a new slide. File will be saved to ${absoluteFilePath}.`;
             await pptx.writeFile({ fileName: absoluteFilePath });
-            const pptContent = await fs.readFile(absoluteFilePath, null);
-            await saveResource('powerpoint/animations', path.basename(absoluteFilePath), pptContent);
+            const pptContent = await fs.readFile(absoluteFilePath);
+            await saveResource('powerpoint/animations', basenamePath(absoluteFilePath), pptContent);
             return { success: true, data: { message } };
 
           case 'configure':
@@ -240,8 +240,8 @@ const animationsTool: McpResource = {
 
             message = `PptxGenJS: Added a new slide with transition '${transitionType}'. File will be saved to ${absoluteFilePath}.`;
             await pptx.writeFile({ fileName: absoluteFilePath });
-            const pptContentConf = await fs.readFile(absoluteFilePath, null);
-            await saveResource('powerpoint/animations', path.basename(absoluteFilePath), pptContentConf);
+            const pptContentConf = await fs.readFile(absoluteFilePath);
+            await saveResource('powerpoint/animations', basenamePath(absoluteFilePath), pptContentConf);
             return { success: true, data: { message } };
 
           case 'remove':

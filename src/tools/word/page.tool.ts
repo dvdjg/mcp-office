@@ -6,11 +6,11 @@
  * @license MIT
  */
 import { z } from 'zod';
-import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types'; // Normalized relative path
-import { getOfficeApplication, releaseObject } from '../../utils/officeInterop'; // Normalized relative path
-import { handleToolError, createErrorResponse } from '../../utils/errorHandler'; // Normalized relative path
-import { validateFilePath } from '../../utils/security'; // Normalized relative path
-import logger from '../../utils/logger'; // Normalized relative path
+import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types.js'; // Normalized relative path
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop.js'; // Normalized relative path
+import { handleToolError, createErrorResponse } from '../../utils/errorHandler.js'; // Normalized relative path
+import { validateFilePath } from '../../utils/security.js'; // Normalized relative path
+import logger from '../../utils/logger.js'; // Normalized relative path
 
 // --- Schemas ---
 

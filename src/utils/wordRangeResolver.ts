@@ -1,5 +1,5 @@
-import logger from './logger';
-import { releaseObject } from './officeInterop';
+import logger from './logger.js';
+import { releaseObject } from './officeInterop.js';
 
 /**
  * Attempts to resolve a natural language range description to a Word COM Range object.

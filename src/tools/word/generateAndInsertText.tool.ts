@@ -7,15 +7,15 @@ import * as path from 'path'; // Importar el módulo path
  * @license MIT
  */
 import { z } from 'zod';
-import { McpResource, ApiResponse, FastMCPContext, ToolRequestParams } from '../../types/common.types'; // Normalized relative path
-import { handleToolError, createErrorResponse } from '../../utils/errorHandler'; // Normalized relative path
-import logger from '../../utils/logger'; // Normalized relative path
-import { getOfficeApplication, releaseObject } from '../../utils/officeInterop'; // Normalized relative path
-import { validateFilePath } from '../../utils/security'; // Normalized relative path
+import { McpResource, ApiResponse, FastMCPContext, ToolRequestParams } from '../../types/common.types.js'; // Normalized relative path
+import { handleToolError, createErrorResponse } from '../../utils/errorHandler.js'; // Normalized relative path
+import logger from '../../utils/logger.js'; // Normalized relative path
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop.js'; // Normalized relative path
+import { validateFilePath } from '../../utils/security.js'; // Normalized relative path
 import { UserError } from 'fastmcp'; // Import UserError for sampling errors
-import { generateText } from '../../utils/llmClient'; // Import the server-side LLM utility
-import { applyMarkdownFormattingToWord } from '../../utils/markdownToOffice'; // Import the Markdown formatting utility
-import { resolveNaturalLanguageRange } from '../../utils/wordRangeResolver'; // Import the range resolver utility
+import { generateText } from '../../utils/llmClient.js'; // Import the server-side LLM utility
+import { applyMarkdownFormattingToWord } from '../../utils/markdownToOffice.js'; // Import the Markdown formatting utility
+import { resolveNaturalLanguageRange } from '../../utils/wordRangeResolver.js'; // Import the range resolver utility
 
 // Define the session data type expected by this tool's context
 // If authentication is required and provides session data:

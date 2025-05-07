@@ -10,11 +10,11 @@ import fs from 'fs-extra';
 import { Document, Packer, IPropertiesOptions } from 'docx';
 // Note: Mammoth might be used for comment extraction if docx doesn't suffice for reading them.
 import * as mammoth from 'mammoth';
-import { McpResource, ToolRequestParams, ApiResponse, FastMCPContext } from '../../types/common.types';
-import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
-import { handleToolError, createErrorResponse } from '../../utils/errorHandler';
-import { validateFilePath } from '../../utils/security';
-import logger from '../../utils/logger';
+import { McpResource, ToolRequestParams, ApiResponse, FastMCPContext } from '../../types/common.types.js';
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop.js';
+import { handleToolError, createErrorResponse } from '../../utils/errorHandler.js';
+import { validateFilePath } from '../../utils/security.js';
+import logger from '../../utils/logger.js';
 
 // Schema for the 'set' operation
 /**

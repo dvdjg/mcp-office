@@ -11,14 +11,14 @@
  * @license MIT
  */
 import { z } from 'zod';
-import PptxGenJS from 'pptxgenjs';
+import PptxGenJS from 'pptxgenjs'; // Assuming this should be the class
 import officeParser from 'officeparser';
-import { McpResource, ToolRequestParams, ApiResponse } from '../../types/common.types';
-import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
-import logger from '../../utils/logger'; // Import logger
-import { saveResource } from '../dynamic/resources.tool'; // Import saveResource
-import * as fs from 'fs-extra'; // Import fs to read the PowerPoint file
-import * as path from 'path'; // Import path
+import { McpResource, ToolRequestParams, ApiResponse } from '../../types/common.types.js';
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop.js';
+import logger from '../../utils/logger.js'; // Import logger
+import { saveResource } from '../dynamic/resources.tool.js'; // Import saveResource
+import fs from 'fs-extra'; // Import fs to read the PowerPoint file
+import { basename as basenamePath } from 'path'; // Import path
 
 // Input schema for the powerpoint/slides tool
 const SlidesToolInputSchema = z.object({
@@ -140,8 +140,8 @@ const slidesTool: McpResource = {
           try {
             if (operation !== 'getText') { // Don't save if just reading text
                  presentation.Save();
-                 const pptContent = await fs.readFile(filePath, null);
-                 await saveResource('powerpoint/slides', path.basename(filePath), pptContent);
+                 const pptContent = await fs.readFile(filePath);
+                 await saveResource('powerpoint/slides', basenamePath(filePath), pptContent);
             }
             presentation.Close();
           } catch (closeError: any) {
@@ -156,7 +156,7 @@ const slidesTool: McpResource = {
       try {
         switch (operation) {
           case 'add':
-            const pptx = new PptxGenJS();
+            const pptx = new (PptxGenJS as any)(); // Cast to any for constructor
             // The 'slideLayout' parameter needs careful mapping to PptxGenJS layouts.
             // PptxGenJS uses predefined constants (e.g., pptx.Layouts.TITLE_SLIDE) or custom master slides.
             // For now, we'll add a slide with a default layout.
@@ -177,8 +177,8 @@ const slidesTool: McpResource = {
             await pptx.writeFile({ fileName: filePath });
             
             // Save resource after writing file
-            const pptContent = await fs.readFile(filePath, null);
-            await saveResource('powerpoint/slides', path.basename(filePath), pptContent);
+            const pptContent = await fs.readFile(filePath);
+            await saveResource('powerpoint/slides', basenamePath(filePath), pptContent);
             return { success: true, data: `Slide added using pptxgenjs and saved to "${filePath}". Layout used: ${genLayoutName || 'default'}.` };
 
           case 'delete':

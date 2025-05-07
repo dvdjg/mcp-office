@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2020",
-    "module": "CommonJS", // Changed to CommonJS for Node compatibility
+    "module": "NodeNext",
     "lib": ["ES2020", "DOM"], // Added DOM for Office JS types if needed client-side simulation
     "outDir": "./dist",
     "rootDir": "./src",
@@ -9,7 +9,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "moduleResolution": "node", // Ensure Node.js module resolution
+    "moduleResolution": "NodeNext",
     "resolveJsonModule": true,
     "baseUrl": ".", // Allows path mapping
     "paths": {

@@ -5,11 +5,11 @@
  * @copyright Copyright (c) 2025 David Jurado
  * @license MIT
  */
-import os from 'os';
-import path from 'path';
+import { homedir } from 'os';
+import { join as joinPath, resolve as resolvePath, sep as pathSep } from 'path';
 import fs from 'fs-extra'; // Use fs-extra for path existence checks
-import { createErrorResponse } from './errorHandler';
-import logger from './logger'; // Import logger
+import { createErrorResponse } from './errorHandler.js';
+import logger from './logger.js'; // Import logger
 
 // Define allowed base paths for file system operations based on ALLOWED_FS_PATHS environment variable.
 // IMPORTANT: Configure this securely based on your deployment environment!
@@ -23,13 +23,13 @@ const allowedFsPathsEnv = process.env.ALLOWED_FS_PATHS;
  */
 function resolveHome(filePath: string): string {
     if (filePath.startsWith('~')) {
-        const homeDir = os.homedir();
-        if (!homeDir) {
+        const resolvedHomeDir = homedir();
+        if (!resolvedHomeDir) {
             logger.warn(`[Security] Could not determine home directory for path: ${filePath}.`);
             // Return original path if home directory cannot be determined
             return filePath;
         }
-        return path.join(homeDir, filePath.substring(1));
+        return joinPath(resolvedHomeDir, filePath.substring(1));
     }
     return filePath;
 }
@@ -44,7 +44,7 @@ if (allowedFsPathsEnv === 'none') {
 } else if (allowedFsPathsEnv) {
     // Split the environment variable by semicolon or colon and resolve each path
     const rawAllowedPaths = allowedFsPathsEnv.split(/[:;]/);
-    ALLOWED_BASE_PATHS.push(...rawAllowedPaths.map(p => path.resolve(resolveHome(p))));
+    ALLOWED_BASE_PATHS.push(...rawAllowedPaths.map(p => resolvePath(resolveHome(p))));
     logger.info(`[Security] Allowed file system base paths: ${ALLOWED_BASE_PATHS.join(';')}`); // Still log with ; for consistency, but accept : or ; as input
 } else {
     // If ALLOWED_FS_PATHS is not set, allow all paths.
@@ -70,7 +70,7 @@ export function validateFilePath(filePath: string): string {
     }
 
     // Resolve the input path to get a canonical absolute path
-    const resolvedInputPath = path.resolve(resolveHome(filePath));
+    const resolvedInputPath = resolvePath(resolveHome(filePath));
 
     // If ALLOWED_BASE_PATHS is empty, it means no restrictions are in place (ALLOWED_FS_PATHS was not set or empty string),
     // so any path is considered allowed.
@@ -84,7 +84,7 @@ export function validateFilePath(filePath: string): string {
         // This is more robust than path.relative for checking containment.
         // Ensure basePath ends with a separator to avoid partial matches
         // e.g.: /allowed/path vs /allowed/path-other
-        const basePathWithSeparator = basePath.endsWith(path.sep) ? basePath : basePath + path.sep;
+        const basePathWithSeparator = basePath.endsWith(pathSep) ? basePath : basePath + pathSep;
         return resolvedInputPath.startsWith(basePathWithSeparator) || resolvedInputPath === basePath;
     });
 

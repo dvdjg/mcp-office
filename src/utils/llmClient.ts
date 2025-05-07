@@ -5,7 +5,7 @@
  * @copyright Copyright (c) 2025 David Jurado
  * @license MIT
  */
-import logger from './logger'; // Assuming logger is available
+import logger from './logger.js'; // Assuming logger is available
 import axios from 'axios'; // Import axios for making HTTP requests
 
 // Define a basic interface for LLM generation options

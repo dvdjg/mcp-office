@@ -13,13 +13,13 @@ import { z } from 'zod';
 import PptxGenJS from 'pptxgenjs';
 // officeparser is not typically used for shape manipulation, focusing on text extraction.
 // We'll rely on PptxGenJS for generation and note limitations for modification/listing.
-import { McpResource, ToolRequestParams, ApiResponse, FastMCPContext } from '../../types/common.types'; // Added FastMCPContext
-import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
-import logger from '../../utils/logger';
-import { saveResource } from '../dynamic/resources.tool';
-import * as fs from 'fs-extra';
-import * as path from 'path';
-import { validateFilePath } from '../../utils/security'; // Added security import
+import { McpResource, ToolRequestParams, ApiResponse, FastMCPContext } from '../../types/common.types.js'; // Added FastMCPContext
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop.js';
+import logger from '../../utils/logger.js';
+import { saveResource } from '../dynamic/resources.tool.js';
+import fs from 'fs-extra';
+import { resolve as resolvePath, extname as extnamePath, basename as basenamePath } from 'path';
+import { validateFilePath } from '../../utils/security.js'; // Added security import
 
 // Helper to create standard error responses
 const createErrorResponse = (message: string, code = 'TOOL_EXECUTION_ERROR', details?: unknown): ApiResponse<never> => ({
@@ -98,7 +98,7 @@ const powerpointShapesTool: McpResource = {
       useComInterop
     } = input;
 
-    const absoluteFilePath = path.resolve(filePath);
+    const absoluteFilePath = resolvePath(filePath);
     logger.info(`Executing powerpoint/shapes operation '${operation}' for file: ${absoluteFilePath} (useComInterop: ${useComInterop})`);
 
     if (useComInterop) {
@@ -121,7 +121,7 @@ const powerpointShapesTool: McpResource = {
                 if (isModificationOperation) {
                     logger.info(`COM: File not found. Creating new presentation at: ${absoluteFilePath}`);
                     presentation = app.Presentations.Add();
-                    const fileExt = path.extname(absoluteFilePath).toLowerCase();
+                    const fileExt = extnamePath(absoluteFilePath).toLowerCase();
                     let saveFormat = 24; // ppSaveAsOpenXMLPresentation (.pptx)
                     if (fileExt === '.ppt') saveFormat = 1;
                     else if (fileExt === '.pptm') saveFormat = 25;
@@ -301,8 +301,8 @@ const powerpointShapesTool: McpResource = {
         }
         if (isModificationOperation && absoluteFilePath) {
             try {
-                const pptContent = await fs.readFile(absoluteFilePath, null);
-                await saveResource('powerpoint/shapes', path.basename(absoluteFilePath), pptContent);
+                const pptContent = await fs.readFile(absoluteFilePath);
+                await saveResource('powerpoint/shapes', basenamePath(absoluteFilePath), pptContent);
             } catch (resourceSaveError: any) {
                 logger.error(`COM: Failed to save ${absoluteFilePath} as a dynamic resource: ${resourceSaveError.message}`);
             }
@@ -328,8 +328,8 @@ const powerpointShapesTool: McpResource = {
     } else {
       // Library Path (PptxGenJS)
       try {
-        const pptx = new PptxGenJS();
-        let slideLib: PptxGenJS.Slide | undefined = undefined;
+        const pptx = new (PptxGenJS as any)(); // Cast to any for constructor
+        let slideLib: any | undefined = undefined; // Use any for ISlide
 
         // PptxGenJS typically creates new files or overwrites existing ones.
         // It doesn't "open" and "modify" arbitrary slides/shapes in an existing file easily.
@@ -366,18 +366,18 @@ const powerpointShapesTool: McpResource = {
                 slideLib.addText(text ?? 'Sample Text', { ...shapeOpts, fontSize: formatProperties?.fontSize ?? 18 });
             } else if (shapeType.toLowerCase().includes('rectangle')) {
                 // Corrected way to reference PptxGenJS shape types
-                slideLib.addShape(PptxGenJS.ShapeType.rect, shapeOpts);
+                slideLib.addShape((PptxGenJS as any).ShapeType.rect, shapeOpts);
             } else if (shapeType.toLowerCase().includes('oval') || shapeType.toLowerCase().includes('ellipse')) {
                 // Corrected way to reference PptxGenJS shape types
-                slideLib.addShape(PptxGenJS.ShapeType.ellipse, shapeOpts);
+                slideLib.addShape((PptxGenJS as any).ShapeType.ellipse, shapeOpts);
             } else {
                 return createErrorResponse(`PptxGenJS: Unsupported shapeType '${shapeType}'. Use 'textbox', 'rectangle', 'oval' (ellipse), etc.`, 'INVALID_PARAM');
             }
             
             await pptx.writeFile({ fileName: absoluteFilePath });
             // Save resource
-            const pptContent = await fs.readFile(absoluteFilePath, null);
-            await saveResource('powerpoint/shapes', path.basename(absoluteFilePath), pptContent);
+            const pptContent = await fs.readFile(absoluteFilePath);
+            await saveResource('powerpoint/shapes', basenamePath(absoluteFilePath), pptContent);
             return { success: true, data: `PptxGenJS: Shape inserted into ${absoluteFilePath}.` };
 
           case 'modify':

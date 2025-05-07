@@ -12,14 +12,14 @@ import { z } from 'zod';
 import archiver from 'archiver';
 import * as mammoth from 'mammoth'; // Reverted import style
 import { Document, Packer, Paragraph, TextRun } from 'docx'; // For future import use
-import { McpResource, ApiResponse, ToolRequestParams } from '../../types/common.types';
-import { saveResource } from '../dynamic/resources.tool';
+import { McpResource, ApiResponse, ToolRequestParams } from '../../types/common.types.js';
+import { saveResource } from '../dynamic/resources.tool.js';
 import { Context as FastMCPContext } from 'fastmcp';
-import { handleToolError } from '../../utils/errorHandler';
-import { validateFilePath } from '../../utils/security'; // Normalized relative path
-import logger from '../../utils/logger'; // Normalized relative path
-import { getOfficeApplication, releaseObject } from '../../utils/officeInterop'; // Normalized relative path
-import { applyMarkdownFormattingToWord } from '../../utils/markdownToOffice'; // Import the Markdown formatting utility
+import { handleToolError } from '../../utils/errorHandler.js';
+import { validateFilePath } from '../../utils/security.js'; // Normalized relative path
+import logger from '../../utils/logger.js'; // Normalized relative path
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop.js'; // Normalized relative path
+import { applyMarkdownFormattingToWord } from '../../utils/markdownToOffice.js'; // Import the Markdown formatting utility
 
 // --- Schemas ---
 /**

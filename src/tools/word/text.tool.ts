@@ -3,13 +3,13 @@ import * as path from 'path';
 import * as fs from 'fs-extra';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
 import mammoth from 'mammoth';
-import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types';
-import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
-import { resolveNaturalLanguageRange } from '../../utils/wordRangeResolver';
-import { applyMarkdownFormattingToWord } from '../../utils/markdownToOffice';
-import { validateFilePath } from '../../utils/security';
-import logger from '../../utils/logger';
-import { saveResource } from '../dynamic/resources.tool';
+import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '../../types/common.types.js';
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop.js';
+import { resolveNaturalLanguageRange } from '../../utils/wordRangeResolver.js';
+import { applyMarkdownFormattingToWord } from '../../utils/markdownToOffice.js';
+import { validateFilePath } from '../../utils/security.js';
+import logger from '../../utils/logger.js';
+import { saveResource } from '../dynamic/resources.tool.js';
 
 // --- Schemas --- (Keep existing schemas)
 const textOpBaseSchema = z.object({

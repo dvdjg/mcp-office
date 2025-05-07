@@ -6,11 +6,11 @@
  * @license MIT
  */
 import { z } from 'zod';
-import { FastMCPContext, ApiResponse, ToolRequestParams, McpResource } from '../../types/common.types'; // Normalized relative path
-import { getOfficeApplication, openWordDocument, releaseObject } from '../../utils/officeInterop'; // Normalized relative path
-import logger from '../../utils/logger'; // Normalized relative path
-import { handleToolError, createErrorResponse } from '../../utils/errorHandler'; // Normalized relative path
-import { validateFilePath } from '../../utils/security'; // Normalized relative path
+import { FastMCPContext, ApiResponse, ToolRequestParams, McpResource } from '../../types/common.types.js'; // Normalized relative path
+import { getOfficeApplication, openWordDocument, releaseObject } from '../../utils/officeInterop.js'; // Normalized relative path
+import logger from '../../utils/logger.js'; // Normalized relative path
+import { handleToolError, createErrorResponse } from '../../utils/errorHandler.js'; // Normalized relative path
+import { validateFilePath } from '../../utils/security.js'; // Normalized relative path
 
 /**
  * Zod schema for the input parameters of the 'word/reformat' tool.

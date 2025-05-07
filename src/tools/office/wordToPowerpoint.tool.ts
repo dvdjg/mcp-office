@@ -10,9 +10,9 @@
  * @license MIT
  */
 import { z } from 'zod';
-import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext as Context } from '../../types/common.types';
-import logger from '../../utils/logger';
-import { getOfficeApplication, openWordDocument, releaseObject } from '../../utils/officeInterop';
+import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext as Context } from '../../types/common.types.js';
+import logger from '../../utils/logger.js';
+import { getOfficeApplication, openWordDocument, releaseObject } from '../../utils/officeInterop.js';
 
 // Define the input schema for the word-to-powerpoint tool
 const WordToPowerpointInputSchema = z.object({

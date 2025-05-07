@@ -6,10 +6,10 @@
  * @license MIT
  */
 import { z } from 'zod';
-import { McpResource, ToolRequestParams, ApiResponse } from '../../types/common.types'; // Import relevant types from the project
-import logger from '../../utils/logger'; // Import logger as default
-import { handleToolError } from '../../utils/errorHandler'; // Import handleToolError as named
-import { allRegisteredTools } from '../index'; // Import the array of registered tools
+import { McpResource, ToolRequestParams, ApiResponse } from '../../types/common.types.js'; // Import relevant types from the project
+import logger from '../../utils/logger.js'; // Import logger as default
+import { handleToolError } from '../../utils/errorHandler.js'; // Import handleToolError as named
+import { allRegisteredTools } from '../index.js'; // Import the array of registered tools
 
 // Define the schema for a single workflow step
 const WorkflowStepSchema = z.object({

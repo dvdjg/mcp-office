@@ -6,61 +6,61 @@
  * @copyright Copyright (c) 2025 David Jurado
  * @license MIT
  */
-import { McpResource } from '@/types/common.types';
+import { McpResource } from '@/types/common.types.js';
 import { z } from 'zod';
 // Import error handling functions used in placeholders and adapter
-import { createErrorResponse, handleToolError } from '@/utils/errorHandler';
+import { createErrorResponse, handleToolError } from '@/utils/errorHandler.js';
 
 // Import tool definitions (assuming default or named exports matching the variable names)
-import { fsDirectoryTool } from './fs/directory.tool'; // Exports McpResource[]
-import { fsFileTool } from './fs/file.tool'; // Exports McpResource[]
-import { registerArchiveTools } from './fs/archive.tool'; // Import the new archive tool registration function
-import { wordStylesTool } from './word/styles.tool'; // Exports McpResource[]
-import { wordMarkdownTool } from './word/markdown.tool'; // Exports McpResource[]
-import { wordMergeTool } from './word/merge.tool'; // Exports McpResource (single object)
-import { wordTemplateTool } from './word/template.tool'; // Exports McpResource[]
-import { wordTextTool } from './word/text.tool'; // Exports McpResource[]
-import { wordSearchReplaceTool } from './word/searchReplace.tool'; // Exports McpResource (single object)
-import { wordTablesTool } from './word/tables.tool'; // Exports McpResource (single object)
-import { wordChartsTool } from './word/charts.tool'; // Exports McpResource (single object)
-import { wordImageExtractTool, wordImageInsertTool } from './word/image.tool'; // Exports individual McpResource objects
-import { wordGenerateAndInsertTextTool } from './word/generateAndInsertText.tool'; // Exports McpResource (single object)
-import { wordPageTool } from './word/page.tool'; // Exports McpResource (single object)
-import { wordHeadersFootersTool } from './word/headersFooters.tool'; // Exports McpResource (single object)
-import { embeddedObjectsTool } from './word/embeddedObjects.tool'; // Import the embeddedObjectsTool directly
-import { batchTool } from './word/batch.tool'; // Import the new batch tool
-import mermaidImportTool from './word/mermaidImport.tool'; // Import the mermaid import tool
-import mermaidExportTool from './word/mermaidExport.tool'; // Import the mermaid export tool
-import reformatTool from './word/reformat.tool'; // Import the new reformat tool
-import { registerWordCodeFormatTool } from './word/codeFormat.tool'; // Import the new code format tool registration function
+import { fsDirectoryTool } from './fs/directory.tool.js'; // Exports McpResource[]
+import { fsFileTool } from './fs/file.tool.js'; // Exports McpResource[]
+import { registerArchiveTools } from './fs/archive.tool.js'; // Import the new archive tool registration function
+import { wordStylesTool } from './word/styles.tool.js'; // Exports McpResource[]
+import { wordMarkdownTool } from './word/markdown.tool.js'; // Exports McpResource[]
+import { wordMergeTool } from './word/merge.tool.js'; // Exports McpResource (single object)
+import { wordTemplateTool } from './word/template.tool.js'; // Exports McpResource[]
+import { wordTextTool } from './word/text.tool.js'; // Exports McpResource[]
+import { wordSearchReplaceTool } from './word/searchReplace.tool.js'; // Exports McpResource (single object)
+import { wordTablesTool } from './word/tables.tool.js'; // Exports McpResource (single object)
+import { wordChartsTool } from './word/charts.tool.js'; // Exports McpResource (single object)
+import { wordImageExtractTool, wordImageInsertTool } from './word/image.tool.js'; // Exports individual McpResource objects
+import { wordGenerateAndInsertTextTool } from './word/generateAndInsertText.tool.js'; // Exports McpResource (single object)
+import { wordPageTool } from './word/page.tool.js'; // Exports McpResource (single object)
+import { wordHeadersFootersTool } from './word/headersFooters.tool.js'; // Exports McpResource (single object)
+import { embeddedObjectsTool } from './word/embeddedObjects.tool.js'; // Import the embeddedObjectsTool directly
+import { batchTool } from './word/batch.tool.js'; // Import the new batch tool
+import mermaidImportTool from './word/mermaidImport.tool.js'; // Import the mermaid import tool
+import mermaidExportTool from './word/mermaidExport.tool.js'; // Import the mermaid export tool
+import reformatTool from './word/reformat.tool.js'; // Import the new reformat tool
+import { registerWordCodeFormatTool } from './word/codeFormat.tool.js'; // Import the new code format tool registration function
 
-import analyzeToolDefinition from './word/analyze.tool'; // Import the new analyze tool definition
+import analyzeToolDefinition from './word/analyze.tool.js'; // Import the new analyze tool definition
 
 // Import Excel tools
-import { excelWorksheetsTool } from './excel/worksheets.tool';
-import excelRangeTool from './excel/range.tool'; // Import the new excel/range tool
-import excelTablesTool from './excel/tables.tool'; // Import the new excel/tables tool
-import excelChartsTool from './excel/charts.tool'; // Import the new excel/charts tool
-import { excelDataAnalysisTool } from './excel/dataAnalysis.tool'; // Import the new excel/data-analysis tool
+import { excelWorksheetsTool } from './excel/worksheets.tool.js';
+import excelRangeTool from './excel/range.tool.js'; // Import the new excel/range tool
+import excelTablesTool from './excel/tables.tool.js'; // Import the new excel/tables tool
+import excelChartsTool from './excel/charts.tool.js'; // Import the new excel/charts tool
+import { excelDataAnalysisTool } from './excel/dataAnalysis.tool.js'; // Import the new excel/data-analysis tool
 
 // Import PowerPoint tools
-import slidesTool from './powerpoint/slides.tool'; // Import the new powerpoint/slides tool
-import powerpointShapesTool from './powerpoint/shapes.tool'; // Import the new powerpoint/shapes tool
-import { powerpointPropertiesTool } from './powerpoint/properties.tool'; // Import the new powerpoint/properties tool
-import animationsTool from './powerpoint/animations.tool'; // Import the new powerpoint/animations tool
-import officeTransferTool from './office/transfer.tool'; // Import the new office/transfer tool
-import { OfficeWorkflowTool } from './office/workflow.tool'; // Import the new office/workflow tool
-import { pdfExportTool } from './office/pdfExport.tool'; // Import the new office/pdf/export tool
-import pdfParseTool from './office/pdfParse.tool'; // Import the new office/pdf/parse tool
-import { officeCombineTool } from './office/combine.tool'; // Import the new office/combine tool
+import slidesTool from './powerpoint/slides.tool.js'; // Import the new powerpoint/slides tool
+import powerpointShapesTool from './powerpoint/shapes.tool.js'; // Import the new powerpoint/shapes tool
+import { powerpointPropertiesTool } from './powerpoint/properties.tool.js'; // Import the new powerpoint/properties tool
+import animationsTool from './powerpoint/animations.tool.js'; // Import the new powerpoint/animations tool
+import officeTransferTool from './office/transfer.tool.js'; // Import the new office/transfer tool
+import { OfficeWorkflowTool } from './office/workflow.tool.js'; // Import the new office/workflow tool
+import { pdfExportTool } from './office/pdfExport.tool.js'; // Import the new office/pdf/export tool
+import pdfParseTool from './office/pdfParse.tool.js'; // Import the new office/pdf/parse tool
+import { officeCombineTool } from './office/combine.tool.js'; // Import the new office/combine tool
 // Import dynamic tools
-import { dynamicResourcesTool } from './dynamic/resources.tool'; // Assuming single object
+import { dynamicResourcesTool } from './dynamic/resources.tool.js'; // Assuming single object
 // Import the new image analysis/generation tool
-import { officeImageAnalysisGenerationTool } from './office/imageAnalysisGeneration.tool'; // Single object
-import { generalParseTextTool } from './office/generalParseText.tool'; // Import the new general parse text tool
+import { officeImageAnalysisGenerationTool } from './office/imageAnalysisGeneration.tool.js'; // Single object
+import { generalParseTextTool } from './office/generalParseText.tool.js'; // Import the new general parse text tool
 
 // Import static resources
-import aiAssistantGuideResource from '../resources/static/ai_assistant_guide.resource';
+import aiAssistantGuideResource from '../resources/static/ai_assistant_guide.resource.js';
 
 /**
  * Adapts the analyze tool definition to the McpResource interface.

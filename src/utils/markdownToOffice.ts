@@ -1,9 +1,9 @@
 import MarkdownIt from 'markdown-it';
 import md_s from 'markdown-it-strikethrough-alt';
 import md_fn from 'markdown-it-footnote';
-import * as path from 'path';
-import logger from './logger';
-import { releaseObject } from './officeInterop';
+import { isAbsolute, resolve as resolvePath } from 'path';
+import logger from './logger.js';
+import { releaseObject } from './officeInterop.js';
 
 // Initialize Markdown parser
 const md = new MarkdownIt({
@@ -284,8 +284,8 @@ async function applyInlineFormatting(range: any, tokens: any[], doc: any): Promi
                      const imgAlt = token.content || '';
                      if (imgSrc) {
                          let resolvedImgPath = imgSrc;
-                         if (!path.isAbsolute(imgSrc)) {
-                             resolvedImgPath = path.resolve(imgSrc); // Resolve relative to workspace for now
+                         if (!isAbsolute(imgSrc)) {
+                             resolvedImgPath = resolvePath(imgSrc); // Resolve relative to workspace for now
                          }
                          let inlineShape = null;
                          try {

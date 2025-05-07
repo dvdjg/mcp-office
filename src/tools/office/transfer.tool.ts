@@ -6,12 +6,12 @@
  * @license MIT
  */
 // src/tools/office/transfer.tool.ts
-import { McpResource } from '@/types/common.types';
+import { McpResource } from '@/types/common.types.js';
 import { z } from 'zod';
-import { handleToolError } from '@/utils/errorHandler';
-import { getOfficeApplication, releaseObject, OfficeAppName } from '@/utils/officeInterop'; // Import releaseObject and OfficeAppName
+import { handleToolError } from '@/utils/errorHandler.js';
+import { getOfficeApplication, releaseObject, OfficeAppName } from '@/utils/officeInterop.js'; // Import releaseObject and OfficeAppName
 import * as winax from 'winax'; // Import winax for COM Interop
-import { ApiResponse, ErrorResponse, SuccessResponse } from '@/types/common.types'; // Import necessary types
+import { ApiResponse, ErrorResponse, SuccessResponse } from '@/types/common.types.js'; // Import necessary types
 
 // Define the input schema for the office/transfer tool
 const officeTransferInputSchema = z.object({
