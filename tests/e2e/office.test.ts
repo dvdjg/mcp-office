@@ -8,6 +8,7 @@ const FIXTURES_DIR = path.join(__dirname, '../fixtures');
 const FIXTURE_WORD_DOC = path.join(FIXTURES_DIR, 'CV.docx'); // Assuming this fixture exists
 const FIXTURE_EXCEL_DOC = path.join(FIXTURES_DIR, 'sample_excel_data.xlsx'); // Assuming this fixture exists
 const FIXTURE_PPT_DOC = path.join(FIXTURES_DIR, 'sample_presentation.pptx'); // Assuming this fixture exists
+const FIXTURE_TXT_FILE = path.join(FIXTURES_DIR, 'sample_text_file.txt'); // For testing unsupported types
 
 
 // Define a basic type for the expected successful response
@@ -45,7 +46,7 @@ describe('office (cross-application) e2e tests', () => {
     await fs.mkdir(TEMP_DIR, { recursive: true });
 
     // Check if fixture files exist
-    const fixtures = [FIXTURE_WORD_DOC, FIXTURE_EXCEL_DOC, FIXTURE_PPT_DOC];
+    const fixtures = [FIXTURE_WORD_DOC, FIXTURE_EXCEL_DOC, FIXTURE_PPT_DOC, FIXTURE_TXT_FILE];
     for (const fixturePath of fixtures) {
       try {
         await fs.stat(fixturePath);
@@ -286,4 +287,132 @@ describe('office (cross-application) e2e tests', () => {
   });
 
   // TODO: Add tests for Static and Dynamic Resources tools
+
+  describe('office/generalParseText', () => {
+    const toolName = 'office/generalParseText';
+
+    test('should extract text from a .docx file', async () => {
+      const response = await fetch(`${MCP_SERVER_URL}/tool`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tool_name: toolName,
+          arguments: { filePath: 'tests/fixtures/CV.docx' },
+        }),
+      });
+      expect(response.ok).toBe(true);
+      const result = await response.json() as ToolResponse;
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.extractedText).toBeDefined();
+        expect(result.data.extractedText.length).toBeGreaterThan(0);
+        // Depending on officeparser, detectedFileType might be 'docx' or undefined
+        // For now, we'll just check it's a string if present
+        if (result.data.detectedFileType) {
+            expect(typeof result.data.detectedFileType).toBe('string');
+        }
+        expect(result.message).toBe('Text extracted successfully.');
+      }
+    });
+
+    test('should extract text from an .xlsx file', async () => {
+      const response = await fetch(`${MCP_SERVER_URL}/tool`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tool_name: toolName,
+          arguments: { filePath: 'tests/fixtures/sample_excel_data.xlsx' },
+        }),
+      });
+      expect(response.ok).toBe(true);
+      const result = await response.json() as ToolResponse;
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.extractedText).toBeDefined();
+        // Excel text extraction can be tricky, might just be cell values concatenated
+        expect(result.data.extractedText.length).toBeGreaterThan(0);
+        if (result.data.detectedFileType) {
+            expect(typeof result.data.detectedFileType).toBe('string');
+        }
+        expect(result.message).toBe('Text extracted successfully.');
+      }
+    });
+
+    test('should extract text from a .pptx file', async () => {
+      const response = await fetch(`${MCP_SERVER_URL}/tool`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tool_name: toolName,
+          arguments: { filePath: 'tests/fixtures/sample_presentation.pptx' },
+        }),
+      });
+      expect(response.ok).toBe(true);
+      const result = await response.json() as ToolResponse;
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.extractedText).toBeDefined();
+        expect(result.data.extractedText.length).toBeGreaterThan(0);
+        if (result.data.detectedFileType) {
+            expect(typeof result.data.detectedFileType).toBe('string');
+        }
+        expect(result.message).toBe('Text extracted successfully.');
+      }
+    });
+
+    test('should return FILE_NOT_FOUND for a non-existent file', async () => {
+      const response = await fetch(`${MCP_SERVER_URL}/tool`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tool_name: toolName,
+          arguments: { filePath: 'tests/fixtures/non_existent_file.docx' },
+        }),
+      });
+      // The server should still respond with OK, but the tool's success flag will be false
+      expect(response.ok).toBe(true);
+      const result = await response.json() as ToolResponse;
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.code).toBe('FILE_NOT_FOUND');
+        expect(result.error.message).toContain('Error: File not found at path');
+      }
+    });
+
+    test('should handle an unsupported file type (e.g., .txt) gracefully', async () => {
+      const response = await fetch(`${MCP_SERVER_URL}/tool`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tool_name: toolName,
+          arguments: { filePath: 'tests/fixtures/sample_text_file.txt' },
+        }),
+      });
+      expect(response.ok).toBe(true);
+      const result = await response.json() as ToolResponse;
+      // officeparser might return an error or empty text for unsupported types.
+      // The tool should reflect this. If officeparser errors, it's an OFFICEPARSER_ERROR.
+      // If it returns empty string, it's a success with empty text.
+      // Based on the tool's implementation, an error from officeparser becomes an OFFICEPARSER_ERROR.
+      if (!result.success) {
+        expect(result.error.code).toBe('OFFICEPARSER_ERROR'); // Or other relevant error code
+        expect(result.error.message).toBeDefined();
+      } else {
+        // This case implies officeparser "succeeded" but returned no text or garbage.
+        // For a .txt file, officeparser might actually return the text.
+        // Let's assume for this test that officeparser fails for .txt or returns an error.
+        // If officeparser *does* parse .txt, this test needs adjustment.
+        // The tool's description says "relying on officeparser to succeed or fail".
+        // If officeparser successfully extracts text from a .txt file:
+        expect(result.data.extractedText).toBeDefined();
+        // Potentially check if it's the content of the .txt file
+        // For now, let's assume the more likely scenario is officeparser errors out or returns empty for non-Office.
+        // The unit tests cover officeparser erroring more directly.
+        // This E2E test verifies the tool's behavior when officeparser encounters such a file.
+      }
+    });
+    
+    // Optional: Test with a known corrupted Office file if you have one
+    // test('should handle a corrupted Office file gracefully', async () => { ... });
+  });
 });

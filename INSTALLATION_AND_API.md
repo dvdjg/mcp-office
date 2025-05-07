@@ -16,6 +16,7 @@ This guide covers setup, configuration, and detailed API endpoints for leveragin
 - [Excel Tools](#excel-tools)
 - [PowerPoint Tools](#powerpoint-tools)
 - [Cross-Application Tools](#cross-application-tools)
+  - [office/generalParseText](#officegeneralparsetext)
 - [Static and Dynamic Resources](#static-and-dynamic-resources)
 
 ## Installation
@@ -151,6 +152,15 @@ npm run docs:api
 - **office/word-to-powerpoint**: Convert Word to PowerPoint
 - **office/ai-suggest**: Provide AI-driven suggestions
 - **office/workflow**: Execute multi-step automation workflows
+- **office/generalParseText**: <a name="officegeneralparsetext"></a>Extracts text content from various Office document formats (`.docx`, `.xlsx`, `.pptx`, `.odt`, etc.) using the `officeparser` library. This tool is designed for quick, server-side text extraction and does *not* use COM Interop.
+    - **Purpose**: Provides a fast way to get the textual content of an Office file for preview, indexing, or initial analysis without needing Office installed or relying on COM.
+    - **Input Parameters**:
+        - `filePath` (string, required): The path to the Office document.
+    - **Output**:
+        - `extractedText` (string): The extracted plain text from the document.
+        - `message` (string, optional): A message indicating success or any warnings (e.g., if the file type was ambiguous but parsing was attempted).
+        - `detectedFileType` (string, optional): The detected MIME type or common extension of the file if identifiable by the parser.
+    - Example: `POST /office/generalParseText?filePath=/docs/archive/old_mystery_document.odt`
 
 ## Static and Dynamic Resources
 - **memory/ai_assistant_guide**: `read`, `list`

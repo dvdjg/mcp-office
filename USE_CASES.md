@@ -43,6 +43,8 @@ Welcome to the **Office MCP Server**’s hall of fame, where Word, Excel, PowerP
   - [The Universal Office Translator](#the-universal-office-translator)
   - [The Credential Guardian](#the-credential-guardian)
   - [The Compressed File Manager (ZIP, 7z, etc.)](#the-compressed-file-manager-zip-7z-etc)
+  - [Use Case XX: The Accidental Archivist's Assistant! (generalParseText)](#use-case-xx-the-accidental-archivists-assistant-generalparsetext)
+  - [Use Case YY: The AI's Appetizer! (generalParseText)](#use-case-yy-the-ais-appetizer-generalparsetext)
   - [Accessing Cloud Documents (Future)](#accessing-cloud-documents-future)
 
 ## How We Tackle Your Office Shenanigans: COM vs. Libraries
@@ -387,6 +389,24 @@ The real magic happens when Office MCP makes Word, Excel, and PowerPoint dance t
 - **AI Infers**: The user wants to manage compressed files. The `fs/archive/list`, `fs/archive/extract`, and `fs/archive/create` tools are now available for ZIP and 7z formats, with read support for others depending on the installed 7z executable capabilities. This uses system utilities/libraries, not COM or Office-specific libraries.
 - **AI Action**: Uses the appropriate `fs/archive` tool based on the user's request (list, extract, or create) and the archive format.
 - **Interaction**: AI asks for the archive path, desired operation, and any necessary parameters like target file or output directory.
+
+### Use Case XX: The Accidental Archivist's Assistant! (generalParseText)
+**Scenario**: You've unearthed a dusty old `.odt` file from a floppy disk labeled "TOP SECRET SQUIRREL RECIPES." Is it the key to a global nut empire, or just your Great Aunt Mildred's ramblings? Manually opening obscure old formats can be a pain, and you just need the text, stat! 🐿️📜
+**Solution**:
+- **User Tells AI**: "Quick, extract the text from this ancient `mystery_disk.odt` file! I need to know if I should be investing in acorns."
+- **AI Infers**: The user needs a fast, no-fuss text extraction from a potentially obscure Office-like format. The `office/generalParseText` tool is perfect for this, as it uses `officeparser` which handles a variety of formats without needing specific applications installed or COM interop.
+- **AI Action**: Uses `office/generalParseText` with `filePath=/mnt/floppy/mystery_disk.odt`. The tool quickly yanks out the text.
+- **Result**: The extracted text reveals it's actually just a grocery list from 1998, featuring "prunes" and "extra-strength denture cream." Crisis (and potential squirrel uprising) averted! The `detectedFileType` might also confirm it was indeed an OpenOffice document.
+- **Interaction**: AI says, "Alright, let's see what secrets this digital relic holds! Point me to the file, and I'll get the text. No promises on deciphering ancient grocery lists, though!"
+
+### Use Case YY: The AI's Appetizer! (generalParseText)
+**Scenario**: You have a colossal 500-slide PowerPoint presentation (`MegaCorp_Strategy_Q5.pptx`) that just landed on your virtual desk. Before committing your high-powered (and potentially expensive) AI to a full, detailed analysis (e.g., summarization, slide generation, image analysis), you want a quick "sniff" of the content. Is it a goldmine of strategic insights, or 100 slides of cat memes and inspirational quotes? 🧐🐱
+**Solution**:
+- **User Tells AI**: "Give me a quick text preview of `MegaCorp_Strategy_Q5.pptx` before I unleash the full AI analysis. Is it worth the deep dive?"
+- **AI Infers**: The user wants a cost-effective way to pre-screen a large document's textual content. `office/generalParseText` is the ideal "appetizer" before the main AI course. It's fast and doesn't involve complex parsing of formatting or objects.
+- **AI Action**: Uses `office/generalParseText` with `filePath=/downloads/MegaCorp_Strategy_Q5.pptx`. The tool returns the raw text content from all slides.
+- **Result**: The extracted text is mostly "Are we there yet?", "Synergy!", and a surprising amount of haikus about staplers. The AI can now advise the user that a full, costly analysis might not be the best use of resources.
+- **Interaction**: AI says, "Let's get a quick taste of this presentation. Give me the file path, and I'll serve up the text content. We'll see if it's a five-star meal or just digital breadcrumbs!"
 
 ### Accessing Cloud Documents (Future)
 **Scenario**: You need to work with documents stored in Teams or Office 365 via their links, ensuring your permissions are respected.

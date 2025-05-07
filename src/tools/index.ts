@@ -57,6 +57,7 @@ import { officeCombineTool } from './office/combine.tool'; // Import the new off
 import { dynamicResourcesTool } from './dynamic/resources.tool'; // Assuming single object
 // Import the new image analysis/generation tool
 import { officeImageAnalysisGenerationTool } from './office/imageAnalysisGeneration.tool'; // Single object
+import { generalParseTextTool } from './office/generalParseText.tool'; // Import the new general parse text tool
 
 // Import static resources
 import aiAssistantGuideResource from '../resources/static/ai_assistant_guide.resource';
@@ -125,6 +126,7 @@ const allImplementedToolsIntermediate = [
     officeCombineTool, // Assuming single object
     dynamicResourcesTool, // Assuming single object
     officeImageAnalysisGenerationTool, // Add the new tool here
+    generalParseTextTool, // Add the new general parse text tool
      // Add other imported tools here
  ];
 
