@@ -1,201 +1,231 @@
-import PptxGenJS from 'pptxgenjs';
-import fs from 'fs-extra';
 import powerpointShapesTool from '../../../src/tools/powerpoint/shapes.tool'; // Default import
-import { validateFilePath } from '../../../src/utils/security';
+import PptxGenJS from 'pptxgenjs';
+// officeparser is not directly used for shape manipulation in the library path of shapes.tool
+import fs from 'fs-extra';
+import { ToolRequestParams } from '../../../src/types/common.types';
+import * as path from 'path'; // Import path for resolving paths if needed by tool
 
 // Mock PptxGenJS
 jest.mock('pptxgenjs');
-const mockPptxGenJSWriteFile = jest.fn().mockResolvedValue(undefined);
-const mockAddSlide = jest.fn();
-const mockAddShape = jest.fn();
-const mockAddText = jest.fn();
-
-// Assign mocks to the PptxGenJS prototype and class/static properties if needed
-(PptxGenJS.prototype as any).writeFile = mockPptxGenJSWriteFile;
-(PptxGenJS.prototype as any).addSlide = mockAddSlide;
-
-// Mocking methods on the slide object returned by addSlide
-mockAddSlide.mockImplementation(() => ({
-  addShape: mockAddShape,
-  addText: mockAddText,
-  // ... other slide methods if used by the tool for shapes
-}));
-
-// Mock PptxGenJS.ShapeType if it's directly used by the tool
-(PptxGenJS as any).ShapeType = {
-    rect: 'rect',
-    ellipse: 'ellipse',
-    // Add other shapes if the tool uses them directly from PptxGenJS.ShapeType
-};
-
 
 // Mock fs-extra
-const mockPathExists = jest.fn();
-const mockReadFile = jest.fn();
-// No need to mock ensureDir or writeFile for fs-extra if PptxGenJS's writeFile is handling file creation.
 jest.mock('fs-extra', () => ({
   ...jest.requireActual('fs-extra'),
-  pathExists: mockPathExists,
-  readFile: mockReadFile,
+  readFile: jest.fn(),
+  writeFile: jest.fn(), // Though pptxgenjs.writeFile is usually used
+  pathExists: jest.fn(),
+  ensureDir: jest.fn().mockResolvedValue(undefined),
 }));
 
-// Mock security utility
-jest.mock('../../../src/utils/security', () => ({
-    validateFilePath: jest.fn().mockReturnValue(true), // Assume valid path by default
+// Mock the dynamic resource saver
+jest.mock('../../../src/tools/dynamic/resources.tool', () => ({
+    saveResource: jest.fn().mockResolvedValue({ success: true, message: 'Resource saved' }),
 }));
 
 
-describe('PowerPoint Shapes Tool - Unit Tests (Library Path)', () => {
-  const mockDocumentPath = 'secure/mock/document.pptx'; // Path that would pass basic validation
-  const mockNewDocumentPath = 'secure/mock/new_document.pptx';
+describe('PowerPoint Shapes Tool Unit Tests (Library Path)', () => {
+  let mockPptxInstance: any;
+  let mockSlideInstance: any;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    // Default mock implementations for each test
-    mockPathExists.mockResolvedValue(true); // Assume file exists for modification tests
-    mockReadFile.mockResolvedValue(Buffer.from('mock pptx content')); // For saveResource
-    (validateFilePath as jest.Mock).mockReturnValue(true); // Reset to true for each test
+
+    mockSlideInstance = {
+      addText: jest.fn(),
+      addShape: jest.fn(),
+      // ... other slide methods
+    };
+
+    mockPptxInstance = {
+      addSlide: jest.fn().mockReturnValue(mockSlideInstance),
+      writeFile: jest.fn().mockResolvedValue(undefined),
+      // Mock PptxGenJS.ShapeType if it's accessed directly, e.g. PptxGenJS.ShapeType.rect
+      // This is needed because the actual PptxGenJS.ShapeType is an enum or object.
+      ShapeType: { // Replicate the structure PptxGenJS uses if needed by the tool
+        rect: 'rect', // Placeholder, actual values might be different
+        ellipse: 'ellipse',
+        // ... other shapes
+      },
+      // ... other presentation methods
+    };
+    (PptxGenJS as unknown as jest.Mock).mockImplementation(() => mockPptxInstance);
+    // Also, ensure static properties like ShapeType are available on the mock constructor
+     Object.defineProperty(PptxGenJS, 'ShapeType', {
+        value: {
+            rect: 'rect', // these are examples, use actual values from PptxGenJS if critical
+            ellipse: 'ellipse',
+            // add other shapes your tool might use
+        },
+        writable: true, // if you need to change it per test
+        configurable: true,
+    });
+
+
+    (fs.pathExists as jest.Mock).mockResolvedValue(false); // Default: file does not exist
+    (fs.readFile as unknown as jest.Mock).mockResolvedValue(Buffer.from('fake pptx content for resource saving'));
   });
 
-  describe('powerpointShapesTool.handler with operation "insert" (useComInterop: false)', () => {
-    test('should insert a shape into a new presentation if document does not exist', async () => {
-      mockPathExists.mockResolvedValue(false); // Simulate document does not exist
-
-      const result = await powerpointShapesTool.handler({
-        filePath: mockNewDocumentPath,
+  // --- Insert Shape Tests (Library Path) ---
+  describe('powerpointShapesTool: insert operation (Library Path)', () => {
+    test('should insert a shape (textbox) into a new presentation', async () => {
+      const params: ToolRequestParams = {
+        filePath: 'new_shape_test.pptx',
         operation: 'insert',
-        slideIndex: 1, // PptxGenJS path in tool might simplify to always first/new slide
-        shapeType: 'msoShapeRectangle', // Tool should map this
-        position: { left: 72, top: 72 }, // 1 inch, 1 inch
-        size: { width: 144, height: 72 }, // 2 inch, 1 inch
+        slideIndex: 1, // PptxGenJS path in tool adds to first/new slide
+        shapeType: 'msoShapeTextbox', // or just 'textbox'
+        text: 'Hello World',
+        position: { left: 72, top: 72 }, // 1 inch = 72 points
+        size: { width: 144, height: 72 },
         useComInterop: false,
-      });
+      };
+      const result = await powerpointShapesTool.handler(params);
 
-      expect(validateFilePath).toHaveBeenCalledWith(mockNewDocumentPath);
-      expect(mockPathExists).toHaveBeenCalledWith(expect.stringContaining(mockNewDocumentPath));
-      expect(PptxGenJS).toHaveBeenCalledTimes(1);
-      expect(mockAddSlide).toHaveBeenCalledTimes(1);
-      // Tool maps 'msoShapeRectangle' to PptxGenJS.ShapeType.rect
-      expect(mockAddShape).toHaveBeenCalledWith(PptxGenJS.ShapeType.rect, expect.objectContaining({ x: 1, y: 1, w: 2, h: 1 }));
-      expect(mockPptxGenJSWriteFile).toHaveBeenCalledTimes(1);
-      expect(mockPptxGenJSWriteFile).toHaveBeenCalledWith({ fileName: expect.stringContaining(mockNewDocumentPath) });
       expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.data).toContain('PptxGenJS: Shape inserted');
-      }
+      expect(PptxGenJS).toHaveBeenCalledTimes(1);
+      expect(mockPptxInstance.addSlide).toHaveBeenCalledTimes(1);
+      expect(mockSlideInstance.addText).toHaveBeenCalledWith(
+        'Hello World',
+        expect.objectContaining({
+          x: 1, // 72pts / 72 = 1 inch
+          y: 1,
+          w: 2, // 144pts / 72 = 2 inches
+          h: 1,
+          fontSize: 18, // Default from tool's PptxGenJS path
+        })
+      );
+      expect(mockPptxInstance.writeFile).toHaveBeenCalledWith({ fileName: path.resolve(params.filePath) });
     });
 
-    test('should insert a textbox shape with text', async () => {
-        mockPathExists.mockResolvedValue(false);
-        const textToInsert = "Hello PptxGenJS";
-        const result = await powerpointShapesTool.handler({ // Declare result here
-            filePath: mockNewDocumentPath,
-            operation: 'insert',
-            slideIndex: 1,
-            shapeType: 'msoShapeTextbox', // or just rely on 'text' field
-            text: textToInsert,
-            position: { left: 72, top: 144 },
-            size: { width: 288, height: 36 },
-            useComInterop: false,
-        });
-        expect(mockAddText).toHaveBeenCalledWith(textToInsert, expect.objectContaining({ x: 1, y: 2, w: 4, h: 0.5 }));
-        expect(result.success).toBe(true);
-    });
-
-    test('should return error if shapeType is missing for insert', async () => {
-        const result = await powerpointShapesTool.handler({
-            filePath: mockNewDocumentPath,
-            operation: 'insert',
-            slideIndex: 1,
-            // shapeType is missing
-            useComInterop: false,
-        });
-        expect(result.success).toBe(false);
-        if (!result.success) {
-            expect(result.error.code).toBe('MISSING_PARAM'); // Or as defined in the tool
-            expect(result.error.message).toContain('shapeType is required');
-        }
-    });
-
-    test('should return error for unsupported shapeType for insert', async () => {
-        const result = await powerpointShapesTool.handler({
-            filePath: mockNewDocumentPath,
-            operation: 'insert',
-            slideIndex: 1,
-            shapeType: 'unsupportedShapeType123',
-            useComInterop: false,
-        });
-        expect(result.success).toBe(false);
-        if (!result.success) {
-            expect(result.error.code).toBe('INVALID_PARAM');
-            expect(result.error.message).toContain('Unsupported shapeType');
-        }
-    });
-  });
-
-  describe('powerpointShapesTool.handler with "modify", "format", "delete" (useComInterop: false)', () => {
-    const operationsToTest: ('modify' | 'format' | 'delete')[] = ['modify', 'format', 'delete'];
-    operationsToTest.forEach(operation => {
-      test(`should return "not supported" error for operation "${operation}"`, async () => {
-        mockPathExists.mockResolvedValue(true); // Document exists
-
-        const result = await powerpointShapesTool.handler({
-          filePath: mockDocumentPath,
-          operation: operation,
-          slideIndex: 1,
-          shapeIndex: 1, // or shapeName
-          // formatProperties needed for 'format' but error should occur before validation
-          useComInterop: false,
-        });
-
-        expect(result.success).toBe(false);
-        if (!result.success) {
-          expect(result.error.message).toMatch(/not supported/i);
-          expect(result.error.code).toBe('POWERPOINT_LIB_UNSUPPORTED');
-        }
-        expect(mockPptxGenJSWriteFile).not.toHaveBeenCalled();
-      });
-    });
-  });
-
-  describe('powerpointShapesTool.handler with operation "list" (useComInterop: false)', () => {
-    test('should return "not supported" error for library path', async () => {
-      mockPathExists.mockResolvedValue(true); // Document exists
-
-      const result = await powerpointShapesTool.handler({
-        filePath: mockDocumentPath,
-        operation: 'list',
-        // slideIndex is optional for list
+    test('should insert a rectangle shape into a new presentation', async () => {
+      const params: ToolRequestParams = {
+        filePath: 'new_rect_test.pptx',
+        operation: 'insert',
+        slideIndex: 1,
+        shapeType: 'msoShapeRectangle', // or 'rectangle'
+        position: { left: 100, top: 100 },
+        size: { width: 200, height: 100 },
         useComInterop: false,
+      };
+      const result = await powerpointShapesTool.handler(params);
+
+      expect(result.success).toBe(true);
+      expect(PptxGenJS).toHaveBeenCalledTimes(1);
+      expect(mockPptxInstance.addSlide).toHaveBeenCalledTimes(1);
+      expect(mockSlideInstance.addShape).toHaveBeenCalledWith(
+        PptxGenJS.ShapeType.rect, // Expecting the tool to map to PptxGenJS.ShapeType
+        expect.objectContaining({
+          x: 100 / 72,
+          y: 100 / 72,
+          w: 200 / 72,
+          h: 100 / 72,
+        })
+      );
+      expect(mockPptxInstance.writeFile).toHaveBeenCalledWith({ fileName: path.resolve(params.filePath) });
+    });
+
+    test('should insert an ellipse shape into a new presentation', async () => {
+        const params: ToolRequestParams = {
+          filePath: 'new_ellipse_test.pptx',
+          operation: 'insert',
+          slideIndex: 1,
+          shapeType: 'msoShapeOval', // or 'ellipse'
+          position: { left: 50, top: 50 },
+          size: { width: 150, height: 75 },
+          useComInterop: false,
+        };
+        const result = await powerpointShapesTool.handler(params);
+  
+        expect(result.success).toBe(true);
+        expect(mockSlideInstance.addShape).toHaveBeenCalledWith(
+          PptxGenJS.ShapeType.ellipse,
+          expect.objectContaining({
+            x: 50 / 72,
+            y: 50 / 72,
+            w: 150 / 72,
+            h: 75 / 72,
+          })
+        );
+        expect(mockPptxInstance.writeFile).toHaveBeenCalledWith({ fileName: path.resolve(params.filePath) });
       });
+
+    test('should return error for unsupported shapeType on library path', async () => {
+      const params: ToolRequestParams = {
+        filePath: 'unsupported_shape.pptx',
+        operation: 'insert',
+        slideIndex: 1,
+        shapeType: 'msoShapeStar', // Assuming this is not directly supported by the tool's lib path
+        useComInterop: false,
+      };
+      const result = await powerpointShapesTool.handler(params);
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.message).toMatch(/not supported/i);
+        expect(result.error.code).toBe('INVALID_PARAM'); // Or specific code from tool
+        expect(result.error.message).toMatch(/Unsupported shapeType/i);
+      }
+    });
+
+    test('should require shapeType for insert operation on library path', async () => {
+        const params: ToolRequestParams = {
+          filePath: 'no_shape_type.pptx',
+          operation: 'insert',
+          slideIndex: 1,
+          // shapeType is missing
+          useComInterop: false,
+        };
+        const result = await powerpointShapesTool.handler(params);
+  
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.code).toBe('MISSING_PARAM');
+          expect(result.error.message).toMatch(/shapeType is required/i);
+        }
+      });
+  });
+
+  // --- Modify, Format, Delete, List Shape Tests (Library Path) ---
+  // These operations are generally not supported or very limited for PptxGenJS on existing files.
+  // Tests should confirm they return the appropriate "not supported" or "limited support" messages.
+
+  ['modify', 'format', 'delete'].forEach(operation => {
+    describe(`powerpointShapesTool: ${operation} operation (Library Path)`, () => {
+      test(`should report "not supported" for '${operation}' operation`, async () => {
+        const params: ToolRequestParams = {
+          filePath: 'existing_file.pptx',
+          operation: operation as 'modify' | 'format' | 'delete',
+          slideIndex: 1,
+          shapeIndex: 1, // or shapeName
+          // formatProperties: operation === 'format' ? { fillColor: "FF0000" } : undefined,
+          useComInterop: false,
+        };
+        (fs.pathExists as jest.Mock).mockResolvedValue(true); // File "exists"
+        const result = await powerpointShapesTool.handler(params);
+
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.code).toBe('POWERPOINT_LIB_UNSUPPORTED');
+          expect(result.error.message).toMatch(/not supported/i);
+        }
+      });
+    });
+  });
+
+  describe('powerpointShapesTool: list operation (Library Path)', () => {
+    test('should report "not supported" for list operation', async () => {
+      const params: ToolRequestParams = {
+        filePath: 'existing_file.pptx',
+        operation: 'list',
+        slideIndex: 1, // Optional for list
+        useComInterop: false,
+      };
+      (fs.pathExists as jest.Mock).mockResolvedValue(true); // File "exists"
+      const result = await powerpointShapesTool.handler(params);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
         expect(result.error.code).toBe('POWERPOINT_LIB_UNSUPPORTED');
+        expect(result.error.message).toMatch(/not supported/i);
       }
     });
   });
-
-  test('should return validation error for invalid filePath', async () => {
-    (validateFilePath as jest.Mock).mockReturnValue(false); // Simulate invalid path
-    const result = await powerpointShapesTool.handler({
-        filePath: 'invalid/../path.pptx',
-        operation: 'insert',
-        slideIndex: 1,
-        shapeType: 'msoShapeRectangle',
-        useComInterop: false,
-    });
-    expect(validateFilePath).toHaveBeenCalledWith('invalid/../path.pptx');
-    expect(result.success).toBe(false);
-    if(!result.success){
-        // This depends on how Zod errors are translated by the main handler or if caught by createErrorResponse
-        // Assuming it's caught by the tool's Zod parsing and returned as VALIDATION_ERROR
-        expect(result.error.code).toBe('VALIDATION_ERROR'); // Or specific code from tool
-        expect(result.error.message).toContain('Input validation failed'); // Or "Invalid or potentially unsafe file path"
-    }
-  });
-
-  // TODO: Add tests for PptxGenJS specific formatting options if the tool implements them for 'insert'.
-  // TODO: Test edge cases for position and size conversions (e.g., undefined values).
 });

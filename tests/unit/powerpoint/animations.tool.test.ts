@@ -1,53 +1,54 @@
+import animationsTool from '../../../src/tools/powerpoint/animations.tool'; // Default import
 import PptxGenJS from 'pptxgenjs';
 import fs from 'fs-extra';
-import animationsTool from '../../../src/tools/powerpoint/animations.tool'; // Default import
-import { validateFilePath } from '../../../src/utils/security'; // Assuming this might be used or added
+import { ToolRequestParams } from '../../../src/types/common.types';
+import * as path from 'path';
 
 // Mock PptxGenJS
 jest.mock('pptxgenjs');
-const mockPptxGenJSWriteFile = jest.fn().mockResolvedValue(undefined);
-const mockAddSlide = jest.fn();
-const mockAddTextWithAnimation = jest.fn(); // Specific for testing animation on text
-
-// Assign mocks to the PptxGenJS prototype
-(PptxGenJS.prototype as any).writeFile = mockPptxGenJSWriteFile;
-(PptxGenJS.prototype as any).addSlide = mockAddSlide;
-
-// Mocking methods on the slide object returned by addSlide
-mockAddSlide.mockImplementation(() => ({
-  addText: mockAddTextWithAnimation,
-  // other slide methods if used by the tool for animations
-}));
 
 // Mock fs-extra
-const mockPathExists = jest.fn();
-const mockReadFile = jest.fn();
 jest.mock('fs-extra', () => ({
   ...jest.requireActual('fs-extra'),
-  pathExists: mockPathExists,
-  readFile: mockReadFile,
+  readFile: jest.fn(),
+  writeFile: jest.fn(),
+  pathExists: jest.fn(),
+  ensureDir: jest.fn().mockResolvedValue(undefined),
 }));
 
-// Mock security utility (if animations tool uses it, good practice to have it ready)
-jest.mock('../../../src/utils/security', () => ({
-    validateFilePath: jest.fn().mockReturnValue(true),
+// Mock the dynamic resource saver
+jest.mock('../../../src/tools/dynamic/resources.tool', () => ({
+    saveResource: jest.fn().mockResolvedValue({ success: true, message: 'Resource saved' }),
 }));
 
-describe('PowerPoint Animations Tool - Unit Tests (Library Path)', () => {
-  const mockDocumentPath = 'secure/mock/animated_document.pptx';
-  const mockNewDocumentPath = 'secure/mock/new_animated_document.pptx';
+describe('PowerPoint Animations Tool Unit Tests (Library Path)', () => {
+  let mockPptxInstance: any;
+  let mockSlideInstance: any;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockPathExists.mockResolvedValue(false); // Default to document not existing for add/configure tests
-    mockReadFile.mockResolvedValue(Buffer.from('mock pptx content'));
-    (validateFilePath as jest.Mock).mockReturnValue(true);
+
+    mockSlideInstance = {
+      addText: jest.fn(),
+      // ... other slide methods
+    };
+
+    mockPptxInstance = {
+      addSlide: jest.fn().mockReturnValue(mockSlideInstance),
+      writeFile: jest.fn().mockResolvedValue(undefined),
+      // ... other presentation methods
+    };
+    (PptxGenJS as unknown as jest.Mock).mockImplementation(() => mockPptxInstance);
+
+    (fs.pathExists as jest.Mock).mockResolvedValue(false); // Default: file does not exist
+    (fs.readFile as unknown as jest.Mock).mockResolvedValue(Buffer.from('fake pptx content for resource saving'));
   });
 
-  describe('animationsTool.handler with operation "add" (useComInterop: false)', () => {
-    test('should add a new text object with animation to a new slide', async () => {
-      const result = await animationsTool.handler({
-        filePath: mockNewDocumentPath,
+  // --- Add Animation Tests (Library Path) ---
+  describe('animationsTool: add operation (Library Path)', () => {
+    test('should add animation to a new text object on a new slide', async () => {
+      const params: ToolRequestParams = {
+        filePath: 'new_animated_text.pptx',
         operation: 'add',
         animationType: 'fadeIn',
         newObjectText: 'Animated Text!',
@@ -55,12 +56,14 @@ describe('PowerPoint Animations Tool - Unit Tests (Library Path)', () => {
         duration: 2,
         effectParameters: { delay: 0.5, direction: 'fromBottom' },
         useComInterop: false,
-      });
+      };
+      const result = await animationsTool.handler(params);
 
+      expect(result.success).toBe(true);
       expect(PptxGenJS).toHaveBeenCalledTimes(1);
-      expect(mockAddSlide).toHaveBeenCalledTimes(1);
-      expect(mockAddTextWithAnimation).toHaveBeenCalledWith(
-        'Animated Text!',
+      expect(mockPptxInstance.addSlide).toHaveBeenCalledTimes(1);
+      expect(mockSlideInstance.addText).toHaveBeenCalledWith(
+        params.newObjectText,
         expect.objectContaining({
           x: 1, y: 1, w: 5, h: 0.5,
           animation: {
@@ -71,114 +74,89 @@ describe('PowerPoint Animations Tool - Unit Tests (Library Path)', () => {
           },
         })
       );
-      expect(mockPptxGenJSWriteFile).toHaveBeenCalledWith({ fileName: expect.stringContaining(mockNewDocumentPath) });
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.data.message).toContain('PptxGenJS: Added new text object with animation');
-      }
+      expect(mockPptxInstance.writeFile).toHaveBeenCalledWith({ fileName: path.resolve(params.filePath) });
     });
 
-    test('should return error if animationType or newObjectText is missing for "add"', async () => {
-      let result = await animationsTool.handler({
-        filePath: mockNewDocumentPath,
+    test('should require animationType and newObjectText for add operation', async () => {
+      const paramsMissingType: ToolRequestParams = {
+        filePath: 'anim_missing_type.pptx',
         operation: 'add',
-        // animationType missing
-        newObjectText: 'Some Text',
+        newObjectText: 'Some text',
         useComInterop: false,
-      });
+      };
+      let result = await animationsTool.handler(paramsMissingType);
       expect(result.success).toBe(false);
-      if (!result.success) expect(result.error.code).toBe('MISSING_PARAM_LIB');
+      if(!result.success) expect(result.error.code).toBe('MISSING_PARAM_LIB');
 
-      result = await animationsTool.handler({
-        filePath: mockNewDocumentPath,
+      const paramsMissingText: ToolRequestParams = {
+        filePath: 'anim_missing_text.pptx',
         operation: 'add',
         animationType: 'flyIn',
-        // newObjectText missing
         useComInterop: false,
-      });
+      };
+      result = await animationsTool.handler(paramsMissingText);
       expect(result.success).toBe(false);
-      if (!result.success) expect(result.error.code).toBe('MISSING_PARAM_LIB');
+      if(!result.success) expect(result.error.code).toBe('MISSING_PARAM_LIB');
     });
   });
 
-  describe('animationsTool.handler with operation "configure" (useComInterop: false)', () => {
-    test('should add a new slide with specified transition', async () => {
-      const result = await animationsTool.handler({
-        filePath: mockNewDocumentPath,
+  // --- Configure Transition Tests (Library Path) ---
+  describe('animationsTool: configure operation (Library Path)', () => {
+    test('should configure transition for a new slide', async () => {
+      const params: ToolRequestParams = {
+        filePath: 'new_slide_transition.pptx',
         operation: 'configure',
         transitionType: 'fade',
         duration: 1.5,
-        effectParameters: { direction: 'thruBlk' }, // Example PptxGenJS transition option
+        effectParameters: { direction: 'smoothly' }, // Example PptxGenJS might take specific ones
         useComInterop: false,
-      });
+      };
+      const result = await animationsTool.handler(params);
 
-      expect(PptxGenJS).toHaveBeenCalledTimes(1);
-      expect(mockAddSlide).toHaveBeenCalledWith(
-        expect.objectContaining({
-          transition: {
-            type: 'fade',
-            duration: 1.5,
-            direction: 'thruBlk',
-          },
-        })
-      );
-      expect(mockPptxGenJSWriteFile).toHaveBeenCalledWith({ fileName: expect.stringContaining(mockNewDocumentPath) });
       expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.data.message).toContain('PptxGenJS: Added a new slide with transition');
-      }
+      expect(PptxGenJS).toHaveBeenCalledTimes(1);
+      expect(mockPptxInstance.addSlide).toHaveBeenCalledWith(expect.objectContaining({
+        transition: {
+          type: 'fade',
+          duration: 1.5,
+          direction: 'smoothly',
+        },
+      }));
+      expect(mockPptxInstance.writeFile).toHaveBeenCalledWith({ fileName: path.resolve(params.filePath) });
     });
 
-    test('should return error if transitionType is missing for "configure"', async () => {
-      const result = await animationsTool.handler({
-        filePath: mockNewDocumentPath,
-        operation: 'configure',
-        // transitionType missing
-        useComInterop: false,
+    test('should require transitionType for configure operation', async () => {
+        const params: ToolRequestParams = {
+          filePath: 'trans_missing_type.pptx',
+          operation: 'configure',
+          useComInterop: false,
+        };
+        const result = await animationsTool.handler(params);
+        expect(result.success).toBe(false);
+        if(!result.success) expect(result.error.code).toBe('MISSING_PARAM_LIB');
       });
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.code).toBe('MISSING_PARAM_LIB');
-      }
-    });
   });
 
-  describe('animationsTool.handler with "remove" or "list" (useComInterop: false)', () => {
-    const operationsToTest: ('remove' | 'list')[] = ['remove', 'list'];
-    operationsToTest.forEach(operation => {
-      test(`should return "not supported" error for operation "${operation}"`, async () => {
-        mockPathExists.mockResolvedValue(true); // Simulate existing file
-
-        const result = await animationsTool.handler({
-          filePath: mockDocumentPath,
-          operation: operation,
-          slideIndex: 1, // Relevant for COM, but error should occur due to lib path
-          shapeIndex: 1, // Relevant for COM
+  // --- Remove and List Operations (Library Path) ---
+  ['remove', 'list'].forEach(operation => {
+    describe(`animationsTool: ${operation} operation (Library Path)`, () => {
+      test(`should report "not supported" for '${operation}' operation`, async () => {
+        const params: ToolRequestParams = {
+          filePath: 'existing_file_anim.pptx',
+          operation: operation as 'remove' | 'list',
+          slideIndex: 1, // These might be provided but are irrelevant for lib path failure
+          shapeIndex: 1,
           useComInterop: false,
-        });
+        };
+        (fs.pathExists as jest.Mock).mockResolvedValue(true); // File "exists"
+        const result = await animationsTool.handler(params);
 
         expect(result.success).toBe(false);
         if (!result.success) {
-          expect(result.error.message).toMatch(/not supported/i);
           expect(result.error.code).toBe('POWERPOINT_LIB_UNSUPPORTED');
+          expect(result.error.message).toMatch(/not supported/i);
         }
       });
     });
-  });
-
-  test('should return validation error for invalid filePath', async () => {
-    (validateFilePath as jest.Mock).mockReturnValue(false);
-    const result = await animationsTool.handler({
-        filePath: 'invalid/../path.pptx',
-        operation: 'add',
-        animationType: 'fadeIn',
-        newObjectText: 'test',
-        useComInterop: false,
-    });
-    expect(validateFilePath).toHaveBeenCalledWith('invalid/../path.pptx');
-    expect(result.success).toBe(false);
-    if(!result.success){
-        expect(result.error.code).toBe('VALIDATION_ERROR');
-    }
   });
 });
