@@ -12,7 +12,9 @@ import hljs from 'highlight.js';
 // import { GuessLang } from 'guesslang';
 
 // Import the language detection module and the ModelOperations class
-import { ModelOperations } from '@vscode/vscode-languagedetection';
+// Changed import for CommonJS module '@vscode/vscode-languagedetection' to resolve named export issue with ES Modules
+import VscodeLanguageDetection from '@vscode/vscode-languagedetection';
+const { ModelOperations } = VscodeLanguageDetection;
 
 // const guesslang = new GuessLang();
 

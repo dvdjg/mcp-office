@@ -7,7 +7,7 @@
  */
 import * as Zod from 'zod';
 import { Context } from 'fastmcp'; // Import only Context
-export { Context as FastMCPContext }; // Export with alias
+export type { Context as FastMCPContext }; // Export with alias
 
 /**
  * Represents the standard structure for a successful tool response.

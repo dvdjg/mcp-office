@@ -7,12 +7,16 @@
  */
 import { promises as fs } from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'node:url'; // Added for ES Module __dirname equivalent
 import { McpResource, ApiResponse, ToolRequestParams } from '../../types/common.types.js';
 import { handleToolError } from '../../utils/errorHandler.js';
 import logger from '../../utils/logger.js'; // Changed to default import
 import { Context as FastMCPContext } from 'fastmcp'; // Import FastMCP Context
 
-const guidePath = path.resolve(__dirname, '../../docs/ai_assistant_guide.md');
+// Define __dirname for ES Module scope
+const __filename_ai_guide = fileURLToPath(import.meta.url);
+const __dirname_ai_guide = path.dirname(__filename_ai_guide);
+const guidePath = path.resolve(__dirname_ai_guide, '../../docs/ai_assistant_guide.md');
 
 /**
  * Handler function to read the AI assistant usage guide.

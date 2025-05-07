@@ -15,7 +15,17 @@ import { handleToolError, createErrorResponse } from '@/utils/errorHandler.js';
 import { validateFilePath, isFsAccessAllowed } from '@/utils/security.js';
 import { getWordElementContent as getOfficeElementContentInterop } from '@/utils/officeInterop.js';
 import { McpResource, ToolRequestParams, ApiResponse } from '@/types/common.types.js';
-import packageInfo from '../../package.json' assert { type: 'json' };
+// Replaced JSON import assertion with fs.readFileSync due to SyntaxError with Node.js v22.13.0
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+// 'path' module is already imported globally for this file (see line 22).
+
+// Determine the directory of the current module to correctly resolve package.json
+// Using unique variable names to avoid potential clashes if __filename/__dirname are used elsewhere.
+const __filename_server_index_for_pkg_json = fileURLToPath(import.meta.url);
+const __dirname_server_index_for_pkg_json = path.dirname(__filename_server_index_for_pkg_json);
+const packageJsonPath = path.resolve(__dirname_server_index_for_pkg_json, '../../package.json');
+const packageInfo = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
 const packageVersion = packageInfo.version;
 const packageName = packageInfo.name;
 import * as fs from 'fs/promises'; // Import fs.promises for async file operations

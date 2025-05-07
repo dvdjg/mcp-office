@@ -9,12 +9,16 @@
 import { z } from 'zod';
 import * as fs from 'fs-extra';
 import path from 'path';
+import { fileURLToPath } from 'node:url'; // Added for ES Module __dirname equivalent
 import NodeCache from 'node-cache';
 import { McpResource, ApiResponse, ToolRequestParams, FastMCPContext } from '@/types/common.types.js';
 import logger from '@/utils/logger.js'; // Import logger
 
 // Base directory for storing dynamic resources
-const DYNAMIC_STORAGE_DIR = path.join(__dirname, '..', '..', '..', 'dynamic_storage');
+// Define __dirname for ES Module scope
+const __filename_dynamic_resources = fileURLToPath(import.meta.url);
+const __dirname_dynamic_resources = path.dirname(__filename_dynamic_resources);
+const DYNAMIC_STORAGE_DIR = path.join(__dirname_dynamic_resources, '..', '..', '..', 'dynamic_storage');
 
 // Configuration options for the resource system
 const RESOURCE_SYSTEM_ENABLED = process.env.RESOURCE_SYSTEM_ENABLED !== 'false'; // Enabled by default

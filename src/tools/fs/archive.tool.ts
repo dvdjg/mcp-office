@@ -10,7 +10,9 @@ import AdmZip from 'adm-zip';
 import * as path from 'path';
 import * as fs from 'fs-extra';
 // Assuming list and extractFull are available exports from node-7z
-import { extractFull, list } from 'node-7z';
+// Changed import for CommonJS module 'node-7z' to resolve named export issue with ES Modules
+import SevenZip from 'node-7z';
+const { extractFull, list } = SevenZip;
 import { spawn } from 'child_process'; // Use Node.js child_process for command execution
 
 // Helper function to determine archive type based on file extension
