@@ -10,6 +10,9 @@
 // src/tools/powerpoint/shapes.tool.ts
 
 import { z } from 'zod';
+import PptxGenJS from 'pptxgenjs';
+// officeparser is not typically used for shape manipulation, focusing on text extraction.
+// We'll rely on PptxGenJS for generation and note limitations for modification/listing.
 import { McpResource, ToolRequestParams, ApiResponse, FastMCPContext } from '../../types/common.types'; // Added FastMCPContext
 import { getOfficeApplication, releaseObject } from '../../utils/officeInterop';
 import logger from '../../utils/logger';
@@ -53,6 +56,7 @@ const PowerPointShapesInputSchema = z.object({
     fontItalic: z.boolean().optional().describe('Italic.'),
     fontUnderline: z.boolean().optional().describe('Underline.'),
   }).optional().describe('Format properties to apply. Required for format.'),
+  useComInterop: z.boolean().optional().default(false).describe('Set to true to use COM Interop for operations, otherwise uses pptxgenjs (with limitations).'),
 });
 
 type PowerPointShapesInput = z.infer<typeof PowerPointShapesInputSchema>;
@@ -79,194 +83,148 @@ const powerpointShapesTool: McpResource = {
   description: "Allows inserting, modifying, formatting, deleting, and listing shapes in PowerPoint presentations. Creates the file if it doesn't exist for insert/modify/format/delete operations.", // Updated description
   schema: PowerPointShapesInputSchema,
   handler: async (params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<any>> => { // Added context
-    let app: any = null;
-    let presentation: any = null;
-    let slide: any = null;
-    let shape: any = null; // Moved declaration here
-    let fileCreated = false; // Flag to track file creation
-    let absoluteFilePath: string | undefined; // Define here for use in finally
+    const input = PowerPointShapesInputSchema.parse(params);
+    const {
+      filePath,
+      operation,
+      slideIndex,
+      shapeType,
+      position,
+      size,
+      text,
+      shapeIndex: comShapeIndex, // Renamed to avoid conflict with loop variables
+      shapeName,
+      formatProperties,
+      useComInterop
+    } = input;
 
-    try {
-      // Validate input parameters using the Zod schema
-      const input = PowerPointShapesInputSchema.parse(params);
-      absoluteFilePath = path.resolve(input.filePath); // Assign resolved path
-      logger.info(`Executing powerpoint/shapes operation '${input.operation}' for file: ${absoluteFilePath}`);
+    const absoluteFilePath = path.resolve(filePath);
+    logger.info(`Executing powerpoint/shapes operation '${operation}' for file: ${absoluteFilePath} (useComInterop: ${useComInterop})`);
 
-
-      const {
-        operation,
-        slideIndex,
-        shapeType,
-        position,
-        size,
-        text,
-        shapeIndex,
-        shapeName,
-        formatProperties
-      } = input;
-
-      app = await getOfficeApplication('PowerPoint.Application');
-
-      // --- Create if not exists logic (for insert/modify/format/delete) ---
-      const isModificationOperation = ['insert', 'modify', 'format', 'delete'].includes(operation);
+    if (useComInterop) {
+      // COM Interop Path (existing logic, slightly adapted)
+      let app: any = null;
+      let presentation: any = null;
+      let slide: any = null;
+      let shape: any = null;
+      let fileCreated = false;
 
       try {
-          if (await fs.pathExists(absoluteFilePath)) {
-              logger.info(`Opening existing presentation: ${absoluteFilePath}`);
-              presentation = app.Presentations.Open(absoluteFilePath);
-          } else {
-              if (isModificationOperation) {
-                  logger.info(`File not found. Creating new presentation at: ${absoluteFilePath}`);
-                  presentation = app.Presentations.Add(); // Create new presentation
-                  // Save the new presentation immediately
-                  // Determine format based on extension (default to pptx)
-                  const fileExt = path.extname(absoluteFilePath).toLowerCase();
-                  let saveFormat = 24; // ppSaveAsOpenXMLPresentation (.pptx)
-                  if (fileExt === '.ppt') saveFormat = 1; // ppSaveAsPresentation (.ppt)
-                  else if (fileExt === '.pptm') saveFormat = 25; // ppSaveAsOpenXMLPresentationMacroEnabled (.pptm)
+        app = await getOfficeApplication('PowerPoint.Application');
+        const isModificationOperation = ['insert', 'modify', 'format', 'delete'].includes(operation);
 
-                  presentation.SaveAs(absoluteFilePath, saveFormat);
-                  fileCreated = true;
-                  logger.info(`Successfully created and saved new presentation: ${absoluteFilePath}`);
-                  // Add a default blank slide if creating for insert/modify/format/delete
-                  if (presentation.Slides.Count === 0) {
-                      const ppLayoutBlank = 12; // Assuming 12 is the constant for a blank layout
-                      presentation.Slides.Add(1, ppLayoutBlank);
-                      logger.info("Added default blank slide to newly created presentation.");
-                      // Need to save again after adding the slide
-                      presentation.Save();
-                  }
-
-              } else { // 'list' operation and file doesn't exist
-                  logger.warn(`File not found for list operation: ${absoluteFilePath}`);
-                  return createErrorResponse(`File not found: ${input.filePath}`, 'FILE_NOT_FOUND');
-              }
-          }
-      } catch (fileError: any) {
-           logger.error(`Error opening or creating presentation '${absoluteFilePath}': ${fileError.message}`, { error: fileError });
-           return createErrorResponse(`Failed to open or create presentation: ${fileError.message}`, 'FILE_OPERATION_FAILED', fileError);
-      }
-      // --- End create if not exists logic ---
-
-      if (!presentation) {
-           return createErrorResponse(`Failed to obtain presentation object for: ${input.filePath}`, 'FILE_OPEN_FAILED');
-      }
-
-
-      // Get the target slide if required
-      if (slideIndex !== undefined) {
-        if (slideIndex < 1 || slideIndex > presentation.Slides.Count) {
-          // Allow inserting into slide 1 even if count is 0 (handled by Add slide logic above)
-          if (!(fileCreated && slideIndex === 1 && presentation.Slides.Count === 1)) {
-             return createErrorResponse(`Slide index ${slideIndex} is out of bounds (Presentation has ${presentation.Slides.Count} slides).`, 'INVALID_PARAM');
-          }
-        }
-         try {
-            slide = presentation.Slides(slideIndex);
-         } catch (slideError: any) {
-             logger.error(`Error getting slide index ${slideIndex}: ${slideError.message}`);
-             return createErrorResponse(`Could not access slide index ${slideIndex}.`, 'SLIDE_ACCESS_ERROR', slideError);
-         }
-      } else if (operation !== 'list') {
-         // slideIndex is required for operations other than list
-         return createErrorResponse('slideIndex is required for this operation.', 'MISSING_PARAM');
-      }
-
-
-      // Get the target shape if required (for modify, format, delete)
-      if (slide && (operation === 'modify' || operation === 'format' || operation === 'delete')) {
-          if (shapeIndex !== undefined) {
-              if (shapeIndex < 1 || shapeIndex > slide.Shapes.Count) {
-                  return createErrorResponse(`Shape index ${shapeIndex} is out of bounds on slide ${slideIndex}.`, 'INVALID_PARAM');
-              }
-              try {
-                 shape = slide.Shapes(shapeIndex);
-              } catch (shapeIdxError: any) {
-                  logger.error(`Error getting shape by index ${shapeIndex} on slide ${slideIndex}: ${shapeIdxError.message}`);
-                  return createErrorResponse(`Could not access shape index ${shapeIndex} on slide ${slideIndex}.`, 'SHAPE_ACCESS_ERROR', shapeIdxError);
-              }
-          } else if (shapeName !== undefined) {
-               try {
-                   shape = slide.Shapes(shapeName);
-               } catch (shapeNameError: any) {
-                   logger.warn(`Shape with name "${shapeName}" not found on slide ${slideIndex}: ${shapeNameError.message}`);
-                   return createErrorResponse(`Shape with name "${shapeName}" not found on slide ${slideIndex}.`, 'SHAPE_NOT_FOUND', shapeNameError);
-               }
-          } else {
-               return createErrorResponse('shapeIndex or shapeName is required for modify, format, or delete operations.', 'MISSING_PARAM');
-          }
-          if (!shape) {
-               // Should be caught by try/catch above, but safeguard
-               return createErrorResponse(`Shape (index: ${shapeIndex}, name: ${shapeName}) not found or could not be accessed on slide ${slideIndex}.`, 'SHAPE_NOT_FOUND');
-          }
-      }
-
-      let resultData: any = null;
-      let message = '';
-
-
-      switch (operation) {
-        case 'insert': {
-          if (!slide) { // Ensure slide is valid for insert
-              return createErrorResponse('A valid slideIndex is required to insert a shape.', 'MISSING_PARAM');
-          }
-          if (!shapeType) {
-            return createErrorResponse('shapeType is required for insert operation.', 'MISSING_PARAM');
-          }
-
-          let msoShapeType;
-          // Use a more robust way to get MsoAutoShapeType constants if possible
-          // This might involve accessing the PowerPoint type library constants directly
-          // For now, using a hardcoded map based on common values
-          const MsoAutoShapeTypeMap: { [key: string]: number } = {
-              msoShapeRectangle: 1,
-              msoShapeTextbox: 17,
-              msoShapeOval: 9,
-              msoShapeRoundedRectangle: 5,
-              // Add other common shapes as needed
-          };
-
-          if (shapeType in MsoAutoShapeTypeMap) {
-              msoShapeType = MsoAutoShapeTypeMap[shapeType];
-          } else {
-              // Try parsing as number if it's not in the map
-              const shapeTypeNum = parseInt(shapeType, 10);
-              if (!isNaN(shapeTypeNum)) {
-                  msoShapeType = shapeTypeNum;
-                  logger.warn(`Using numeric value ${msoShapeType} for shapeType. Ensure this is a valid MsoAutoShapeType constant.`);
-              } else {
-                 return createErrorResponse(`Unsupported or invalid shape type: ${shapeType}. Provide a known name (e.g., msoShapeRectangle) or a valid MsoAutoShapeType enum value.`, 'INVALID_PARAM');
-              }
-          }
-
-
-          const left = position?.left ?? 100; // Default position
-          const top = position?.top ?? 100;
-          const width = size?.width ?? 100; // Default size
-          const height = size?.height ?? 100;
-
-          const newShape = slide.Shapes.AddShape(msoShapeType, left, top, width, height);
-          releaseObject(newShape); // Release the newly created shape object reference
-
-          if (text !== undefined) {
-              // Re-acquire the shape to add text (AddShape returns an object)
-              const addedShape = slide.Shapes(slide.Shapes.Count); // Assume it's the last shape added
-              if (addedShape.HasTextFrame === -1 /* msoTrue */) {
-                  addedShape.TextFrame.TextRange.Text = text;
-              }
-              releaseObject(addedShape);
-          }
-
-          message = `Shape inserted successfully on slide ${slideIndex}.`;
-          logger.info(message);
-          break;
+        try {
+            if (await fs.pathExists(absoluteFilePath)) {
+                logger.info(`COM: Opening existing presentation: ${absoluteFilePath}`);
+                presentation = app.Presentations.Open(absoluteFilePath);
+            } else {
+                if (isModificationOperation) {
+                    logger.info(`COM: File not found. Creating new presentation at: ${absoluteFilePath}`);
+                    presentation = app.Presentations.Add();
+                    const fileExt = path.extname(absoluteFilePath).toLowerCase();
+                    let saveFormat = 24; // ppSaveAsOpenXMLPresentation (.pptx)
+                    if (fileExt === '.ppt') saveFormat = 1;
+                    else if (fileExt === '.pptm') saveFormat = 25;
+                    presentation.SaveAs(absoluteFilePath, saveFormat);
+                    fileCreated = true;
+                    logger.info(`COM: Successfully created and saved new presentation: ${absoluteFilePath}`);
+                    if (presentation.Slides.Count === 0) {
+                        const ppLayoutBlank = 12; // MsoPresetTextEffect.msoTextEffect1 (Placeholder, find correct constant for Blank)
+                        try {
+                            presentation.Slides.Add(1, app.ActivePresentation.SlideMaster.CustomLayouts(7).Index); // Common index for blank, may vary
+                        } catch {
+                             presentation.Slides.Add(1, 12); // Fallback to a common blank layout index
+                        }
+                        logger.info("COM: Added default blank slide to newly created presentation.");
+                        presentation.Save();
+                    }
+                } else {
+                    logger.warn(`COM: File not found for list operation: ${absoluteFilePath}`);
+                    return createErrorResponse(`File not found: ${filePath}`, 'FILE_NOT_FOUND');
+                }
+            }
+        } catch (fileError: any) {
+             logger.error(`COM: Error opening or creating presentation '${absoluteFilePath}': ${fileError.message}`, { error: fileError });
+             return createErrorResponse(`COM: Failed to open or create presentation: ${fileError.message}`, 'FILE_OPERATION_FAILED', fileError);
         }
 
-        case 'modify': {
-            if (!shape) { // Ensure shape is valid
-                return createErrorResponse('Shape not found for modification.', 'SHAPE_NOT_FOUND');
+        if (!presentation) {
+             return createErrorResponse(`COM: Failed to obtain presentation object for: ${filePath}`, 'FILE_OPEN_FAILED');
+        }
+
+        if (slideIndex !== undefined) {
+          if (slideIndex < 1 || slideIndex > presentation.Slides.Count) {
+            if (!(fileCreated && slideIndex === 1 && presentation.Slides.Count === 1)) {
+               return createErrorResponse(`COM: Slide index ${slideIndex} is out of bounds (Presentation has ${presentation.Slides.Count} slides).`, 'INVALID_PARAM');
+            }
+          }
+           try {
+              slide = presentation.Slides(slideIndex);
+           } catch (slideError: any) {
+               logger.error(`COM: Error getting slide index ${slideIndex}: ${slideError.message}`);
+               return createErrorResponse(`COM: Could not access slide index ${slideIndex}.`, 'SLIDE_ACCESS_ERROR', slideError);
+           }
+        } else if (operation !== 'list') {
+           return createErrorResponse('COM: slideIndex is required for this operation.', 'MISSING_PARAM');
+        }
+
+        if (slide && (operation === 'modify' || operation === 'format' || operation === 'delete')) {
+            if (comShapeIndex !== undefined) {
+                if (comShapeIndex < 1 || comShapeIndex > slide.Shapes.Count) {
+                    return createErrorResponse(`COM: Shape index ${comShapeIndex} is out of bounds on slide ${slideIndex}.`, 'INVALID_PARAM');
+                }
+                try {
+                   shape = slide.Shapes(comShapeIndex);
+                } catch (shapeIdxError: any) {
+                    logger.error(`COM: Error getting shape by index ${comShapeIndex} on slide ${slideIndex}: ${shapeIdxError.message}`);
+                    return createErrorResponse(`COM: Could not access shape index ${comShapeIndex} on slide ${slideIndex}.`, 'SHAPE_ACCESS_ERROR', shapeIdxError);
+                }
+            } else if (shapeName !== undefined) {
+                 try {
+                     shape = slide.Shapes(shapeName);
+                 } catch (shapeNameError: any) {
+                     logger.warn(`COM: Shape with name "${shapeName}" not found on slide ${slideIndex}: ${shapeNameError.message}`);
+                     return createErrorResponse(`COM: Shape with name "${shapeName}" not found on slide ${slideIndex}.`, 'SHAPE_NOT_FOUND', shapeNameError);
+                 }
+            } else {
+                 return createErrorResponse('COM: shapeIndex or shapeName is required for modify, format, or delete operations.', 'MISSING_PARAM');
+            }
+            if (!shape) {
+                 return createErrorResponse(`COM: Shape (index: ${comShapeIndex}, name: ${shapeName}) not found or could not be accessed on slide ${slideIndex}.`, 'SHAPE_NOT_FOUND');
+            }
+        }
+
+        let resultData: any = null;
+        let message = '';
+
+        switch (operation) {
+          case 'insert': {
+            if (!slide) return createErrorResponse('COM: A valid slideIndex is required to insert a shape.', 'MISSING_PARAM');
+            if (!shapeType) return createErrorResponse('COM: shapeType is required for insert operation.', 'MISSING_PARAM');
+
+            let msoShapeType;
+            const MsoAutoShapeTypeMap: { [key: string]: number } = { /* ... as before ... */
+                msoShapeRectangle: 1, msoShapeTextbox: 17, msoShapeOval: 9, msoShapeRoundedRectangle: 5,
+            };
+            if (shapeType in MsoAutoShapeTypeMap) msoShapeType = MsoAutoShapeTypeMap[shapeType];
+            else {
+                const shapeTypeNum = parseInt(shapeType, 10);
+                if (!isNaN(shapeTypeNum)) msoShapeType = shapeTypeNum;
+                else return createErrorResponse(`COM: Unsupported or invalid shape type: ${shapeType}.`, 'INVALID_PARAM');
             }
 
+            const newShape = slide.Shapes.AddShape(msoShapeType, position?.left ?? 100, position?.top ?? 100, size?.width ?? 100, size?.height ?? 100);
+            if (text !== undefined) {
+                if (newShape.HasTextFrame === -1 /* msoTrue */) {
+                    newShape.TextFrame.TextRange.Text = text;
+                }
+            }
+            releaseObject(newShape);
+            message = `COM: Shape inserted successfully on slide ${slideIndex}.`;
+            break;
+          }
+          case 'modify': { /* ... as before, ensure shape is valid ... */
+            if (!shape) return createErrorResponse('COM: Shape not found for modification.', 'SHAPE_NOT_FOUND');
             if (position) {
                 if (position.left !== undefined) shape.Left = position.left;
                 if (position.top !== undefined) shape.Top = position.top;
@@ -275,154 +233,174 @@ const powerpointShapesTool: McpResource = {
                 if (size.width !== undefined) shape.Width = size.width;
                 if (size.height !== undefined) shape.Height = size.height;
             }
-            if (text !== undefined && shape.HasTextFrame === -1 /* msoTrue */) {
+            if (text !== undefined && shape.HasTextFrame === -1) {
                 shape.TextFrame.TextRange.Text = text;
             }
-
-            message = `Shape modified successfully on slide ${slideIndex}.`;
-            logger.info(message);
+            message = `COM: Shape modified successfully on slide ${slideIndex}.`;
             break;
-        }
-
-        case 'format': {
-            if (!shape) { // Ensure shape is valid
-                return createErrorResponse('Shape not found for formatting.', 'SHAPE_NOT_FOUND');
-            }
-            if (!formatProperties) {
-                return createErrorResponse('formatProperties are required for format operation.', 'MISSING_PARAM');
-            }
-
+          }
+          case 'format': { /* ... as before, ensure shape and formatProperties are valid ... */
+            if (!shape) return createErrorResponse('COM: Shape not found for formatting.', 'SHAPE_NOT_FOUND');
+            if (!formatProperties) return createErrorResponse('COM: formatProperties are required.', 'MISSING_PARAM');
             const { fillColor, lineColor, lineWidth, fontName, fontSize, fontBold, fontItalic, fontUnderline } = formatProperties;
-
-            // Basic formatting - requires more robust implementation for colors etc.
-            if (fillColor !== undefined) logger.warn('Fill color formatting is basic.'); // Placeholder
-            if (lineColor !== undefined) logger.warn('Line color formatting is basic.'); // Placeholder
             if (lineWidth !== undefined) shape.Line.Weight = lineWidth;
-
-            if (shape.HasTextFrame === -1 /* msoTrue */ && shape.TextFrame.HasText === -1 /* msoTrue */) {
+            // Color and font formatting as before
+            if (shape.HasTextFrame === -1 && shape.TextFrame.HasText === -1) {
                 const font = shape.TextFrame.TextRange.Font;
                 if (fontName !== undefined) font.Name = fontName;
                 if (fontSize !== undefined) font.Size = fontSize;
-                if (fontBold !== undefined) font.Bold = fontBold ? -1 : 0;
+                if (fontBold !== undefined) font.Bold = fontBold ? -1 : 0; // msoTrue / msoFalse
                 if (fontItalic !== undefined) font.Italic = fontItalic ? -1 : 0;
-                if (fontUnderline !== undefined) font.Underline = fontUnderline ? -1 : 0;
+                if (fontUnderline !== undefined) font.Underline = fontUnderline ? -1 : 0; // Check MsoTriState for underline
                 releaseObject(font);
-            } else if (fontName || fontSize || fontBold || fontItalic || fontUnderline) {
-                 logger.warn('Font formatting requested for a shape without text or text frame.');
             }
-
-            message = `Shape formatted successfully on slide ${slideIndex}.`;
-            logger.info(message);
+            message = `COM: Shape formatted successfully on slide ${slideIndex}.`;
             break;
-        }
-
-        case 'delete': {
-            if (!shape) { // Ensure shape is valid
-                return createErrorResponse('Shape not found for deletion.', 'SHAPE_NOT_FOUND');
-            }
+          }
+          case 'delete': { /* ... as before, ensure shape is valid ... */
+            if (!shape) return createErrorResponse('COM: Shape not found for deletion.', 'SHAPE_NOT_FOUND');
             shape.Delete();
-            message = `Shape deleted successfully from slide ${slideIndex}.`;
-            logger.info(message);
+            message = `COM: Shape deleted successfully from slide ${slideIndex}.`;
             break;
-        }
-
-        case 'list': {
+          }
+          case 'list': { /* ... as before ... */
             const shapesList: any[] = [];
-            if (!slide) {
-                 // List shapes for all slides
-                 logger.info("Listing shapes for all slides.");
+            if (!slide) { // List all slides
                  for (let i = 1; i <= presentation.Slides.Count; i++) {
                      const currentSlide = presentation.Slides(i);
                      for (let j = 1; j <= currentSlide.Shapes.Count; j++) {
                          const currentShape = currentSlide.Shapes(j);
                          shapesList.push({
-                             slideIndex: i,
-                             shapeIndex: j,
-                             shapeName: currentShape.Name,
-                             shapeType: currentShape.Type, // MsoShapeType enum value
+                             slideIndex: i, shapeIndex: j, shapeName: currentShape.Name, shapeType: currentShape.Type,
                              text: (currentShape.HasTextFrame === -1 && currentShape.TextFrame.HasText === -1) ? currentShape.TextFrame.TextRange.Text : undefined
                          });
                          releaseObject(currentShape);
                      }
                      releaseObject(currentSlide);
                  }
-                 message = `Listed shapes from all ${presentation.Slides.Count} slides.`;
-            } else {
-                // List shapes for a specific slide
-                logger.info(`Listing shapes for slide ${slideIndex}.`);
+                 message = `COM: Listed shapes from all ${presentation.Slides.Count} slides.`;
+            } else { // List specific slide
                 for (let i = 1; i <= slide.Shapes.Count; i++) {
                     const currentShape = slide.Shapes(i);
                      shapesList.push({
-                         shapeIndex: i,
-                         shapeName: currentShape.Name,
-                         shapeType: currentShape.Type, // MsoShapeType enum value
+                         shapeIndex: i, shapeName: currentShape.Name, shapeType: currentShape.Type,
                          text: (currentShape.HasTextFrame === -1 && currentShape.TextFrame.HasText === -1) ? currentShape.TextFrame.TextRange.Text : undefined
                      });
                      releaseObject(currentShape);
                 }
-                message = `Listed ${slide.Shapes.Count} shapes from slide ${slideIndex}.`;
+                message = `COM: Listed ${slide.Shapes.Count} shapes from slide ${slideIndex}.`;
             }
             resultData = shapesList;
-            logger.info(message);
-            break; // Added break
+            break;
+          }
+          default: throw new Error(`COM: Unsupported operation: ${operation}`);
         }
 
-        default:
-          // Should not happen due to enum validation
-          throw new Error(`Unsupported operation: ${operation}`);
-      }
-
-      // Save the presentation if modified
-      if (isModificationOperation && !fileCreated) {
-          presentation.Save();
-          logger.info(`Presentation saved: ${absoluteFilePath}`);
-      }
-
-      // Save the modified PowerPoint file as a dynamic resource
-      if (isModificationOperation && absoluteFilePath) {
-          try {
-              const pptContent = await fs.readFile(absoluteFilePath, null); // Read as Buffer
-              await saveResource('powerpoint/shapes', path.basename(absoluteFilePath), pptContent);
-              logger.info(`Saved ${absoluteFilePath} as a dynamic resource.`);
-          } catch (resourceSaveError: any) {
-              logger.error(`Failed to save ${absoluteFilePath} as a dynamic resource: ${resourceSaveError.message}`);
-              // Continue execution even if resource saving fails
-          }
-      }
-
-      // Release shape object if it was obtained
-      releaseObject(shape);
-      // Release slide object if it was obtained
-      releaseObject(slide);
-
-      return { success: true, data: resultData ?? message }; // Return data for list, message otherwise
-
-    } catch (error: any) {
-      logger.error(`Error in powerpoint/shapes tool: ${error.message}`, { error: error instanceof z.ZodError ? error.errors : error });
-       if (error instanceof z.ZodError) {
-          return createErrorResponse('Input validation failed', 'VALIDATION_ERROR', error.errors);
-      }
-      return createErrorResponse(`PowerPoint shapes operation failed: ${error.message}`, 'POWERPOINT_SHAPES_ERROR', error);
-    } finally {
-        // Release slide and shape again just in case they weren't released in the try block due to error
+        if (isModificationOperation && !fileCreated) {
+            presentation.Save();
+        }
+        if (isModificationOperation && absoluteFilePath) {
+            try {
+                const pptContent = await fs.readFile(absoluteFilePath, null);
+                await saveResource('powerpoint/shapes', path.basename(absoluteFilePath), pptContent);
+            } catch (resourceSaveError: any) {
+                logger.error(`COM: Failed to save ${absoluteFilePath} as a dynamic resource: ${resourceSaveError.message}`);
+            }
+        }
         releaseObject(shape);
         releaseObject(slide);
-        // Ensure presentation is closed if it was opened/created
+        return { success: true, data: resultData ?? message };
+
+      } catch (error: any) {
+        logger.error(`Error in powerpoint/shapes tool (COM Interop): ${error.message}`, { error: error instanceof z.ZodError ? error.errors : error });
+        if (error instanceof z.ZodError) return createErrorResponse('COM: Input validation failed', 'VALIDATION_ERROR', error.errors);
+        return createErrorResponse(`COM: PowerPoint shapes operation failed: ${error.message}`, 'POWERPOINT_SHAPES_ERROR_COM', error);
+      } finally {
+        releaseObject(shape);
+        releaseObject(slide);
         if (presentation) {
-            try {
-                // Close without saving if just created (already saved by SaveAs)
-                // Otherwise, close normally (Save happened in try block if needed)
-                presentation.Close();
-            } catch (closeError: any) {
-                logger.warn(`[OfficeInterop] Failed to close presentation: ${closeError.message}`);
-            }
+            try { presentation.Close(); } catch (e: any) { logger.warn(`COM: Failed to close presentation: ${e.message}`); }
             releaseObject(presentation);
         }
-        // Release app object
-        if (app) {
-            releaseObject(app);
+        if (app) releaseObject(app);
+        logger.debug("COM: Released PowerPoint COM objects for powerpoint/shapes operation.");
+      }
+    } else {
+      // Library Path (PptxGenJS)
+      try {
+        const pptx = new PptxGenJS();
+        let slideLib: PptxGenJS.Slide | undefined = undefined;
+
+        // PptxGenJS typically creates new files or overwrites existing ones.
+        // It doesn't "open" and "modify" arbitrary slides/shapes in an existing file easily.
+        // So, for 'insert', we'll assume we're building a presentation.
+        // For other ops, we state limitations.
+
+        if (await fs.pathExists(absoluteFilePath) && operation !== 'insert') {
+            // For modify, format, delete, list on existing files, pptxgenjs is not suitable.
+            // We could try to load with officeparser to get text, but not shapes.
+            logger.warn(`PptxGenJS path: Operation '${operation}' on existing file '${absoluteFilePath}' has limitations. PptxGenJS is primarily a generation library.`);
         }
-        logger.debug("Released PowerPoint COM objects for powerpoint/shapes operation.");
+
+
+        switch (operation) {
+          case 'insert':
+            if (slideIndex === undefined || slideIndex !== 1) {
+                // PptxGenJS adds slides sequentially. For simplicity, we'll add to the first/new slide.
+                // A more complex implementation could manage multiple slides.
+                logger.info("PptxGenJS: Inserting shape into a new slide (or first slide of a new presentation).");
+            }
+            slideLib = pptx.addSlide(); // Always adds a new slide
+
+            if (!shapeType) return createErrorResponse('PptxGenJS: shapeType is required for insert.', 'MISSING_PARAM');
+
+            const shapeOpts: any = {
+                x: position?.left !== undefined ? position.left / 72 : 1, // Convert points to inches for PptxGenJS
+                y: position?.top !== undefined ? position.top / 72 : 1,
+                w: size?.width !== undefined ? size.width / 72 : 2,
+                h: size?.height !== undefined ? size.height / 72 : 1,
+            };
+
+            // Map MSO types to PptxGenJS types/methods
+            if (shapeType.toLowerCase().includes('textbox') || text) {
+                slideLib.addText(text ?? 'Sample Text', { ...shapeOpts, fontSize: formatProperties?.fontSize ?? 18 });
+            } else if (shapeType.toLowerCase().includes('rectangle')) {
+                // Corrected way to reference PptxGenJS shape types
+                slideLib.addShape(PptxGenJS.ShapeType.rect, shapeOpts);
+            } else if (shapeType.toLowerCase().includes('oval') || shapeType.toLowerCase().includes('ellipse')) {
+                // Corrected way to reference PptxGenJS shape types
+                slideLib.addShape(PptxGenJS.ShapeType.ellipse, shapeOpts);
+            } else {
+                return createErrorResponse(`PptxGenJS: Unsupported shapeType '${shapeType}'. Use 'textbox', 'rectangle', 'oval' (ellipse), etc.`, 'INVALID_PARAM');
+            }
+            
+            await pptx.writeFile({ fileName: absoluteFilePath });
+            // Save resource
+            const pptContent = await fs.readFile(absoluteFilePath, null);
+            await saveResource('powerpoint/shapes', path.basename(absoluteFilePath), pptContent);
+            return { success: true, data: `PptxGenJS: Shape inserted into ${absoluteFilePath}.` };
+
+          case 'modify':
+          case 'format':
+          case 'delete':
+            logger.warn(`PptxGenJS: Operation '${operation}' on existing shapes is not directly supported. PptxGenJS generates presentations. For modifications, use COM Interop.`);
+            return createErrorResponse(`PptxGenJS: Operation '${operation}' for existing shapes is not supported. Use COM Interop.`, 'POWERPOINT_LIB_UNSUPPORTED');
+
+          case 'list':
+            logger.warn("PptxGenJS: Listing shapes from an existing file is not supported. PptxGenJS does not parse existing files for shape details. Use COM Interop.");
+            // officeparser could be used here to get text, but not shape specifics.
+            // For consistency with the tool's purpose (shapes), we'll state it's not supported for listing shapes.
+            return createErrorResponse("PptxGenJS: Listing shapes from existing files is not supported. Use COM Interop.", 'POWERPOINT_LIB_UNSUPPORTED');
+
+          default:
+            const exhaustiveCheckLib: never = operation;
+            throw new Error(`PptxGenJS: Unsupported operation: ${exhaustiveCheckLib}`);
+        }
+      } catch (error: any) {
+        logger.error(`Error in powerpoint/shapes tool (PptxGenJS): ${error.message}`, { error: error instanceof z.ZodError ? error.errors : error });
+        if (error instanceof z.ZodError) return createErrorResponse('PptxGenJS: Input validation failed', 'VALIDATION_ERROR', error.errors);
+        return createErrorResponse(`PptxGenJS: Shapes operation failed: ${error.message}`, 'POWERPOINT_LIB_ERROR', error);
+      }
     }
   },
 };

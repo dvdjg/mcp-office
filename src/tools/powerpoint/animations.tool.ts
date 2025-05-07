@@ -9,20 +9,37 @@
  * @license MIT
  */
 import { z } from 'zod';
+import PptxGenJS from 'pptxgenjs';
 import { McpResource, ApiResponse, ToolRequestParams } from '../../types/common.types';
-import { getOfficeApplication } from '../../utils/officeInterop';
+import { getOfficeApplication, releaseObject } from '../../utils/officeInterop'; // Added releaseObject
+import logger from '../../utils/logger'; // Import logger
+import * as fs from 'fs-extra'; // Import fs for file existence check
+import * as path from 'path'; // Import path for resolving
+import { saveResource } from '../dynamic/resources.tool'; // Import saveResource
+
+// Helper to create standard error responses
+const createErrorResponse = (message: string, code = 'TOOL_EXECUTION_ERROR', details?: unknown): ApiResponse<never> => ({
+    success: false,
+    error: { code, message, details },
+});
+
 
 // Input schema for the powerpoint/animations tool
 const AnimationsInputSchema = z.object({
   filePath: z.string().describe('Path to the PowerPoint file.'),
   operation: z.enum(['add', 'configure', 'remove', 'list']).describe('Operation to perform: add (animation to shape), configure (transition to slide), remove (animation/transition), list (animations/transitions).'),
-  slideIndex: z.number().int().positive().optional().describe('1-based index of the slide. Required for configure, remove, and list.'),
-  shapeIndex: z.number().int().positive().optional().describe('1-based index of the shape. Required for add, remove, and list (animations).'),
-  shapeName: z.string().optional().describe('Name of the shape. Alternative to shapeIndex for add, remove, and list (animations).'),
-  animationType: z.string().optional().describe('Animation type (MsoAnimEffect constant). Required for add.'),
-  transitionType: z.string().optional().describe('Transition type (PpTransition constant). Required for configure.'),
+  slideIndex: z.number().int().positive().optional().describe('1-based index of the slide. Required for configure (COM), remove (COM), and list (COM). For pptxgenjs, operations are typically on newly created slides/objects.'),
+  shapeIndex: z.number().int().positive().optional().describe('1-based index of the shape. Required for add (COM), remove (COM), and list (COM animations).'),
+  shapeName: z.string().optional().describe('Name of the shape. Alternative to shapeIndex for COM operations.'),
+  animationType: z.string().optional().describe('Animation type (MsoAnimEffect constant for COM, or PptxGenJS animation type string e.g., "fadeIn"). Required for add.'),
+  transitionType: z.string().optional().describe('Transition type (PpTransition constant for COM, or PptxGenJS transition type string e.g., "fade"). Required for configure.'),
   duration: z.number().positive().optional().describe('Duration in seconds. Optional for add and configure.'),
-  effectParameters: z.record(z.any()).optional().describe('Additional parameters for the animation/transition (e.g., direction, order).'),
+  effectParameters: z.record(z.any()).optional().describe('Additional parameters for the animation/transition (e.g., direction, order for COM; PptxGenJS uses specific options like `delay`, `direction`).'),
+  useComInterop: z.boolean().optional().default(false).describe('Set to true to use COM Interop for operations, otherwise uses pptxgenjs (with significant limitations for animations on existing files).'),
+  // For pptxgenjs 'add' operation, we might need more specific inputs if not operating on an existing shape by index/name
+  newObjectText: z.string().optional().describe('Text for a new shape/textbox to which animation will be added (pptxgenjs path).'),
+  newObjectOptions: z.any().optional().describe('Options for creating a new shape/textbox (pptxgenjs path, e.g., x, y, w, h).'),
+
 });
 
 type AnimationsInput = z.infer<typeof AnimationsInputSchema>;
@@ -40,181 +57,206 @@ const animationsTool: McpResource = {
   description: 'Manages shape animations and slide transitions in PowerPoint.',
   schema: AnimationsInputSchema,
   handler: async (params: ToolRequestParams): Promise<ApiResponse<any>> => {
-    const input = AnimationsInputSchema.parse(params); // Validate and parse input
-    const { filePath, operation, slideIndex, shapeIndex, shapeName, animationType, transitionType, duration, effectParameters } = input;
-    const app = await getOfficeApplication('PowerPoint.Application');
-    let presentation;
+    const input = AnimationsInputSchema.parse(params);
+    const {
+        filePath, operation, slideIndex, shapeIndex, shapeName,
+        animationType, transitionType, duration, effectParameters, useComInterop,
+        newObjectText, newObjectOptions
+    } = input;
 
-    try {
-      presentation = app.Presentations.Open(filePath);
+    const absoluteFilePath = path.resolve(filePath);
 
-      switch (operation) {
-        case 'add':
-          if (!slideIndex || (!shapeIndex && !shapeName) || !animationType) {
-            throw new Error('For the "add" operation, slideIndex, shapeIndex or shapeName, and animationType are required.');
-          }
-          const slideForAdd = presentation.Slides(slideIndex);
-          const shapeForAdd = shapeIndex ? slideForAdd.Shapes(shapeIndex) : slideForAdd.Shapes(shapeName);
-          if (!shapeForAdd) {
-             throw new Error(`Shape not found on slide ${slideIndex} with index ${shapeIndex} or name ${shapeName}.`);
-          }
+    if (useComInterop) {
+      // COM Interop Path
+      let app: any = null;
+      let presentation: any = null;
+      let slideForCom: any = null; // Specific to COM path to avoid conflicts
+      let shapeForCom: any = null; // Specific to COM path
 
-          // Add animation
-          // Note: MsoAnimEffect is an enum in the PowerPoint API. We need to map the string to its numeric value.
-          // winax should handle this if the constant exists in the app.MsoAnimEffect object
-          const animEffectValue = app.MsoAnimEffect[animationType];
-          if (animEffectValue === undefined) {
-              throw new Error(`Invalid animation type: ${animationType}.`);
-          }
+      try {
+        app = await getOfficeApplication('PowerPoint.Application');
+        if (!await fs.pathExists(absoluteFilePath)) {
+            // For COM, file must exist for most operations, or be creatable for 'add'/'configure' if we extend that.
+            // Current COM logic assumes file exists.
+            return createErrorResponse(`COM: File not found: ${absoluteFilePath}`, 'FILE_NOT_FOUND');
+        }
+        presentation = app.Presentations.Open(absoluteFilePath);
 
-          const effect = slideForAdd.TimeLine.MainSequence.AddEffect(
-            shapeForAdd,
-            animEffectValue
-          );
-
-          if (duration !== undefined) {
-            effect.Timing.Duration = duration;
-          }
-
-          // Apply additional parameters if they exist
-          if (effectParameters) {
-              // This is a basic example. Parameter application depends on the animation type.
-              // More complex logic would be needed to handle different effect types and their properties.
-              // For example, for an entrance animation, you might want to configure the direction.
-              // effect.EffectParameters.Direction = app.MsoAnimDirection.msoAnimDirectionLeft;
-              console.warn('Application of effectParameters is not fully implemented and may require specific logic per animation type.');
-          }
-
-
-          return { success: true, data: { message: `Animation '${animationType}' added to shape ${shapeIndex || shapeName} on slide ${slideIndex}.` } };
-
-        case 'configure':
-          if (!slideIndex || !transitionType) {
-            throw new Error('For the "configure" operation, slideIndex and transitionType are required.');
-          }
-          const slideForConfig = presentation.Slides(slideIndex);
-          const transition = slideForConfig.SlideShowTransition;
-
-          // Configure transition
-          // Note: PpTransition is an enum in the PowerPoint API. We need to map the string to its numeric value.
-          const transitionEffectValue = app.PpTransition[transitionType];
-           if (transitionEffectValue === undefined) {
-              throw new Error(`Invalid transition type: ${transitionType}.`);
-          }
-          transition.EntryEffect = transitionEffectValue;
-
-          if (duration !== undefined) {
-            transition.Duration = duration;
-          }
-
-           // Apply additional parameters if they exist
-          if (effectParameters) {
-              // Similar to animations, transition parameter application depends on the type.
-              // For example, for a push transition, you might want to configure the direction.
-              // transition.Direction = app.PpTransitionDirection.ppTransitionDirectionLeft;
-               console.warn('Application of effectParameters for transitions is not fully implemented and may require specific logic per transition type.');
-          }
-
-          return { success: true, data: { message: `Transition '${transitionType}' configured for slide ${slideIndex}.` } };
-
-        case 'remove':
-             if (!slideIndex || (!shapeIndex && !shapeName)) {
-                 throw new Error('For the "remove" operation, slideIndex and shapeIndex or shapeName are required.');
-             }
-             const slideForRemove = presentation.Slides(slideIndex);
-             const shapeForRemove = shapeIndex ? slideForRemove.Shapes(shapeIndex) : slideForRemove.Shapes(shapeName);
-             if (!shapeForRemove) {
-                 throw new Error(`Shape not found on slide ${slideIndex} with index ${shapeIndex} or name ${shapeName}.`);
-             }
-
-             // Remove animations associated with the shape
-             const effectsToRemove = [];
-             // Iterate backwards to avoid issues with indices after deletion
-             for (let i = slideForRemove.TimeLine.MainSequence.Count; i >= 1; i--) {
-                 const effect = slideForRemove.TimeLine.MainSequence(i);
-                 // Compare shapes by their COM object or a unique identifier if possible.
-                 // Comparing by name can be problematic if there are shapes with duplicate names.
-                 // Comparing by the COM object directly is more reliable if winax allows it.
-                 // If winax does not allow direct comparison of COM objects, we could try comparing unique properties like ID or Name (if we guarantee unique names).
-                 // For now, we assume direct COM object comparison works or names are unique for this case.
-                 try {
-                     if (effect.Shape && effect.Shape.Name === shapeForRemove.Name) { // Comparison by name as fallback/example
-                          effectsToRemove.push(effect);
-                     }
-                 } catch (compareError) {
-                      console.warn(`Error comparing shapes during animation removal: ${compareError instanceof Error ? compareError.message : String(compareError)}`);
-                      // Continue with removal even if comparison fails for a specific effect
-                 }
-             }
-
-             effectsToRemove.forEach(effect => {
-                 try {
-                     effect.Delete();
-                 } catch (deleteError) {
-                     console.error(`Error deleting animation effect: ${deleteError instanceof Error ? deleteError.message : String(deleteError)}`);
-                     // Continue deleting other effects
-                 }
-             });
-
-
-             return { success: true, data: { message: `Animations removed for shape ${shapeIndex || shapeName} on slide ${slideIndex}.` } };
-
-        case 'list':
-            if (!slideIndex) {
-                throw new Error('For the "list" operation, slideIndex is required.');
+        if (slideIndex !== undefined) {
+            if (slideIndex < 1 || slideIndex > presentation.Slides.Count) {
+                return createErrorResponse(`COM: Slide index ${slideIndex} out of bounds.`, 'INVALID_PARAM');
             }
-            const slideForList = presentation.Slides(slideIndex);
-            const animations = [];
+            slideForCom = presentation.Slides(slideIndex);
+        } else if (operation !== 'list') { // List can operate on whole presentation if no slideIndex
+             // For other operations, slideIndex is typically needed.
+        }
 
-            // List shape animations on the slide
-            for (let i = 1; i <= slideForList.TimeLine.MainSequence.Count; i++) {
-                const effect = slideForList.TimeLine.MainSequence(i);
-                animations.push({
-                    shapeName: effect.Shape.Name,
-                    // shapeIndex: effect.Shape.ZOrderPosition, // ZOrderPosition is not a reliable index in the Shapes collection
-                    animationType: effect.EffectType, // This returns a numeric value, we would need to map it to the MsoAnimEffect constant
-                    duration: effect.Timing.Duration,
-                    // Other animation details if relevant
+
+        if (slideForCom && (shapeIndex !== undefined || shapeName !== undefined)) {
+            try {
+                shapeForCom = shapeIndex ? slideForCom.Shapes(shapeIndex) : slideForCom.Shapes(shapeName);
+            } catch (e) {
+                return createErrorResponse(`COM: Shape not found on slide ${slideIndex} (Index: ${shapeIndex}, Name: ${shapeName}).`, 'SHAPE_NOT_FOUND');
+            }
+        }
+
+        switch (operation) {
+          case 'add':
+            if (!slideForCom || !shapeForCom || !animationType) {
+              return createErrorResponse('COM: For "add" operation, slideIndex, shapeIndex/shapeName, and animationType are required.', 'MISSING_PARAM');
+            }
+            const animEffectValue = app.MsoAnimEffect[animationType];
+            if (animEffectValue === undefined) {
+                return createErrorResponse(`COM: Invalid animation type: ${animationType}.`, 'INVALID_PARAM');
+            }
+            const effect = slideForCom.TimeLine.MainSequence.AddEffect(shapeForCom, animEffectValue);
+            if (duration !== undefined) effect.Timing.Duration = duration;
+            // effectParameters handling for COM would be complex and specific to MsoAnimEffect
+            if (effectParameters) logger.warn('COM: effectParameters for animations are not fully implemented.');
+            return { success: true, data: { message: `COM: Animation '${animationType}' added to shape on slide ${slideIndex}.` } };
+
+          case 'configure':
+            if (!slideForCom || !transitionType) {
+              return createErrorResponse('COM: For "configure" operation, slideIndex and transitionType are required.', 'MISSING_PARAM');
+            }
+            const transition = slideForCom.SlideShowTransition;
+            const transitionEffectValue = app.PpTransitionEffect[transitionType] ?? app.PpEntryEffect[transitionType]; // Try both common enum names
+            if (transitionEffectValue === undefined) {
+                return createErrorResponse(`COM: Invalid transition type: ${transitionType}. Check PpTransitionEffect or PpEntryEffect constants.`, 'INVALID_PARAM');
+            }
+            transition.EntryEffect = transitionEffectValue;
+            if (duration !== undefined) transition.Duration = duration;
+            if (effectParameters) logger.warn('COM: effectParameters for transitions are not fully implemented.');
+            return { success: true, data: { message: `COM: Transition '${transitionType}' configured for slide ${slideIndex}.` } };
+
+          case 'remove':
+            if (!slideForCom || !shapeForCom) {
+                 return createErrorResponse('COM: For "remove" animation, slideIndex and shapeIndex/shapeName are required.', 'MISSING_PARAM');
+            }
+            const effectsToRemove = [];
+            for (let i = slideForCom.TimeLine.MainSequence.Count; i >= 1; i--) {
+                const currentEffect = slideForCom.TimeLine.MainSequence(i);
+                if (currentEffect.Shape && currentEffect.Shape.Name === shapeForCom.Name) { // Or compare by ID if available and more robust
+                    effectsToRemove.push(currentEffect);
+                }
+            }
+            effectsToRemove.forEach(eff => eff.Delete());
+            // To remove slide transition, one might set it to 'None'
+            // slideForCom.SlideShowTransition.EntryEffect = app.PpTransitionEffect.ppEffectNone; (Example)
+            return { success: true, data: { message: `COM: Animations removed for shape on slide ${slideIndex}. Transition removal needs specific handling.` } };
+
+          case 'list':
+            if (!slideForCom) {
+                return createErrorResponse('COM: For "list" operation, slideIndex is required.', 'MISSING_PARAM');
+            }
+            const animationsList = [];
+            for (let i = 1; i <= slideForCom.TimeLine.MainSequence.Count; i++) {
+                const listEffect = slideForCom.TimeLine.MainSequence(i);
+                animationsList.push({
+                    shapeName: listEffect.Shape ? listEffect.Shape.Name : 'Unknown Shape',
+                    animationType: listEffect.EffectType, // Numeric, needs mapping to string
+                    duration: listEffect.Timing.Duration,
                 });
             }
-
-            // Get slide transition details
-            const transitionForList = slideForList.SlideShowTransition;
+            const listTransition = slideForCom.SlideShowTransition;
             const transitionDetails = {
-                transitionType: transitionForList.EntryEffect, // This returns a numeric value, we would need to map it to the PpTransition constant
-                duration: transitionForList.Duration,
-                // Other transition details if relevant
+                transitionType: listTransition.EntryEffect, // Numeric, needs mapping
+                duration: listTransition.Duration,
             };
+            return { success: true, data: { animations: animationsList, transition: transitionDetails, message: `COM: Listed animations and transition for slide ${slideIndex}.` } };
 
-
-            return { success: true, data: { animations, transition: transitionDetails, message: `Listed animations and transition for slide ${slideIndex}.` } };
-
-
-        default:
-          throw new Error(`Unsupported operation: ${operation}`);
-      }
-    } catch (error: any) {
-      console.error(`Error in powerpoint/animations tool: ${error.message}`);
-      return {
-        success: false,
-        error: {
-          code: 'OFFICE_API_ERROR', // Or a more specific error code
-          message: error.message,
-          details: error, // Include the original error object for debugging
-        },
-      };
-    } finally {
-      if (presentation) {
-        try {
-            presentation.Save();
-            presentation.Close();
-        } catch (saveCloseError: any) { // Type as any
-             console.error(`Error saving/closing the presentation: ${saveCloseError.message}`);
-             // Continue to not block the finally block
+          default:
+            throw new Error(`COM: Unsupported operation: ${operation}`);
         }
+      } catch (error: any) {
+        logger.error(`Error in powerpoint/animations tool (COM): ${error.message}`, { error });
+        return createErrorResponse(`COM: Animations operation failed: ${error.message}`, 'POWERPOINT_ANIMATIONS_COM_ERROR', error);
+      } finally {
+        if (presentation) {
+          try {
+            if (operation === 'add' || operation === 'configure' || operation === 'remove') {
+                presentation.Save();
+                const pptContent = await fs.readFile(absoluteFilePath, null);
+                await saveResource('powerpoint/animations', path.basename(absoluteFilePath), pptContent);
+            }
+            presentation.Close();
+          } catch (saveCloseError: any) {
+            logger.warn(`COM: Error saving/closing presentation: ${saveCloseError.message}`);
+          }
+          releaseObject(presentation);
+        }
+        releaseObject(shapeForCom);
+        releaseObject(slideForCom);
+        releaseObject(app);
       }
-      // Do not close the PowerPoint application here, as other tools may need it.
-      // app.Quit(); // Do not do this!
+    } else {
+      // Library Path (PptxGenJS) - Very limited for animations on existing files.
+      // PptxGenJS applies animations during object/slide creation.
+      logger.info(`PptxGenJS path for animations: Operation '${operation}'. Note: PptxGenJS is best for adding animations during new presentation/object generation.`);
+
+      try {
+        const pptx = new PptxGenJS();
+        let message = '';
+
+        switch (operation) {
+          case 'add':
+            // This implies adding a NEW animated object to a NEW slide/presentation.
+            // Modifying an existing shape's animation in an existing file is not a direct pptxgenjs feature.
+            if (!animationType || !newObjectText) {
+                return createErrorResponse('PptxGenJS: For "add" animation, animationType and newObjectText are required to create a new animated object.', 'MISSING_PARAM_LIB');
+            }
+            const slideLib = pptx.addSlide();
+            // Define animation options based on PptxGenJS documentation/examples for TextPropsOptions.animation
+            const animationObject: { type: string; duration?: number; delay?: number; [key: string]: any } = { type: animationType as string };
+            if (duration) animationObject.duration = duration;
+            if (effectParameters?.delay) animationObject.delay = effectParameters.delay;
+            if (effectParameters?.direction) animationObject.direction = effectParameters.direction; // Common animation param
+
+            const textOpts: PptxGenJS.TextPropsOptions = {
+                ...(newObjectOptions || { x: 1, y: 1, w: 8, h: 1 }), // Default position/size
+                animation: animationObject // Assign the correctly structured animation object
+            };
+            slideLib.addText(newObjectText, textOpts);
+            message = `PptxGenJS: Added new text object with animation '${animationType}' to a new slide. File will be saved to ${absoluteFilePath}.`;
+            await pptx.writeFile({ fileName: absoluteFilePath });
+            const pptContent = await fs.readFile(absoluteFilePath, null);
+            await saveResource('powerpoint/animations', path.basename(absoluteFilePath), pptContent);
+            return { success: true, data: { message } };
+
+          case 'configure':
+            // This implies setting a transition for a NEW slide.
+            if (!transitionType) {
+                return createErrorResponse('PptxGenJS: For "configure" transition, transitionType is required for a new slide.', 'MISSING_PARAM_LIB');
+            }
+            // Define transition options based on PptxGenJS documentation/examples for AddSlideProps.transition
+            const transitionObject: { type: string; duration?: number; [key: string]: any } = { type: transitionType as string };
+            if (duration) transitionObject.duration = duration;
+            if (effectParameters?.direction) transitionObject.direction = effectParameters.direction; // Common transition param
+
+            // Add a new slide with the specified transition options.
+            // Use 'as any' to bypass strict type checking for AddSlideProps if 'transition' isn't explicitly in its definition,
+            // assuming the runtime library handles this common pattern.
+            pptx.addSlide({ transition: transitionObject } as any);
+
+            message = `PptxGenJS: Added a new slide with transition '${transitionType}'. File will be saved to ${absoluteFilePath}.`;
+            await pptx.writeFile({ fileName: absoluteFilePath });
+            const pptContentConf = await fs.readFile(absoluteFilePath, null);
+            await saveResource('powerpoint/animations', path.basename(absoluteFilePath), pptContentConf);
+            return { success: true, data: { message } };
+
+          case 'remove':
+          case 'list':
+            logger.warn(`PptxGenJS: Operation '${operation}' for animations/transitions on existing files is not supported. Use COM Interop.`);
+            return createErrorResponse(`PptxGenJS: Operation '${operation}' for animations/transitions on existing files is not supported. Please use COM Interop.`, 'POWERPOINT_LIB_UNSUPPORTED');
+
+          default:
+            const exhaustiveCheckLib: never = operation;
+            throw new Error(`PptxGenJS: Unsupported operation: ${exhaustiveCheckLib}`);
+        }
+      } catch (error: any) {
+        logger.error(`Error in powerpoint/animations tool (PptxGenJS): ${error.message}`, { error });
+        return createErrorResponse(`PptxGenJS: Animations operation failed: ${error.message}`, 'POWERPOINT_LIB_ERROR', error);
+      }
     }
   },
 };
