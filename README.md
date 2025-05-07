@@ -108,5 +108,41 @@ Dive into specific topics:
 - **[Technical Details](TECHNICAL_DETAILS.md)**: Insights into TypeScript, FastMCP, testing, security, future plans (including cloud document access), and licensing.
 
 *   **Office Instance Context:** The server interacts with the default or currently active Microsoft Office application instance available via COM Interop. Managing multiple installed Office versions or specific user sessions/licenses within the Office applications themselves is a complex consideration and is not currently supported.
+## Testing 🧪
+
+This project uses Jest for testing. You can find test files in the `tests/` directory, categorized into `unit` and `e2e` (end-to-end, or functional tests).
+
+**Running All Tests:**
+To run all tests, use the following command:
+```bash
+npm test
+```
+
+**Running Unit Tests:**
+Unit tests focus on individual components and do not require the server to be running.
+```bash
+npm run test:unit
+```
+
+**Running Functional (End-to-End) Tests:**
+Functional tests verify the integration of multiple components and often require the Office MCP server to be running. Ensure the server is started (e.g., on port 3000) before running these tests. Refer to the "Run the Server" section for instructions on starting the server.
+```bash
+npm run test:e2e
+```
+**Note on COM Components for E2E Tests:** Some E2E tests might interact with Microsoft Office applications via COM. These tests are intended for environments where Office applications are installed and accessible. For tests running in environments without Office (e.g., certain CI/CD pipelines or Docker containers not configured for Office COM), ensure they are either skipped or adapted to mock COM interactions if they are to be included. Tests that do not run locally should ideally avoid COM dependencies.
+
+**Running a Single Test File:**
+To run a specific test file, append its path to the `test:single` script:
+```bash
+npm run test:single tests/unit/your-test-file.test.ts
+```
+
+**Test Coverage:**
+To generate a test coverage report:
+```bash
+For more detailed information on the testing strategy, requesting specific tests, and interpreting results, please see the [Detailed Testing Guide](docs/TESTING_GUIDE.md).
+npm run test:coverage
+```
+This will create a `coverage/` directory with the report.
 ## Join the Automation Party
 Office MCP is your key to effortless Office automation. Have ideas or questions? Open an issue on [GitHub](https://github.com/dvdjg/mcp-office/issues) or check `memory://ai_assistant_guide` for tips. Let’s make Office tasks a joy! 🚀
