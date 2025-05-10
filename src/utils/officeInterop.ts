@@ -27,7 +27,7 @@ export async function getOfficeApplication(appName: OfficeAppName): Promise<any>
   try {
     // winax attempts to connect to an existing instance or create a new one with new ActiveXObject.
     // Creating a new object often attaches to an existing one if available.
-    app = new winax.Object(appName, { activate: true }); // { activate: true } tries to bring it to the foreground if it exists
+    app = new winax.default.Object(appName, { activate: true }); // { activate: true } tries to bring it to the foreground if it exists
 
     if (!app) {
       throw new Error(`Could not create or connect to ${appName}.`);

@@ -84,9 +84,11 @@ describe('word/analyze e2e tests', () => {
       body: JSON.stringify({
         tool_name: 'word/analyze',
         arguments: {
-          document: 'tests/temp_word_analyze_dir/analyzed_doc.docx', // Use path relative to workspace
-          criteria: 'grammar,spelling', // Example criteria - need to confirm supported criteria from API spec
-          operation: 'addComments', // Assuming the operation name is addComments
+          filePath: 'tests/temp_word_analyze_dir/analyzed_doc.docx', // Use path relative to workspace
+          operation: 'add', // Corrected operation name
+          range: 'Paragraph 1', // Added required range for 'add' operation
+          commentText: 'This is a test comment added by an e2e test.', // Added required commentText
+          // criteria is optional and not directly used by 'add' operation in the current tool handler
         },
       }),
     });
@@ -110,9 +112,9 @@ describe('word/analyze e2e tests', () => {
       body: JSON.stringify({
         tool_name: 'word/analyze',
         arguments: {
-          document: 'tests/fixtures/CV.docx', // Use path relative to workspace
-          criteria: 'readability', // Example criteria
-          operation: 'analyze', // Assuming the operation name is analyze
+          filePath: 'tests/fixtures/CV.docx', // Use path relative to workspace
+          criteria: ['readability'], // Corrected criteria to be an array
+          operation: 'analyze',
         },
       }),
     });

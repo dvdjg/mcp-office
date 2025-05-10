@@ -126,6 +126,13 @@ npm run test:unit
 
 **Running Functional (End-to-End) Tests:**
 Functional tests verify the integration of multiple components and often require the Office MCP server to be running. Ensure the server is started (e.g., on port 3000) before running these tests. Refer to the "Run the Server" section for instructions on starting the server.
+
+Launch the server with authomatic recompilation:
+```bash
+OFFICE_MCP_PORT=3000 npm run dev
+```
+
+Launch the e2e test:
 ```bash
 npm run test:e2e
 ```
@@ -137,6 +144,9 @@ To run a specific test file, append its path to the `test:single` script:
 npm run test:single tests/unit/your-test-file.test.ts
 ```
 
+```bash
+npm run test:single tests/e2e/word/analyze.test.ts
+```
 **Test Coverage:**
 To generate a test coverage report:
 ```bash

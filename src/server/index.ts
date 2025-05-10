@@ -613,12 +613,12 @@ if (OFFICE_MCP_PORT) {
     mcpServer.start({
         transportType: "sse",
         sse: {
-            endpoint: "/mcp", // Define the SSE endpoint path
+            endpoint: "/tool", // Define the SSE endpoint path
             port: Number(OFFICE_MCP_PORT) // Ensure OFFICE_MCP_PORT is a number
         }
     })
     .then(() => {
-        logger.info(`🚀 msoffice-mcp server listening on port ${OFFICE_MCP_PORT} at endpoint /mcp`);
+        logger.info(`🚀 msoffice-mcp server listening on port ${OFFICE_MCP_PORT} at endpoint /tool`);
     })
     .catch((error: Error) => {
         logger.error('Failed to start msoffice-mcp server:', error);

@@ -5,7 +5,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import fetch from 'node-fetch';
+// import fetch from 'node-fetch'; // Replaced with MCP SDK
+import { Client } from '@modelcontextprotocol/sdk/client'; // Ensuring this is the path used
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+// Note: We might need to import specific error types from the SDK later if generic error handling is insufficient.
 
 const MCP_SERVER_URL = 'http://localhost:3000'; // Assuming the server runs on localhost:3000
 const TEMP_DIR = path.join(__dirname, '../temp_word_text_dir');
@@ -33,17 +36,98 @@ interface ErrorResponse {
 
 type ToolResponse = SuccessResponse | ErrorResponse;
 
-const callTool = async (toolName: string, args: Record<string, any>): Promise<ToolResponse> => {
-  const response = await fetch(`${MCP_SERVER_URL}/tool`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tool_name: toolName, arguments: args }),
-  });
-  // if (!response.ok) { // It's better to check response.ok inside the test for more specific error messages
-  //   const errorBody = await response.text();
-  //   throw new Error(`Tool call failed with status ${response.status}: ${errorBody}`);
-  // }
-  return response.json() as Promise<ToolResponse>;
+const callTool = async (toolName: string, toolArgs: Record<string, any>): Promise<ToolResponse> => {
+  const client = new Client(
+    {
+      name: "e2e-test-client",
+      version: "1.0.0",
+    },
+    { capabilities: {} },
+    // Authentication method to be determined and added here
+  );
+
+  // const apiKey = process.env.MCP_AUTH_TOKEN || 'default-secret-token'; // API key will be handled by SDK auth mechanism
+  const transport = new SSEClientTransport(
+    new URL(`${MCP_SERVER_URL}/tool`)
+    // Options for SSEClientTransport, if any, to be determined for auth.
+    // The 'headers' option was found to be invalid.
+  );
+
+  try {
+    await client.connect(transport);
+    // Assuming client.tools.invoke is the method to call tools.
+    // The 'toolArgs' are passed directly as the parameters for the tool.
+    const sdkResult = await client.tools.invoke(toolName, toolArgs);
+
+    // Adapt the SDK's result (likely ContentResult) to the existing ToolResponse structure.
+    // ContentResult is typically { content: [{ type: 'text', text: '...' }, ...] }
+    let responseData: any = null;
+    if (sdkResult && sdkResult.content) {
+      if (sdkResult.content.length > 0) {
+        // For simplicity, if the first part is text, use its text. Otherwise, use the first part.
+        // Tests might need adjustment if they expect more complex data structures.
+        if (sdkResult.content[0].type === 'text') {
+          responseData = sdkResult.content[0].text;
+        } else {
+          responseData = sdkResult.content[0];
+        }
+      } else {
+        responseData = ""; // Or an empty object, if tools return empty content array for no data
+      }
+    } else {
+      // If the result is not a standard ContentResult, pass it as is.
+      // This might happen for tools that return simple strings directly (though FastMCP wraps them).
+      responseData = sdkResult;
+    }
+
+    return {
+      success: true,
+      data: responseData,
+    };
+  } catch (error: any) {
+    // Map errors from the SDK to the existing ErrorResponse structure.
+    let errorCode = "TOOL_EXECUTION_FAILED_SDK";
+    let errorMessage = "Unknown error during SDK tool call";
+    let errorDetails: any = null;
+
+    if (error && typeof error.message === 'string') {
+      errorMessage = error.message;
+    }
+
+    // Attempt to extract code and details, this is speculative based on common error patterns.
+    // FastMCP server throws UserError with message and details. SDK might preserve these.
+    if (error && error.details) {
+        errorDetails = error.details;
+        if (typeof error.details.code === 'string') {
+            errorCode = error.details.code;
+        } else if (error.name === 'UserError') { // From fastmcp UserError on server
+             errorCode = "USER_ERROR_FROM_SERVER";
+        }
+    } else if (error && typeof error.code === 'string') {
+        errorCode = error.code;
+    } else if (error && error.name === 'UserError') { // Check error.name if details.code is not present
+        errorCode = "USER_ERROR_SDK";
+    }
+
+    // If error itself might be the details (e.g., a simple string error from some part of the stack)
+    if (!errorDetails && error && !(error instanceof Error) && typeof error !== 'function') {
+        errorDetails = error;
+    }
+
+
+    return {
+      success: false,
+      error: {
+        code: errorCode,
+        message: errorMessage,
+        details: errorDetails,
+      },
+    };
+  } finally {
+    if (client.connected) {
+      await client.disconnect();
+    }
+  }
 };
 
 
