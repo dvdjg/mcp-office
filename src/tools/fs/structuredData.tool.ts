@@ -1,8 +1,8 @@
 import * as fs from 'fs-extra';
 import * as pathUtil from 'path';
-const Papa = require('papaparse');
-const { JSONPath } = require('jsonpath-plus');
-const cheerio = require('cheerio');
+import * as Papa from 'papaparse';
+import { JSONPath } from 'jsonpath-plus';
+import * as cheerio from 'cheerio';
 import { z } from 'zod';
 
 // Helper type for encoding
