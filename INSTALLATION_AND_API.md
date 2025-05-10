@@ -109,10 +109,24 @@ npm run docs:api
 ## File System Tools
 - **fs/directory**: `list`, `create`, `delete`
   - Example: `GET /fs/directory/list?path=/docs&filter=*.docx`
-- **fs/file**: `read`, `write`, `delete`
+- **fs/file**: `read`, `write`, `delete` (for basic whole-file operations)
   - Example: `GET /fs/file/read?path=/docs/sample.docx`
-- **fs/blob**: `save`, `read`
+- **fs/blob**: `save`, `read` (for binary blob handling)
 - **fs/archive**: `list`, `extract`, `create`
+- **fs/fileContent**: Tools for fine-grained content manipulation.
+  - `insert_text_lines`, `delete_text_lines`, `replace_text_lines`
+  - `extract_text_from_range`, `search_replace_in_text_range`
+  - `sort_text_lines`, `deduplicate_consecutive_lines`, `trim_line_whitespace`
+  - `read_binary_as_hex`, `write_hex_as_binary`
+  - `read_base64_file`, `write_to_base64_file`
+- **fs/directoryOperations**: Advanced directory operations.
+  - `list_directory_contents` (more detailed than `fs/directory/list`)
+  - `find_files` (with name and content pattern matching)
+  - `get_directory_tree`
+- **fs/structuredData**: Tools for CSV, JSON, and HTML/XML.
+  - `read_csv_data`, `write_csv_data`
+  - `read_json_path`, `write_json_path`
+  - `extract_from_markup`, `update_markup_content`
 
 ## Word Tools
 - **word/styles**: `list`, `apply`, `create`, `modify`, `delete`

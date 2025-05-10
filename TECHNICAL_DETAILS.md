@@ -23,6 +23,9 @@ Built with **TypeScript** and **FastMCP** for robustness:
 - `adm-zip`: For handling ZIP archives.
 - `node-7z`: For handling 7z archives (requires 7z executable in PATH).
 - `@vscode/vscode-languagedetection`: For intelligent code language detection.
+- `papaparse`: "^5.4.1" - For CSV parsing and unparsing.
+- `jsonpath-plus`: "^7.2.0" - For querying JSON structures using JSONPath expressions.
+- `cheerio`: "^1.0.0-rc.12" - For parsing and manipulating HTML/XML documents.
 
 **Security**:
 - `ALLOWED_FS_PATHS` restricts file access
@@ -112,6 +115,9 @@ This feature is a significant undertaking and is planned for a future developmen
 - `@vscode/vscode-languagedetection`: [github.com/microsoft/vscode-languagedetection](https://github.com/microsoft/vscode-languagedetection)
 - `adm-zip`: [github.com/cthackers/adm-zip](https://github.com/cthackers/adm-zip)
 - `node-7z`: [github.com/quentin-sommer/node-7z](https://github.com/quentin-sommer/node-7z)
+- `papaparse`: [www.papaparse.com](https://www.papaparse.com)
+- `jsonpath-plus`: [github.com/JSONPath-Plus/JSONPath](https://github.com/JSONPath-Plus/JSONPath)
+- `cheerio`: [cheerio.js.org](https://cheerio.js.org/)
 - API Docs: [docs/api](docs/api)
 - GitHub: [github.com/dvdjg/mcp-office](https://github.com/dvdjg/mcp-office)
 

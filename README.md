@@ -13,6 +13,7 @@ Welcome to the **Office MCP Server**, your go-to tool for automating Microsoft O
 - **Cross-Platform**: Supports Office 365, desktop Office, and Power Automate.
 - **Developer-Friendly**: Type-safe, modular, and well-documented for easy integration.
 - **Rock-Solid**: >90% test coverage ensures reliability for your automation adventures.
+- 🗂️ **Comprehensive Filesystem Toolkit**: Beyond basic file operations, manage directory structures, manipulate file content line-by-line, search and replace within text ranges, and seamlessly work with structured data formats like CSV, JSON, and HTML/XML.
 - **Cloud Document Access (Future)**: Planned support for accessing and working with documents via Teams/Office 365 links with user permissions.
 
 ## Quick Start

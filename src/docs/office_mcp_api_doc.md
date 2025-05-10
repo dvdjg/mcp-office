@@ -18,6 +18,9 @@
    - [fs/file](#fsfile)
    - [fs/blob](#fsblob)
    - [fs/archive](#fsarchive)
+   - [fs/fileContent](#fsfilecontent)
+   - [fs/directoryOperations](#fsdirectoryoperations)
+   - [fs/structuredData](#fsstructureddata)
 3. [Word Tools](#word-tools)
    - [word/styles](#wordstyles)
    - [word/text](#wordtext)
@@ -286,6 +289,613 @@ The Office MCP Server integrates with AI agents (e.g., Claude) via FastMCP's pro
 
 **Completions**: File paths, archive formats (`zip`, `7z`).
 
+<![CDATA[
+### <a name="fsfilecontent"></a>fs/fileContent
+**Description**: Provides tools for fine-grained manipulation of text and binary file content.
+
+#### fs/insert_text_lines
+**Description**: Inserts an array of strings as new lines into a text file at a specified line number, respecting file encoding.
+**Parameters**:
+- `path` (string, required): The path to the file.
+- `lineNumber` (number, integer, required): The 1-based line number before which to insert the new lines. If 0 or less, or greater than the number of lines, lines are appended.
+- `lines` (string[], required): An array of strings to insert.
+- `encoding` (string, optional, default: `utf8`): The file encoding (e.g., `ascii`, `utf8`, `utf-8`, `utf16le`, `ucs2`, `ucs-2`, `base64`, `latin1`, `binary`, `hex`).
+**Returns**: `Promise<void>`
+**Example**:
+```bash
+curl -X POST "http://localhost:3000/fs/insert_text_lines" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "docs/sample.txt",
+    "lineNumber": 2,
+    "lines": ["New line 1", "New line 2"],
+    "encoding": "utf8"
+  }'
+```
+**Example Response**:
+```json
+{ "success": true }
+```
+**AI Request Examples**:
+- User: "Insert 'Hello World' as the first line in `data/my_notes.txt`."
+- User: "Add these two lines to the end of `config.ini`: `enabled=true` and `mode=test`."
+**Completions**: File paths, line numbers, common encodings.
+
+#### fs/delete_text_lines
+**Description**: Deletes a specified range of lines from a text file, respecting file encoding.
+**Parameters**:
+- `path` (string, required): The path to the file.
+- `startLine` (number, integer, required): The 1-based starting line number of the range to delete.
+- `endLine` (number, integer, required): The 1-based ending line number of the range to delete.
+- `encoding` (string, optional, default: `utf8`): The file encoding.
+**Returns**: `Promise<void>`
+**Example**:
+```bash
+curl -X POST "http://localhost:3000/fs/delete_text_lines" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "docs/sample.txt",
+    "startLine": 2,
+    "endLine": 3,
+    "encoding": "utf8"
+  }'
+```
+**Example Response**:
+```json
+{ "success": true }
+```
+**AI Request Examples**:
+- User: "Delete lines 5 to 10 from `log.txt`."
+**Completions**: File paths, line numbers.
+
+#### fs/replace_text_lines
+**Description**: Replaces a range of lines in a text file with new lines, respecting file encoding.
+**Parameters**:
+- `path` (string, required): The path to the file.
+- `startLine` (number, integer, required): The 1-based starting line number of the range to replace.
+- `endLine` (number, integer, required): The 1-based ending line number of the range to replace.
+- `newLines` (string[], required): An array of strings to replace the specified lines.
+- `encoding` (string, optional, default: `utf8`): The file encoding.
+**Returns**: `Promise<void>`
+**Example**:
+```bash
+curl -X POST "http://localhost:3000/fs/replace_text_lines" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "docs/sample.txt",
+    "startLine": 2,
+    "endLine": 2,
+    "newLines": ["This is a replaced line."],
+    "encoding": "utf8"
+  }'
+```
+**Example Response**:
+```json
+{ "success": true }
+```
+**AI Request Examples**:
+- User: "Replace the first line of `config.json` with `{\\"version\\": \\"2.0\\"}`."
+**Completions**: File paths, line numbers.
+
+#### fs/extract_text_from_range
+**Description**: Extracts a text segment from a file defined by character positions within line ranges, respecting file encoding.
+**Parameters**:
+- `path` (string, required): The path to the file.
+- `startLine` (number, integer, required): The 1-based line number where the extraction begins.
+- `startChar` (number, integer, required): The 0-based character offset on the `startLine` where extraction begins.
+- `endLine` (number, integer, required): The 1-based line number where the extraction ends.
+- `endChar` (number, integer, required): The 0-based character offset on the `endLine` where extraction ends (exclusive).
+- `encoding` (string, optional, default: `utf8`): The file encoding.
+**Returns**: `Promise<string>` - The extracted text.
+**Example**:
+```bash
+curl -X POST "http://localhost:3000/fs/extract_text_from_range" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "docs/sample.txt",
+    "startLine": 1,
+    "startChar": 6,
+    "endLine": 2,
+    "endChar": 5
+  }'
+```
+**Example Response**:
+```json
+{ "success": true, "data": "text from file..." }
+```
+**AI Request Examples**:
+- User: "Get the text from line 2, character 5 to line 3, character 10 of `report.txt`."
+**Completions**: File paths, line numbers, character offsets.
+
+#### fs/search_replace_in_text_range
+**Description**: Searches (string/regex) and replaces text within a specified line range of a file, respecting file encoding.
+**Parameters**:
+- `path` (string, required): The path to the file.
+- `searchTerm` (string, required): The text or regex pattern to search for.
+- `replacement` (string, required): The text to replace matches with.
+- `startLine` (number, integer, optional, default: 1): The 1-based starting line of the range for search/replace.
+- `endLine` (number, integer, optional, default: end of file): The 1-based ending line of the range.
+- `isRegex` (boolean, optional, default: `false`): Whether `searchTerm` is a regex.
+- `replaceAll` (boolean, optional, default: `true`): Whether to replace all occurrences or just the first on each line (or overall if regex global flag is used).
+- `encoding` (string, optional, default: `utf8`): The file encoding.
+**Returns**: `Promise<{ replacementsMade: number }>`
+**Example**:
+```bash
+curl -X POST "http://localhost:3000/fs/search_replace_in_text_range" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "docs/sample.txt",
+    "searchTerm": "old_text",
+    "replacement": "new_text",
+    "startLine": 1,
+    "endLine": 10
+  }'
+```
+**Example Response**:
+```json
+{ "success": true, "data": { "replacementsMade": 5 } }
+```
+**AI Request Examples**:
+- User: "In `main.py`, replace all instances of 'foo' with 'bar' between lines 10 and 20."
+**Completions**: File paths, search terms, line numbers.
+
+#### fs/sort_text_lines
+**Description**: Sorts the lines of a text file.
+**Parameters**:
+- `path` (string, required): The path to the file.
+- `options` (object, optional):
+    - `reverse` (boolean, optional, default: `false`): Sort in descending order.
+    - `caseSensitive` (boolean, optional, default: `true`): Perform case-sensitive sort.
+    - `locale` (string, optional, default: `en`): Locale for string comparison (e.g., `en-US`).
+- `encoding` (string, optional, default: `utf8`): The file encoding.
+**Returns**: `Promise<void>`
+**Example**:
+```bash
+curl -X POST "http://localhost:3000/fs/sort_text_lines" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "docs/unsorted.txt",
+    "options": { "reverse": true, "caseSensitive": false }
+  }'
+```
+**Example Response**:
+```json
+{ "success": true }
+```
+**AI Request Examples**:
+- User: "Sort the lines in `names.txt` alphabetically, ignoring case."
+**Completions**: File paths, sort options.
+
+#### fs/deduplicate_consecutive_lines
+**Description**: Removes consecutive duplicate lines from a text file.
+**Parameters**:
+- `path` (string, required): The path to the file.
+- `caseSensitive` (boolean, optional, default: `true`): Perform case-sensitive comparison.
+- `encoding` (string, optional, default: `utf8`): The file encoding.
+**Returns**: `Promise<void>`
+**Example**:
+```bash
+curl -X POST "http://localhost:3000/fs/deduplicate_consecutive_lines" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "docs/log_with_duplicates.txt",
+    "caseSensitive": false
+  }'
+```
+**Example Response**:
+```json
+{ "success": true }
+```
+**AI Request Examples**:
+- User: "Remove duplicate adjacent lines from `output.log`."
+**Completions**: File paths, case sensitivity option.
+
+#### fs/trim_line_whitespace
+**Description**: Trims leading and/or trailing whitespace from each line in a text file.
+**Parameters**:
+- `path` (string, required): The path to the file.
+- `options` (object, optional):
+    - `leading` (boolean, optional, default: `true`): Trim leading whitespace.
+    - `trailing` (boolean, optional, default: `true`): Trim trailing whitespace.
+- `encoding` (string, optional, default: `utf8`): The file encoding.
+**Returns**: `Promise<void>`
+**Example**:
+```bash
+curl -X POST "http://localhost:3000/fs/trim_line_whitespace" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "docs/messy_code.txt",
+    "options": { "leading": true, "trailing": true }
+  }'
+```
+**Example Response**:
+```json
+{ "success": true }
+```
+**AI Request Examples**:
+- User: "Trim all whitespace from the beginning and end of each line in `data.csv`."
+**Completions**: File paths, trim options.
+
+#### fs/read_binary_as_hex
+**Description**: Reads a binary file and returns its content as a hexadecimal string.
+**Parameters**:
+- `path` (string, required): The path to the binary file.
+**Returns**: `Promise<string>` - The hex string.
+**Example**:
+```bash
+curl -X POST "http://localhost:3000/fs/read_binary_as_hex" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "docs/image.png"
+  }'
+```
+**Example Response**:
+```json
+{ "success": true, "data": "89504e470d0a1a0a..." }
+```
+**AI Request Examples**:
+- User: "Read `firmware.bin` as a hex string."
+**Completions**: File paths.
+
+#### fs/write_hex_as_binary
+**Description**: Writes a hexadecimal string to a file as binary data.
+**Parameters**:
+- `path` (string, required): The path to the file to write.
+- `hexString` (string, required): The hexadecimal string to write.
+**Returns**: `Promise<void>`
+**Example**:
+```bash
+curl -X POST "http://localhost:3000/fs/write_hex_as_binary" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "docs/output.bin",
+    "hexString": "48656c6c6f20576f726c64"
+  }'
+```
+**Example Response**:
+```json
+{ "success": true }
+```
+**AI Request Examples**:
+- User: "Write the hex string '01020304' to `data.dat`."
+**Completions**: File paths.
+
+#### fs/read_base64_file
+**Description**: Reads a Base64 encoded file and returns its decoded content as a string or binary buffer.
+**Parameters**:
+- `path` (string, required): The path to the Base64 encoded file.
+- `outputEncoding` (string, optional, default: `utf8`): The encoding for the output string (e.g., `utf8`, `ascii`, `latin1`), or `'binary'` to return a Buffer.
+**Returns**: `Promise<string | Buffer>` - The decoded content.
+**Example**:
+```bash
+curl -X POST "http://localhost:3000/fs/read_base64_file" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "docs/encoded_text.b64",
+    "outputEncoding": "utf8"
+  }'
+```
+**Example Response**:
+```json
+{ "success": true, "data": "Decoded text content..." }
+```
+**AI Request Examples**:
+- User: "Read and decode `secret.b64`."
+**Completions**: File paths, output encodings.
+
+#### fs/write_to_base64_file
+**Description**: Encodes string data or binary data to Base64 and writes it to a file.
+**Parameters**:
+- `path` (string, required): The path to the file to write the Base64 string.
+- `data` (string | Buffer, required): The string data or Buffer to encode.
+- `inputEncoding` (string, optional, default: `utf8`): If `data` is a string, this is its encoding.
+**Returns**: `Promise<void>`
+**Example**:
+```bash
+curl -X POST "http://localhost:3000/fs/write_to_base64_file" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "docs/data.b64",
+    "data": "This will be base64 encoded",
+    "inputEncoding": "utf8"
+  }'
+```
+**Example Response**:
+```json
+{ "success": true }
+```
+**AI Request Examples**:
+- User: "Encode the string 'My Data' and save it to `mydata.b64`."
+**Completions**: File paths, input encodings.
+
+### <a name="fsdirectoryoperations"></a>fs/directoryOperations
+**Description**: Tools for listing directory contents, finding files, and generating directory tree structures.
+
+#### fs/list_directory_contents
+**Description**: Lists the contents of a specified directory, optionally including file sizes and recursion.
+**Parameters**:
+- `path` (string, required): Path to the directory.
+- `options` (object, optional):
+    - `recursive` (boolean, optional, default: `false`): List contents recursively.
+    - `includeSize` (boolean, optional, default: `false`): Include file sizes in the output.
+    - `maxDepth` (number, integer, optional): Maximum depth for recursion (0 for top-level only).
+**Returns**: `Promise<ListDirectoryItem[]>` where `ListDirectoryItem` is `{ name: string, type: 'file' | 'directory' | 'other', path: string, size?: number, depth: number }`.
+**Example**:
+```bash
+curl -X POST "http://localhost:3000/fs/list_directory_contents" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "./src/tools",
+    "options": { "recursive": true, "maxDepth": 1, "includeSize": true }
+  }'
+```
+**Example Response**:
+```json
+{
+  "success": true,
+  "data": [
+    { "name": "fs", "type": "directory", "path": "c:\\Users\\David\\Documents\\MCP\\mcp-office\\src\\tools\\fs", "size": 0, "depth": 0 },
+    { "name": "index.ts", "type": "file", "path": "c:\\Users\\David\\Documents\\MCP\\mcp-office\\src\\tools\\index.ts", "size": 1024, "depth": 0 }
+  ]
+}
+```
+**AI Request Examples**:
+- User: "List all files and folders in `/myproject/src` recursively up to 2 levels deep."
+**Completions**: Directory paths, recursive options.
+
+#### fs/find_files
+**Description**: Searches for files within a directory (and its subdirectories) based on a name pattern (glob or regex) and optionally content.
+**Parameters**:
+- `directoryPath` (string, required): The directory to search within.
+- `namePattern` (string, required): Glob or regex pattern for file names (e.g., `*.ts`, `^test_.*\\.js$`).
+- `options` (object, optional):
+    - `isRegexName` (boolean, optional, default: `false`): Treat `namePattern` as regex.
+    - `recursive` (boolean, optional, default: `true`): Search recursively.
+    - `contentPattern` (string, optional): Regex pattern to search within file content.
+    - `contentIsRegex` (boolean, optional, default: `false`): Treat `contentPattern` as regex (currently implies regex, simple string search not main focus).
+    - `maxDepth` (number, integer, optional): Maximum depth for recursion.
+    - `encoding` (string, optional, default: `utf8`): Encoding for reading file content.
+**Returns**: `Promise<FindFilesResultItem[]>` where `FindFilesResultItem` is `{ path: string, matchesContent?: boolean }`. `matchesContent` is true if `contentPattern` matched, false if provided but not matched, undefined if `contentPattern` was not provided.
+**Example**:
+```bash
+curl -X POST "http://localhost:3000/fs/find_files" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "directoryPath": "./tests",
+    "namePattern": "*.test.ts",
+    "options": { "recursive": true, "contentPattern": "describe" }
+  }'
+```
+**Example Response**:
+```json
+{
+  "success": true,
+  "data": [
+    { "path": "c:\\Users\\David\\Documents\\MCP\\mcp-office\\tests\\unit\\fs\\fileContent.test.ts", "matchesContent": true }
+  ]
+}
+```
+**AI Request Examples**:
+- User: "Find all TypeScript files in `src` that contain the word 'interface'."
+**Completions**: Directory paths, name patterns, content patterns.
+
+#### fs/get_directory_tree
+**Description**: Generates a string representation of a directory tree structure.
+**Parameters**:
+- `path` (string, required): The root directory path for the tree.
+- `options` (object, optional):
+    - `maxDepth` (number, integer, optional, default: 3): Maximum depth of the tree.
+    - `includeFiles` (boolean, optional, default: `true`): Include files in the tree.
+    - `includeSize` (boolean, optional, default: `false`): Include file sizes.
+**Returns**: `Promise<string>` - The directory tree as a string.
+**Example**:
+```bash
+curl -X POST "http://localhost:3000/fs/get_directory_tree" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "./src",
+    "options": { "maxDepth": 2, "includeFiles": true }
+  }'
+```
+**Example Response**:
+```json
+{
+  "success": true,
+  "data": "src/\\n├── docs/\\n│   ├── ai_assistant_guide.md\\n│   └── ...\\n├── server/\\n│   └── index.ts\\n└── tools/\\n    ├── fs/\\n    └── index.ts"
+}
+```
+**AI Request Examples**:
+- User: "Show me the directory structure of `./project/assets` up to 3 levels."
+**Completions**: Directory paths, depth options.
+
+### <a name="fsstructureddata"></a>fs/structuredData
+**Description**: Tools for reading and writing structured data files like CSV, JSON, and manipulating HTML/XML content.
+
+#### fs/read_csv_data
+**Description**: Reads data from a CSV file, allowing selection of specific columns and row ranges.
+**Parameters**:
+- `path` (string, required): Path to the CSV file.
+- `options` (object, optional):
+    - `delimiter` (string, optional): CSV delimiter character.
+    - `columns` (string[] | number[], optional): Array of column names (if `hasHeaders` is true) or 0-based indices to select.
+    - `startRow` (number, integer, optional, default: 1): 1-based row number to start reading from.
+    - `endRow` (number, integer, optional): 1-based row number to end reading at (exclusive).
+    - `hasHeaders` (boolean, optional, default: `true`): Whether the CSV has a header row.
+    - `encoding` (string, optional, default: `utf8`): File encoding.
+**Returns**: `Promise<Array<Record<string, any> | any[]>>` - Array of objects (if headers) or array of arrays.
+**Example**:
+```bash
+curl -X POST "http://localhost:3000/fs/read_csv_data" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "data/sales.csv",
+    "options": { "hasHeaders": true, "columns": ["Product", "Revenue"], "startRow": 2 }
+  }'
+```
+**Example Response**:
+```json
+{
+  "success": true,
+  "data": [
+    { "Product": "Widget A", "Revenue": 1000 },
+    { "Product": "Widget B", "Revenue": 1500 }
+  ]
+}
+```
+**AI Request Examples**:
+- User: "Read `products.csv`, get only the 'ID' and 'Price' columns, starting from the second row."
+**Completions**: File paths, CSV options.
+
+#### fs/write_csv_data
+**Description**: Writes an array of objects or arrays of data to a CSV file.
+**Parameters**:
+- `path` (string, required): Path to the CSV file to write.
+- `data` (Array<Record<string, any> | any[]>, required): Data to write.
+- `options` (object, optional):
+    - `delimiter` (string, optional, default: `,`): CSV delimiter.
+    - `headers` (string[], optional): Array of header names. If not provided and data is objects, keys of the first object are used.
+    - `includeHeaders` (boolean, optional, default: `true` if headers can be determined, else `false`): Whether to write a header row.
+    - `encoding` (string, optional, default: `utf8`): File encoding.
+    - `mode` (enum: `'overwrite'` | `'append'`, optional, default: `'overwrite'`): Write mode.
+**Returns**: `Promise<void>`
+**Example**:
+```bash
+curl -X POST "http://localhost:3000/fs/write_csv_data" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "output/report.csv",
+    "data": [{ "id": 1, "name": "Alice" }, { "id": 2, "name": "Bob" }],
+    "options": { "headers": ["id", "name"], "mode": "overwrite" }
+  }'
+```
+**Example Response**:
+```json
+{ "success": true }
+```
+**AI Request Examples**:
+- User: "Write this data to `new_data.csv`: `[[1,'A'],[2,'B']]` with headers 'Col1', 'Col2'."
+**Completions**: File paths, CSV options, data structure.
+
+#### fs/read_json_path
+**Description**: Reads a specific value from a JSON file using a JSONPath expression.
+**Parameters**:
+- `path` (string, required): Path to the JSON file.
+- `jsonPath` (string, required): JSONPath expression (e.g., `$.store.book[0].title`).
+- `options` (object, optional):
+    - `encoding` (string, optional, default: `utf8`): File encoding.
+**Returns**: `Promise<any | undefined>` - The extracted value, or undefined if not found.
+**Example**:
+```bash
+curl -X POST "http://localhost:3000/fs/read_json_path" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "config/settings.json",
+    "jsonPath": "$.user.preferences.theme"
+  }'
+```
+**Example Response**:
+```json
+{ "success": true, "data": "dark" }
+```
+**AI Request Examples**:
+- User: "From `package.json`, get the value of `dependencies.lodash`."
+**Completions**: File paths, JSONPath expressions.
+
+#### fs/write_json_path
+**Description**: Writes or updates a value at a specific path within a JSON file. Creates missing path segments if `createMissing` is true.
+**Parameters**:
+- `path` (string, required): Path to the JSON file.
+- `jsonPath` (string, required): JSONPath expression to the location to write.
+- `value` (any, required): The value to write.
+- `options` (object, optional):
+    - `createMissing` (boolean, optional, default: `true`): Create parent objects/arrays if they don't exist.
+    - `encoding` (string, optional, default: `utf8`): File encoding.
+**Returns**: `Promise<void>`
+**Example**:
+```bash
+curl -X POST "http://localhost:3000/fs/write_json_path" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "config/settings.json",
+    "jsonPath": "$.user.preferences.fontSize",
+    "value": 14
+  }'
+```
+**Example Response**:
+```json
+{ "success": true }
+```
+**AI Request Examples**:
+- User: "In `manifest.json`, set `version` to `1.2.3`."
+**Completions**: File paths, JSONPath expressions, values.
+
+#### fs/extract_from_markup
+**Description**: Extracts data (text, attribute, or HTML) from an HTML or XML file using a CSS selector.
+**Parameters**:
+- `path` (string, required): Path to the HTML/XML file.
+- `selector` (string, required): CSS selector (e.g., `h1`, `.item > span`, `div#main`).
+- `options` (object, optional):
+    - `extract` (string | object, optional, default: `'text'`): What to extract:
+        - `'text'`: Inner text of selected elements.
+        - `'html'`: Outer HTML of selected elements.
+        - `{ attribute: string }`: Value of a specific attribute (e.g., `{ attribute: 'href' }`).
+    - `encoding` (string, optional, default: `utf8`): File encoding.
+    - `isXml` (boolean, optional, default: `false`): Parse as XML.
+**Returns**: `Promise<string | string[] | null>` - A single string if one match, array of strings for multiple matches, or null if no matches.
+**Example**:
+```bash
+curl -X POST "http://localhost:3000/fs/extract_from_markup" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "web/index.html",
+    "selector": "title",
+    "options": { "extract": "text" }
+  }'
+```
+**Example Response**:
+```json
+{ "success": true, "data": "My Web Page" }
+```
+**AI Request Examples**:
+- User: "Get the text of all `<h2>` tags from `article.html`."
+- User: "Extract the `src` attribute of the image with id `logo` in `page.xml`."
+**Completions**: File paths, CSS selectors, extraction options.
+
+#### fs/update_markup_content
+**Description**: Updates the content (text or HTML) or an attribute of elements matching a CSS selector in an HTML/XML file.
+**Parameters**:
+- `path` (string, required): Path to the HTML/XML file.
+- `selector` (string, required): CSS selector for elements to update.
+- `newContent` (string, required): The new text, HTML, or attribute value.
+- `options` (object, optional):
+    - `updateType` (string | object, optional, default: `'text'`): What to update:
+        - `'text'`: Set inner text.
+        - `'html'`: Set inner HTML.
+        - `{ attribute: string }`: Set a specific attribute (e.g., `{ attribute: 'class' }`).
+    - `encoding` (string, optional, default: `utf8`): File encoding.
+    - `isXml` (boolean, optional, default: `false`): Parse as XML.
+**Returns**: `Promise<{ modifiedCount: number }>`
+**Example**:
+```bash
+curl -X POST "http://localhost:3000/fs/update_markup_content" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "web/index.html",
+    "selector": "h1#main-title",
+    "newContent": "Welcome to the New Site!",
+    "options": { "updateType": "text" }
+  }'
+```
+**Example Response**:
+```json
+{ "success": true, "data": { "modifiedCount": 1 } }
+```
+**AI Request Examples**:
+- User: "Change the text of the paragraph with class `intro` in `about.html` to 'New introduction'."
+- User: "Set the `href` attribute of all links with class `external-link` in `links.html` to `https://example.com`."
+**Completions**: File paths, CSS selectors, update types.
+
+]]>
 ---
 
 ## Word Tools

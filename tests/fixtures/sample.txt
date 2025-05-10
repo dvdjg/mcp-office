@@ -1,0 +1,12 @@
+This is the first line.
+This is the second line, with some repetition: line line.
+And a third line.
+alpha
+beta
+gamma
+123
+abc
+XYZ
+Another line for testing.
+CASE TEST
+case test

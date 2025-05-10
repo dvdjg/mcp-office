@@ -1,19 +1,13 @@
 // jest.config.mjs
 export default {
-  preset: 'ts-jest/presets/default-esm',
+  preset: 'ts-jest',
   testEnvironment: 'node',
-  extensionsToTreatAsEsm: ['.ts'],
   transform: {
-    // Transform both .ts/.tsx and .js/.jsx files with ts-jest in ESM mode
-    '^.+\\.(t|j)sx?$': [
-      'ts-jest',
-      {
-        useESM: true,
-      },
-    ],
+    '^.+\\.tsx?$': ['ts-jest', {
+      tsconfig: 'tsconfig.test.json'
+    }]
   },
-  // Add .ts to the list of extensions Jest should look for
-  moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
+  moduleFileExtensions: ['ts', 'js', 'json', 'node'],
   moduleNameMapper: {
     // Map imports ending in .js back to .ts files for resolution
     '^(\\.{1,2}/.*)\\.js$': '$1',
@@ -22,7 +16,7 @@ export default {
     '^@/(.*)$': '<rootDir>/src/$1'      // Keep original mapping
   },
   // Ignore all node_modules EXCEPT pptxgenjs (which needs transformation)
-  transformIgnorePatterns: ['/node_modules/(?!pptxgenjs/)'],
+  transformIgnorePatterns: ['/node_modules/(?!pptxgenjs|fs-extra/)'],
   testPathIgnorePatterns: ['/node_modules/', '/dist/'],
   collectCoverageFrom: ['src/**/*.ts'],
   coveragePathIgnorePatterns: ['/node_modules/', '/dist/'],

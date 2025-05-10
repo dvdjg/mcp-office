@@ -1,0 +1,18 @@
+<root>
+    <item id="1">
+        <name>Item A</name>
+        <value>100</value>
+    </item>
+    <item id="2">
+        <name>Item B</name>
+        <value>200</value>
+        <details>
+            <color>Red</color>
+            <size>Large</size>
+        </details>
+    </item>
+    <item id="3">
+        <name>Item C</name>
+        <value>300</value>
+    </item>
+</root>
