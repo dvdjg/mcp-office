@@ -116,54 +116,72 @@ async function writeFile(params: ToolRequestParams, context?: FastMCPContext<und
  * Deletes a file at the specified path.
  * @param params - The parameters for the delete operation, validated against `fileOpSchema`.
  * @param context - The FastMCP context (optional).
- * @returns A promise resolving to an empty ApiResponse indicating success.
+ * @returns A promise resolving to an ApiResponse containing the path of the deleted file.
  */
-async function deleteFile(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{}>> { // Use FastMCPContext<undefined>
+async function deleteFile(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{ path: string }>> { // Use FastMCPContext<undefined>
     try {
         const validatedParams = fileOpSchema.parse(params);
         const safePath = validateFilePath(validatedParams.path);
 
-        if (!await fs.pathExists(safePath) || !(await fs.stat(safePath)).isFile()) {
-            return createErrorResponse('NOT_FOUND', `File not found: ${validatedParams.path}`);
+        if (!await fs.pathExists(safePath)) { // Check if path exists (can be file or dir for fs.remove)
+            return createErrorResponse('NOT_FOUND', `Path not found: ${validatedParams.path}`);
+        }
+        // fs.remove can handle both files and directories, so specific isFile check might be too restrictive if we want to extend this.
+        // For now, the tool is fs/file/delete, so we expect a file.
+        if (!(await fs.stat(safePath)).isFile()) {
+            return createErrorResponse('INVALID_TYPE', `Path is not a file: ${validatedParams.path}`);
         }
 
-        await fs.remove(safePath); // fs-extra remove works for files too
+        await fs.remove(safePath); // fs-extra remove works for files
         logger.info(`[fs/file/delete] Deleted file: ${safePath}`);
-        return { success: true, data: {} };
+        return { success: true, data: { path: safePath } };
     } catch (error) {
         return handleToolError(error, 'FS_DELETE_ERROR');
     }
 }
 
 /**
- * Renames or moves a file from one path to another.
+ * Renames or moves a file or directory from one path to another.
  * @param params - The parameters for the rename operation, validated against `renameSchema`.
  * @param context - The FastMCP context (optional).
- * @returns A promise resolving to an ApiResponse containing the new path of the file.
+ * @returns A promise resolving to an ApiResponse containing the old and new paths.
  */
-async function renameFile(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{ newPath: string }>> { // Use FastMCPContext<undefined>
-     try {
-        const validatedParams = renameSchema.parse(params);
-        const safeOldPath = validateFilePath(validatedParams.oldPath);
+async function renameFile(params: ToolRequestParams, context?: FastMCPContext<undefined>): Promise<ApiResponse<{ oldPath: string, newPath: string }>> { // Use FastMCPContext<undefined>
+    const validatedParams = renameSchema.parse(params); // Parse params early for access in catch
+    let safeOldPath: string = ''; // Declare here for wider scope
+    let safeNewPath: string = ''; // Declare here for wider scope
+    try {
+        safeOldPath = validateFilePath(validatedParams.oldPath);
         // Validate the *directory* of the new path
         const newParentDir = path.dirname(validatedParams.newPath);
-        validateFilePath(newParentDir);
-        const safeNewPath = path.resolve(validatedParams.newPath);
+        validateFilePath(newParentDir); // Ensures the target directory is within allowed bounds
+        safeNewPath = path.resolve(validatedParams.newPath); // Get absolute path for consistency
 
-
-        if (!await fs.pathExists(safeOldPath) || !(await fs.stat(safeOldPath)).isFile()) {
-            return createErrorResponse('NOT_FOUND', `Source file not found: ${validatedParams.oldPath}`);
+        if (!await fs.pathExists(safeOldPath)) {
+            return createErrorResponse('NOT_FOUND', `Source path not found: ${validatedParams.oldPath}`);
         }
+        // Note: fs.stat will throw if path does not exist, so pathExists check is important.
+        // We don't need to check if it's a file or directory here, fs.rename will handle it or error appropriately.
+
         if (await fs.pathExists(safeNewPath)) {
-             return createErrorResponse('ALREADY_EXISTS', `Target file already exists: ${validatedParams.newPath}`);
+             return createErrorResponse('ALREADY_EXISTS', `Target path already exists: ${validatedParams.newPath}`);
         }
 
-        await fs.rename(safeOldPath, safeNewPath);
-        logger.info(`[fs/file/rename] Renamed file: ${safeOldPath} -> ${safeNewPath}`);
-        return { success: true, data: { newPath: safeNewPath } };
-     } catch (error) {
+        await fs.rename(safeOldPath, safeNewPath); // fs.rename works for files and directories
+        logger.info(`[fs/file/rename] Renamed path: ${safeOldPath} -> ${safeNewPath}`);
+        return { success: true, data: { oldPath: safeOldPath, newPath: safeNewPath } };
+    } catch (error) {
+        // Catch specific errors from fs.rename if needed, e.g., trying to move directory to different device (EXDEV)
+        // For EXDEV, fs.move from fs-extra would be a solution, but it's a more complex operation (copy then delete).
+        // For now, we rely on standard fs.rename behavior.
+        if (error && typeof error === 'object' && 'code' in error && error.code === 'EXDEV') {
+            // Now safeOldPath and safeNewPath are accessible here
+            logger.error(`[fs/file/rename] Failed to rename across devices: ${safeOldPath || validatedParams.oldPath} -> ${safeNewPath || validatedParams.newPath}`, error);
+            const errorMessage = (error as { message?: string }).message || 'Unknown EXDEV error';
+            return createErrorResponse('FS_RENAME_ERROR', `Cannot move path across different devices/partitions: ${errorMessage}`);
+        }
         return handleToolError(error, 'FS_RENAME_ERROR');
-     }
+    }
 }
 
 // --- Resource Definition ---
@@ -189,12 +207,12 @@ export const fsFileTool: McpResource[] = [
         path: 'fs/file/delete',
         handler: deleteFile,
         schema: fileOpSchema,
-        description: 'Deletes a file.',
+        description: 'Deletes a file. Returns the path of the deleted file.',
     },
      {
         path: 'fs/file/rename',
         handler: renameFile,
         schema: renameSchema,
-        description: 'Renames or moves a file.',
+        description: 'Renames or moves a file or directory. Returns the old and new paths.',
     },
 ];
