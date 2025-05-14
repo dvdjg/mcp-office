@@ -78,8 +78,9 @@ import { dynamicResourcesTool } from './dynamic/resources.tool.js'; // Assuming 
 // Import the new image analysis/generation tool
 import { officeImageAnalysisGenerationTool } from './office/imageAnalysisGeneration.tool.js'; // Single object
 import { generalParseTextTool } from './office/generalParseText.tool.js'; // Import the new general parse text tool
-
-// Import static resources
+import getActiveOfficeDocumentsTool from './os/getActiveOfficeDocuments.tool.js'; // Import the new OS tool
+ 
+ // Import static resources
 import aiAssistantGuideResource from '../resources/static/ai_assistant_guide.resource.js';
 
 /**
@@ -363,6 +364,7 @@ const allImplementedToolsIntermediate = [
     dynamicResourcesTool, // Assuming single object
     officeImageAnalysisGenerationTool, // Add the new tool here
     generalParseTextTool, // Add the new general parse text tool
+    getActiveOfficeDocumentsTool, // Add the new OS tool
      // Add other imported tools here
  ];
 
