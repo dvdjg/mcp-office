@@ -126,7 +126,47 @@ This phase focuses on creating a markdown document explaining how to request and
 1.  **Introduction:**
     *   Purpose of the document.
     *   Overview of the test suite (unit, integration, e2e).
-    *   How to run the tests (`npm test`).
+    *   **Running Tests:**
+        *   **Prerequisites:** Before running any tests, ensure all project dependencies are installed. Open your terminal in the project root directory and run:
+            ```bash
+            npm install
+            ```
+        *   **Running All Tests:** To execute the complete test suite, which includes unit, integration, and end-to-end tests, use the following command:
+            ```bash
+            npm test
+            ```
+            This command is defined in the `scripts` section of your [`package.json`](../../package.json:11) file.
+        *   **Running Specific Test Suites:**
+            *   To run only unit tests:
+                ```bash
+                npm run test:unit
+                ```
+            *   To run only end-to-end (e2e) tests:
+                ```bash
+                npm run test:e2e
+                ```
+        *   **Running Individual Test Files or Patterns (using Jest):**
+            Jest is the testing framework used in this project. You can run specific tests directly using `npx jest` followed by the path to the test file or a pattern.
+            *   To run tests for a single specific file:
+                ```bash
+                npx jest path/to/your/test-file.test.ts
+                ```
+                For example:
+                ```bash
+                npx jest tests/unit/fs/fileContent.test.ts
+                ```
+            *   To run tests matching a name pattern (e.g., all tests related to 'fileContent'):
+                ```bash
+                npx jest fileContent
+                ```
+            *   To run all tests within a specific directory (e.g., all tests in `tests/unit/fs/`):
+                ```bash
+                npx jest tests/unit/fs/
+                ```
+            *   Alternatively, the project provides a script to run a single test file:
+                ```bash
+                npm run test:single path/to/your/test-file.test.ts
+                ```
 2.  **Requesting Tests via AI:**
     *   Explain how a user would ask the AI to run specific tests or test suites.
     *   Provide example AI prompts for simple and complex test requests (e.g., "Run the basic file read test", "Run all end-to-end tests for Word merge with different options").
