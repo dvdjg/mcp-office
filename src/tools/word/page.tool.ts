@@ -52,7 +52,7 @@ const MarginSchema = z.string().regex(/^\d+(\.\d+)?\s*(in|cm|mm|pt)?$/i, "Invali
  */
 const WordPageInputSchema = z.object({
   /** The operation to perform ('get', 'set', or 'modify'). */
-  operation: z.enum(['get', 'set', 'modify']).describe('The operation to perform (get, set, or modify).'),
+  operation: z.enum(['get', 'set', 'modify', 'getPageCount']).describe('The operation to perform (get, set, modify, or getPageCount).'),
   /** The path to the Word document. */
   filePath: z.string().min(1, 'File path is required.').refine(validateFilePath, {
     message: "Invalid or potentially unsafe file path provided.",
@@ -103,12 +103,20 @@ const WordPageInputSchema = z.object({
          if (!configKeys.some(key => data[key as keyof typeof data] !== undefined)) {
              return false; // Validation failed: no configuration property for 'modify'
          }
+    } else if (data.operation === 'getPageCount') {
+        // For 'getPageCount', only filePath is required, which is already handled by the base schema.
+        // No other properties should be present.
+        const allowedKeys: (keyof WordPageInput)[] = ['operation', 'filePath'];
+        for (const key in data) {
+            if (!allowedKeys.includes(key as keyof WordPageInput)) {
+                return false; // Found an extraneous property for getPageCount
+            }
+        }
     }
     // For 'get', no additional properties are required besides filePath and optional sectionIndex
-    // If operation is 'get', the previous validations do not apply.
     return true; // Passes validation if not 'set' or 'modify' with issues, or if 'set'/'modify' meet their requirements
 }, {
-    message: "Invalid input for the specified operation. For 'set', provide at least one configuration property and include pageWidth/pageHeight if size is wdPaperCustom. For 'modify', provide at least one configuration property to change.",
+    message: "Invalid input for the specified operation. For 'set', provide at least one config property and include pageWidth/pageHeight if size is wdPaperCustom. For 'modify', provide at least one config property. For 'getPageCount', only 'filePath' is allowed.",
     path: [], // Apply error to the whole object
 });
 
@@ -203,6 +211,40 @@ async function getPageSetup(filePath: string, sectionIndex: number = 1): Promise
     }
 }
 
+/** Gets the total page count of a Word document */
+async function getDocumentPageCount(filePath: string): Promise<number> {
+    let wordApp: any = null;
+    let doc: any = null;
+    let officeAppInstance: any = null;
+
+    try {
+        const result = await getOfficeApplication('Word.Application');
+        officeAppInstance = result;
+        wordApp = result.app;
+
+        doc = await wordApp.Documents.Open(filePath, false, true); // Open read-only
+
+        // Using WdStatistic.wdStatisticPages (constant value 2)
+        // This is generally more reliable than BuiltInDocumentProperties for page count.
+        const pageCount = await doc.ComputeStatistics(2); // 2 corresponds to wdStatisticPages
+
+        await doc.Close(false); // Do not save changes
+        logger.info(`Successfully retrieved page count (${pageCount}) for ${filePath}.`);
+        return pageCount;
+    } catch (error: any) {
+        logger.error(`Error getting page count for ${filePath}: ${error.message}`, { error });
+        if (doc) await doc.Close(false).catch((e: any) => logger.warn(`Failed to close document during error handling for page count: ${e.message}`));
+        throw handleToolError(error, 'OFFICE_API_ERROR');
+    } finally {
+        releaseObject(doc);
+        if (officeAppInstance) {
+            officeAppInstance.release();
+            logger.debug("Word application instance released after getting page count.");
+        }
+        releaseObject(wordApp);
+    }
+}
+
 /** Applies PageSetup configuration to a specific section */
 async function applyPageSetup(
     filePath: string,
@@ -291,13 +333,14 @@ async function applyPageSetup(
 
 /**
  * @tool word/page
- * @description Configures page layout settings (size, margins, orientation, headers/footers) for a specific section (default: first) in a Word document using COM Interop.
+ * @description Configures page layout settings (size, margins, orientation, headers/footers) for a specific section (default: first) in a Word document using COM Interop. Also retrieves document page count.
  * Operations:
  *  - `get`: Retrieves the current page setup for the specified section. Requires `filePath`. Optional: `sectionIndex`.
  *  - `set`: Sets the page setup configuration for the specified section. Requires `filePath` and at least one setting (e.g., `size`, `orientation`, `margins`, `differentFirstPage`). Overwrites existing settings for the specified properties. Optional: `sectionIndex`.
  *  - `modify`: Modifies specific page setup properties for the specified section. Requires `filePath` and at least one setting to change. Leaves other settings untouched. Optional: `sectionIndex`.
- * @inputSchema See `WordPageInputSchema` (z.object). Uses combined properties from get/set/modify operations. Margins/dimensions require units (in, cm, mm, pt). Size/Orientation use Word constants (e.g., `wdPaperA4`, `wdOrientLandscape`).
- * @outputSchema `get`: Returns an object with page setup properties (values in points or Word constants). `set`/`modify`: Returns success status with null data.
+ *  - `getPageCount`: Retrieves the total number of pages in the document. Requires `filePath`.
+ * @inputSchema See `WordPageInputSchema` (z.object). Uses combined properties from get/set/modify/getPageCount operations. Margins/dimensions require units (in, cm, mm, pt). Size/Orientation use Word constants (e.g., `wdPaperA4`, `wdOrientLandscape`).
+ * @outputSchema `get`: Returns an object with page setup properties. `set`/`modify`: Returns success status. `getPageCount`: Returns an object like `{ pageCount: number }`.
  * @dependencies Requires Microsoft Word installed and accessible via COM Interop (`winax`).
  * @security Input `filePath` is validated using `validateFilePath`. Ensure Word COM security settings are appropriate.
  * @errorHandling Uses standard error handling utility (`handleToolError`). Catches COM errors, validation errors, and file access issues. Returns standardized `ErrorResponse`.
@@ -332,6 +375,13 @@ async function applyPageSetup(
  *   "leftMargin": "1.5in",
  *   "rightMargin": "1.5in",
  *   "oddAndEvenPages": false
+ * }
+ * ```
+ * @example_getPageCount
+ * ```json
+ * {
+ *   "operation": "getPageCount",
+ *   "filePath": "C:/path/to/document.docx"
  * }
  * ```
  */
@@ -375,8 +425,11 @@ export const wordPageTool: McpResource = { // Define as a single object
         case 'modify':
           // args is already validated by Zod as part of WordPageInputSchema
           await applyPageSetup(filePath, validatedRequest, sectionIndex); // Pass the complete validatedRequest and sectionIndex
-          return { success: true, data: null, message: `Page setup ${operation}ed successfully for section ${sectionIndex || 1}.` }; // Add data: null and dynamic message
-        // No default case needed due to Zod discriminatedUnion
+          return { success: true, data: null, message: `Page setup ${operation}ed successfully for section ${sectionIndex || 1}.` };
+        case 'getPageCount':
+          const pageCount = await getDocumentPageCount(filePath);
+          return { success: true, data: { pageCount } };
+        // No default case needed due to Zod enum
       }
     } catch (error: any) {
        // If the error is already an ErrorResponse (thrown by handleToolError within the COM functions), return it directly

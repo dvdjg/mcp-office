@@ -1,70 +1,216 @@
-// tests/unit/powerpoint/slides.tool.test.ts
-// Replaced with mock version to avoid import issues
+import slidesTool from '../../../src/tools/powerpoint/slides.tool';
+import { getOfficeApplication, releaseObject } from '../../../src/utils/officeInterop';
+import PptxGenJS from 'pptxgenjs';
+import officeParser from 'officeparser';
+import fs from 'fs-extra';
+import path from 'path';
+import logger from '../../../src/utils/logger';
 
-import { jest, describe, expect, test, beforeEach } from '@jest/globals';
+// Mock dependencies
+jest.mock('../../../src/utils/officeInterop', () => ({
+  getOfficeApplication: jest.fn(),
+  releaseObject: jest.fn(),
+}));
 
-// Define types
-type ApiResponse<T> = {
-  success: true;
-  data: T;
-} | {
-  success: false;
-  error: {
-    code: string;
-    message: string;
-  };
-};
+jest.mock('pptxgenjs');
+jest.mock('officeparser', () => ({
+  parseOfficeAsync: jest.fn(),
+}));
 
-// Mock dependencies (simulated)
-const mockHandleToolError = jest.fn();
-const mockCreateErrorResponse = jest.fn();
-const mockGetOfficeApplication = jest.fn(); // Assuming COM path might be relevant
-const mockReleaseObject = jest.fn();
-const mockValidateFilePath = jest.fn(fp => fp);
-const mockLogger = {
+jest.mock('fs-extra', () => ({
+  readFile: jest.fn(),
+  pathExists: jest.fn(),
+}));
+
+jest.mock('../../../src/tools/dynamic/resources.tool', () => ({
+  saveResource: jest.fn().mockResolvedValue({ success: true, data: { message: "Resource saved" } }),
+}));
+
+jest.mock('../../../src/utils/logger', () => ({
   info: jest.fn(),
   warn: jest.fn(),
   error: jest.fn(),
-  debug: jest.fn()
+  debug: jest.fn(),
+}));
+
+// Define top-level mock functions for COM methods
+const mockPptOpen = jest.fn();
+const mockPptAdd = jest.fn();
+
+// Define the structure of the application mock (defined once)
+const mockPptApplicationObject = {
+  Presentations: {
+    Open: mockPptOpen,
+    Add: mockPptAdd,
+  },
+  Visible: false,
 };
-const mockOfficeParser = { // Mock officeparser as well if it was used
-    parseOfficeAsync: jest.fn()
+
+// Define the structure of the office instance mock (defined once)
+const mockOfficeAppInstanceObject = {
+  app: mockPptApplicationObject,
+  release: jest.fn(),
 };
 
+// Define TypeScript types for the mock objects created in beforeEach
+type MockSlidesState = {
+  Count: number;
+  Item: jest.Mock<any, any>;
+  Add: jest.Mock<any, any>;
+};
 
-// Placeholder for actual tool functions from powerpoint/slides.tool.ts
+type MockPresentationState = {
+  Slides: MockSlidesState;
+  SlideMaster: any;
+  SlideLayouts: any;
+  Save: jest.Mock<any, any>;
+  SaveAs: jest.Mock<any, any>;
+  Close: jest.Mock<any, any>;
+};
 
-describe('powerpoint/slides unit tests (mocked)', () => {
+describe('slidesTool - getSlideCount', () => {
+  let currentSlidesState: MockSlidesState;
+  let currentPresentationState: MockPresentationState;
+
   beforeEach(() => {
     jest.clearAllMocks();
-    mockCreateErrorResponse.mockImplementation((message, code) => ({
-      success: false,
-      error: { code, message }
-    }));
-    // Use mockImplementation for potentially complex async functions
-    mockOfficeParser.parseOfficeAsync.mockImplementation(() => Promise.resolve("Mocked parsed text"));
+
+    currentSlidesState = {
+      Count: 0,
+      Item: jest.fn(() => ({ Delete: jest.fn(), Shapes: { Count: 0, Item: jest.fn() } })),
+      Add: jest.fn(),
+    };
+    // Ensure Count is writable for tests that set it directly or redefine it
+    Object.defineProperty(currentSlidesState, 'Count', {
+        value: 0,
+        writable: true,
+        configurable: true,
+    });
+
+    currentPresentationState = {
+      Slides: currentSlidesState,
+      SlideMaster: { CustomLayouts: { Item: jest.fn(() => ({ Layout: {} })) } },
+      SlideLayouts: { Item: jest.fn(() => ({})) },
+      Save: jest.fn(),
+      SaveAs: jest.fn(),
+      Close: jest.fn(),
+    };
+
+    mockPptOpen.mockResolvedValue(currentPresentationState);
+    mockPptAdd.mockResolvedValue(currentPresentationState);
+    mockOfficeAppInstanceObject.release.mockReset(); // Reset release mock
+    
+    (getOfficeApplication as jest.Mock).mockResolvedValue(mockOfficeAppInstanceObject);
+    (fs.pathExists as jest.Mock).mockResolvedValue(true);
   });
 
-  test('should pass this basic mock test for powerpoint slides', () => {
-    expect(true).toBe(true);
-    mockLogger.info('Basic mock test for powerpoint slides executed.');
+  // --- COM Interop Tests ---
+  describe('COM Interop Path (useComInterop: true)', () => {
+    it('should successfully get slide count using COM', async () => {
+      const mockFilePath = 'C:/test/presentation.pptx';
+      const expectedSlideCount = 7;
+      currentSlidesState.Count = expectedSlideCount;
+
+      const params = {
+        filePath: mockFilePath,
+        operation: 'getSlideCount',
+        useComInterop: true,
+      };
+
+      const result = await slidesTool.handler(params as any);
+
+      expect(getOfficeApplication).toHaveBeenCalledWith('PowerPoint.Application');
+      expect(mockPptOpen).toHaveBeenCalledWith(mockFilePath);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toEqual({ slideCount: expectedSlideCount });
+      }
+      expect(currentPresentationState.Close).toHaveBeenCalled();
+      expect(mockOfficeAppInstanceObject.release).toHaveBeenCalled();
+    });
+
+    it('should return an error if COM Presentations.Open fails', async () => {
+      const mockFilePath = 'C:/test/presentation.pptx';
+      const comError = new Error('COM Error during Presentations.Open');
+      mockPptOpen.mockRejectedValue(comError);
+
+      const params = {
+        filePath: mockFilePath,
+        operation: 'getSlideCount',
+        useComInterop: true,
+      };
+
+      const result = await slidesTool.handler(params as any);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error?.code).toBe('POWERPOINT_COM_ERROR');
+        expect(result.error?.message).toBe(`COM Interop Error: ${comError.message}`);
+      }
+      expect(mockOfficeAppInstanceObject.release).toHaveBeenCalled();
+    });
+
+    it('should return an error if COM Slides.Count access fails after Open', async () => {
+      const mockFilePath = 'C:/test/presentation.pptx';
+      const countError = new Error('COM Error accessing Slides.Count');
+      mockPptOpen.mockResolvedValue(currentPresentationState); // Open succeeds
+      Object.defineProperty(currentSlidesState, 'Count', {
+        get: jest.fn(() => { throw countError; }),
+        configurable: true
+      });
+
+      const params = {
+        filePath: mockFilePath,
+        operation: 'getSlideCount',
+        useComInterop: true,
+      };
+      const result = await slidesTool.handler(params as any);
+      expect(result.success).toBe(false);
+      if(!result.success){
+        expect(result.error?.code).toBe('POWERPOINT_COM_ERROR');
+        expect(result.error?.message).toBe(`COM Interop Error: ${countError.message}`);
+      }
+      expect(mockPptOpen).toHaveBeenCalledWith(mockFilePath);
+      expect(mockOfficeAppInstanceObject.release).toHaveBeenCalled();
+    });
   });
 
-  // Add more specific mocked tests if needed, simulating function calls
-  // Example:
-  // const mockAddSlide = async (params: any): Promise<ApiResponse<{}>> => {
-  //   mockLogger.info(`mockAddSlide called with: ${JSON.stringify(params)}`);
-  //   if (!params.filePath) {
-  //      return mockCreateErrorResponse('Missing filePath', 'MOCK_SLIDE_PARAM_ERROR') as ApiResponse<{}>;
-  //   }
-  //   // Simulate success
-  //   return { success: true, data: {} };
-  // };
-  //
-  // test('mockAddSlide simulation', async () => {
-  //    const params = { filePath: 'test.pptx', slideLayout: 'BLANK', useComInterop: false };
-  //    const result = await mockAddSlide(params);
-  //    expect(result.success).toBe(true);
-  //    expect(mockValidateFilePath).toHaveBeenCalledWith('test.pptx');
-  // });
+  // --- Library Path Tests ---
+  describe('Library Path (useComInterop: false)', () => {
+    it('should return an error indicating getSlideCount is not supported via library', async () => {
+      const mockFilePath = 'C:/test/presentation.pptx';
+      const params = {
+        filePath: mockFilePath,
+        operation: 'getSlideCount',
+        useComInterop: false,
+      };
+
+      const result = await slidesTool.handler(params as any);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error?.code).toBe('POWERPOINT_LIB_UNSUPPORTED');
+        expect(result.error?.message).toBe('getSlideCount is not accurately supported via officeparser/pptxgenjs. Please use COM Interop.');
+      }
+      expect(logger.warn).toHaveBeenCalledWith('Operation "getSlideCount" using the library path is not directly supported for accurate counts. Use COM Interop (useComInterop: true) for reliable slide count.');
+    });
+  });
+
+  // --- Validation Tests ---
+  it('should return a validation error if filePath is missing for getSlideCount', async () => {
+    const params = {
+      operation: 'getSlideCount',
+      useComInterop: true,
+    };
+
+    let errorThrown = false;
+    try {
+      await slidesTool.handler(params as any);
+    } catch (e: any) {
+      errorThrown = true;
+      expect(e.issues[0].message).toBe('Required');
+      expect(e.issues[0].path).toEqual(['filePath']);
+    }
+    expect(errorThrown).toBe(true);
+  });
 });

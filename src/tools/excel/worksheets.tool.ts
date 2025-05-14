@@ -18,7 +18,7 @@ import ExcelJS from 'exceljs'; // Import exceljs
 // Define the input schema for the excel/worksheets tool
 const ExcelWorksheetsInputSchema = z.object({
   filePath: z.string().describe('Path to the Excel file.'),
-  operation: z.enum(['add', 'delete', 'rename', 'set']).describe('Operation to perform on the worksheets.'),
+  operation: z.enum(['add', 'delete', 'rename', 'set', 'getWorksheetCount']).describe('Operation to perform on the worksheets.'),
   sheetName: z.string().optional().describe('Name of the sheet (for delete, rename, set).'),
   newSheetName: z.string().optional().describe('New name for the sheet (for rename).'),
   sheetIndex: z.number().int().positive().optional().describe('1-based index of the sheet (optional to identify the sheet).'),
@@ -32,13 +32,14 @@ type ExcelWorksheetsInput = z.infer<typeof ExcelWorksheetsInputSchema>;
 /**
  * @tool excel/worksheets
  * @description Manages worksheets in Excel files.
- * Allows adding, deleting, renaming, and setting active worksheets.
- * Uses COM Interop via winax to interact with Excel.
+ * Allows adding, deleting, renaming, setting active worksheets, and getting worksheet count.
+ * Uses COM Interop via winax or exceljs to interact with Excel.
  * Requires the file path and the operation to perform.
  * Delete, rename, and set operations require identifying the sheet by name or index.
  * The add operation allows specifying the insertion position.
+ * The getWorksheetCount operation returns the number of worksheets.
  * @input ExcelWorksheetsInputSchema
- * @output string - A message indicating the result of the operation.
+ * @output For add, delete, rename, set: A message indicating the result. For getWorksheetCount: an object like `{ worksheetCount: number }`.
  */
 export const excelWorksheetsTool: McpResource[] = [{
   path: 'excel/worksheets', // Add the tool path
@@ -181,13 +182,38 @@ export const excelWorksheetsTool: McpResource[] = [{
             break;
           }
 
+          case 'getWorksheetCount': {
+            const count = sheets.Count;
+            resultData = { worksheetCount: count };
+            // No Save/Close needed for read-only operation like count with COM if we only open
+            // However, to be safe and consistent with other read operations that might open files,
+            // we should ensure the workbook is closed if it was opened by this tool instance.
+            // If getOfficeApplication manages a global instance, closing might not be desired here.
+            // For now, assuming Open always opens a new instance or a handle that needs closing.
+            // Let's ensure workbook.Close(false) is called if workbook was opened.
+            // The existing finally block handles workbook release, but not explicit close for read.
+            // For getWorksheetCount, we don't modify, so no save.
+            if (workbook) {
+                // workbook.Close(false); // Close without saving changes
+            }
+            // The release in finally should be enough if no modification.
+            break;
+          }
           default:
             throw new Error(`Unsupported operation: ${operation}`);
         }
 
-        // Save changes and close the workbook
-        workbook.Save();
-        workbook.Close();
+        // Save changes and close the workbook (only if modified)
+        if (operation === 'add' || operation === 'delete' || operation === 'rename') {
+          workbook.Save();
+        }
+        // Close workbook if it was opened by this operation.
+        // For 'set' or 'getWorksheetCount', we might not want to close if it's just activating or reading.
+        // However, current structure implies open->op->close.
+        if (workbook) { // Ensure workbook is defined before trying to close
+            workbook.Close(false); // Close without saving for 'set' and 'getWorksheetCount'
+        }
+
 
       } catch (comError: any) { // Specific catch for COM block
         // console.error('Error in excel/worksheets tool (COM Interop):', comError); // console.error removed
@@ -206,9 +232,10 @@ export const excelWorksheetsTool: McpResource[] = [{
         const fileExists = await fs.pathExists(absoluteFilePath); // Use absoluteFilePath
         if (fileExists) {
           await excelWorkbook.xlsx.readFile(absoluteFilePath); // Use absoluteFilePath
-        } else if (operation !== 'add') {
+        } else if (operation !== 'add' && operation !== 'getWorksheetCount') { // Allow getWorksheetCount on non-existent file (count will be 0)
           throw new Error(`File not found: ${absoluteFilePath}`);
         }
+        // If operation is 'getWorksheetCount' and file doesn't exist, excelWorkbook will be empty, resulting in count 0.
         // If operation is 'add' and file doesn't exist, a new workbook is already instantiated.
 
         switch (operation) {
@@ -319,10 +346,18 @@ export const excelWorksheetsTool: McpResource[] = [{
             }
             break;
           }
+          case 'getWorksheetCount': {
+            resultData = { worksheetCount: excelWorkbook.worksheets.length };
+            // No writeFile needed for count
+            break;
+          }
           default:
             throw new Error(`Unsupported operation: ${operation}`);
         }
-        await excelWorkbook.xlsx.writeFile(absoluteFilePath); // Use absoluteFilePath
+        // Only write file if it was modified
+        if (operation === 'add' || operation === 'delete' || operation === 'rename' || operation === 'set') {
+            await excelWorkbook.xlsx.writeFile(absoluteFilePath); // Use absoluteFilePath
+        }
       // } catch (exceljsError: any) { // Inner try for exceljs specific logic
       //   throw exceljsError; // Re-throw to be caught by outer try-catch
       // } // End of inner try for exceljs specific logic
@@ -330,7 +365,7 @@ export const excelWorksheetsTool: McpResource[] = [{
 
     // Save the modified Excel file as a dynamic resource
     // This part is common for both COM and exceljs paths if successful
-    if (operation === 'add' || operation === 'delete' || operation === 'rename' || operation === 'set') { // Added 'set'
+    if (operation === 'add' || operation === 'delete' || operation === 'rename' || operation === 'set') {
         try {
             const excelContent = await fs.readFile(absoluteFilePath, null); // Read as Buffer
             await saveResource('excel/worksheets', path.basename(absoluteFilePath), excelContent);

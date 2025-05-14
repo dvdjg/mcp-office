@@ -23,7 +23,7 @@ import { basename as basenamePath } from 'path'; // Import path
 // Input schema for the powerpoint/slides tool
 const SlidesToolInputSchema = z.object({
   filePath: z.string().describe('Path to the PowerPoint presentation file.'),
-  operation: z.enum(['add', 'delete', 'set', 'getText']).describe('Operation to perform: "add" (add slide), "delete" (delete slide), "set" (modify existing slide), "getText" (extract text from all slides).'),
+  operation: z.enum(['add', 'delete', 'set', 'getText', 'getSlideCount']).describe('Operation to perform: "add" (add slide), "delete" (delete slide), "set" (modify existing slide), "getText" (extract text from all slides), "getSlideCount" (get total number of slides).'),
   slideIndex: z.number().optional().describe('1-based index of the slide for "delete" or "set" operations.'),
   slideLayout: z.string().optional().describe('Name of the slide layout for the "add" operation (e.g., "ppLayoutTitle" for COM, or a PptxGenJS layout name).'),
   useComInterop: z.boolean().optional().default(false).describe('Set to true to use COM Interop for operations, otherwise uses pptxgenjs/officeparser.'),
@@ -37,13 +37,13 @@ type SlidesToolInput = z.infer<typeof SlidesToolInputSchema>;
 /**
  * @tool powerpoint/slides
  * @description Manages slides in PowerPoint presentations.
- * Allows adding, deleting, and (basically) modifying slides.
+ * Allows adding, deleting, (basically) modifying slides, getting text, and getting slide count.
  * Requires the path to the file and the operation to perform.
  * Delete and set operations require the slide index.
  * The add operation requires the slide layout name.
- * Uses COM Interop via winax.
+ * Uses COM Interop via winax or libraries like PptxGenJS/officeparser.
  * @param {SlidesToolInput} input - Input parameters for the tool.
- * @returns {Promise<string>} - A message indicating the result of the operation.
+ * @returns {Promise<ApiResponse<any>>} - For add, delete, set: A message indicating the result. For getText: string with all text. For getSlideCount: an object like `{ slideCount: number }`.
  */
 const slidesTool: McpResource = {
   path: 'powerpoint/slides',
@@ -63,8 +63,15 @@ const slidesTool: McpResource = {
         try {
           presentation = pptApp.Presentations.Open(filePath);
         } catch (error) {
-          presentation = pptApp.Presentations.Add();
-          presentation.SaveAs(filePath);
+          // Only attempt to Add/SaveAs if the operation is 'add' and Open failed (implies file doesn't exist)
+          if (operation === 'add') {
+            logger.info(`File ${filePath} not found, creating new presentation for 'add' operation.`);
+            presentation = pptApp.Presentations.Add();
+            presentation.SaveAs(filePath); // Save immediately so it exists for subsequent operations within the tool
+          } else {
+            // For other operations (like getSlideCount, getText, delete, set), if Open fails, it's an error.
+            throw error; // Re-throw the original error from Open
+          }
         }
 
         switch (operation) {
@@ -126,6 +133,10 @@ const slidesTool: McpResource = {
             }
             return { success: true, data: allText.trim() || "No text found or presentation is empty (COM)." };
 
+          case 'getSlideCount':
+            const slideCount = presentation.Slides.Count;
+            return { success: true, data: { slideCount } };
+
           default:
             // This check is for exhaustiveness, but the enum should prevent reaching here.
             // However, to satisfy type checking if 'operation' was not strictly from the enum:
@@ -138,7 +149,8 @@ const slidesTool: McpResource = {
       } finally {
         if (presentation) {
           try {
-            if (operation !== 'getText') { // Don't save if just reading text
+            // Only save if an operation that modifies the presentation was performed.
+            if (operation === 'add' || operation === 'delete' || operation === 'set') {
                  presentation.Save();
                  const pptContent = await fs.readFile(filePath);
                  await saveResource('powerpoint/slides', basenamePath(filePath), pptContent);
@@ -210,6 +222,12 @@ const slidesTool: McpResource = {
                 logger.error(`Error parsing PowerPoint with officeparser: ${parseError.message}`);
                 return { success: false, error: { code: 'OFFICEPARSER_ERROR', message: `Failed to parse PowerPoint file with officeparser: ${parseError.message}` } };
             }
+          
+          case 'getSlideCount':
+            // officeparser does not directly provide slide count. PptxGenJS is for writing.
+            // This functionality is best handled by COM Interop as per architect's note.
+            logger.warn('Operation "getSlideCount" using the library path is not directly supported for accurate counts. Use COM Interop (useComInterop: true) for reliable slide count.');
+            return { success: false, error: { code: 'POWERPOINT_LIB_UNSUPPORTED', message: 'getSlideCount is not accurately supported via officeparser/pptxgenjs. Please use COM Interop.' } };
 
           default:
             // This check is for exhaustiveness
