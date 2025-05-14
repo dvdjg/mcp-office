@@ -55,19 +55,21 @@ const slidesTool: McpResource = {
 
     if (useComInterop) {
       // COM Interop Path (existing logic)
-      let pptApp: any = null;
+      let officeAppInstance: any = null; // Will hold { app: PowerPointApplication, release: () => void }
+      let actualPptAppObject: any = null; // Will hold the raw PowerPointApplication COM object
       let presentation: any = null;
       try {
-        pptApp = await getOfficeApplication('PowerPoint.Application');
-        pptApp.Visible = true; // Optional: make the application visible
+        officeAppInstance = await getOfficeApplication('PowerPoint.Application');
+        actualPptAppObject = officeAppInstance.app;
+        actualPptAppObject.Visible = true; // Optional: make the application visible
         try {
-          presentation = pptApp.Presentations.Open(filePath);
+          presentation = await actualPptAppObject.Presentations.Open(filePath);
         } catch (error) {
           // Only attempt to Add/SaveAs if the operation is 'add' and Open failed (implies file doesn't exist)
           if (operation === 'add') {
             logger.info(`File ${filePath} not found, creating new presentation for 'add' operation.`);
-            presentation = pptApp.Presentations.Add();
-            presentation.SaveAs(filePath); // Save immediately so it exists for subsequent operations within the tool
+            presentation = await actualPptAppObject.Presentations.Add();
+            await presentation.SaveAs(filePath); // Save immediately so it exists for subsequent operations within the tool
           } else {
             // For other operations (like getSlideCount, getText, delete, set), if Open fails, it's an error.
             throw error; // Re-throw the original error from Open
@@ -161,7 +163,12 @@ const slidesTool: McpResource = {
           }
           releaseObject(presentation);
         }
-        releaseObject(pptApp);
+        // releaseObject(pptApp); // pptApp was the instance, not just the COM object
+        if (officeAppInstance) {
+          officeAppInstance.release(); // Use the release method from the instance
+          logger.debug("PowerPoint application instance released via officeAppInstance.release().");
+        }
+        releaseObject(actualPptAppObject); // Still release the raw COM app object if it was obtained
       }
     } else {
       // Library Path (pptxgenjs for generation/some modification, officeparser for reading)

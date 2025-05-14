@@ -10,26 +10,42 @@ jest.mock('../../../src/utils/officeInterop', () => ({
   releaseObject: jest.fn(),
 }));
 
-jest.mock('../../../src/utils/errorHandler', () => {
-  class MockErrorResponse {
-    public success: false = false;
-    public error: { code: string; message: string; details: any | null };
+jest.mock('../../../src/utils/errorHandler', () => ({
+  handleToolError: jest.fn((caughtError, code, detailsFromCaller) => {
+    let message;
+    let returnDetails;
 
-    constructor(message: string, code: string, details: any | null = null) {
-      this.error = { code, message, details };
+    if (caughtError instanceof Error) {
+      message = caughtError.message;
+      returnDetails = detailsFromCaller === undefined ? { stack: caughtError.stack } : detailsFromCaller;
+    } else if (caughtError && typeof caughtError.message === 'string') { // For plain objects with a message
+      message = caughtError.message;
+      returnDetails = detailsFromCaller === undefined ? caughtError : detailsFromCaller;
+    } else {
+      message = 'Mocked error from handleToolError: Unknown error structure';
+      returnDetails = detailsFromCaller === undefined ? caughtError : detailsFromCaller;
     }
-  }
-  return {
-    handleToolError: jest.fn((caughtError, code, details) => {
-      const message = caughtError.message || 'Mocked error from handleToolError';
-      // Return an instance of a class that has the 'success' and 'error' properties
-      return new MockErrorResponse(message, code, details);
-    }),
-    createErrorResponse: jest.fn((code, message, details) => {
-      return new MockErrorResponse(message, code, details);
-    }),
-  };
-});
+
+    return {
+      success: false,
+      error: {
+        code: code,
+        message: message,
+        details: returnDetails,
+      },
+    };
+  }),
+  createErrorResponse: jest.fn((code, message, details) => {
+    return { // Return plain object
+      success: false,
+      error: {
+        code: code,
+        message: message,
+        details: details,
+      },
+    };
+  }),
+}));
 
 jest.mock('../../../src/utils/security', () => ({
   validateFilePath: jest.fn(path => true), // Assume valid path for these tests
@@ -101,17 +117,8 @@ describe('wordPageTool - getPageCount', () => {
   it('should return an error if COM object fails to get page count', async () => {
     const mockFilePath = 'C:/test/document.docx';
     const expectedErrorMessage = 'COM Error during ComputeStatistics';
-    // Make ComputeStatistics reject with an object that looks like an ErrorResponse
-    // that would have been produced by handleToolError(new Error(expectedErrorMessage), 'OFFICE_API_ERROR')
-    const mockErrorResponse = {
-      success: false,
-      error: {
-        code: 'OFFICE_API_ERROR',
-        message: expectedErrorMessage,
-        details: null,
-      },
-    };
-    (mockDoc.ComputeStatistics as jest.Mock).mockRejectedValue(mockErrorResponse); // This is what's caught by getDocumentPageCount
+    // Make ComputeStatistics reject with a standard Error
+    (mockDoc.ComputeStatistics as jest.Mock).mockRejectedValue(new Error(expectedErrorMessage)); // This is what's caught by getDocumentPageCount
 
     const params = {
       operation: 'getPageCount',
@@ -127,14 +134,18 @@ describe('wordPageTool - getPageCount', () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error?.code).toBe('OFFICE_API_ERROR'); // This is the assertion failing
-      expect(result.error?.message).toBe(expectedErrorMessage); // This should be the message from mockErrorResponse.error.message
+      expect(result.error?.message).toBe(expectedErrorMessage);
+    }
+
+    // Logger in getDocumentPageCount is called with the originally caught error (new Error(expectedErrorMessage))
+    // This check ensures the logger mock is working as expected for the first error log.
+    expect((logger.error as jest.Mock).mock.calls.length).toBeGreaterThanOrEqual(1);
+    if ((logger.error as jest.Mock).mock.calls.length > 0) { // Check if logger.error was called
+        const firstLoggerErrorCall = (logger.error as jest.Mock).mock.calls[0];
+        expect(firstLoggerErrorCall[0]).toBe(`Error getting page count for ${mockFilePath}: ${expectedErrorMessage}`);
+        expect(firstLoggerErrorCall[1]).toEqual({ error: expect.objectContaining({ message: expectedErrorMessage }) });
     }
     
-    // Logger in getDocumentPageCount is called with the originally caught error (mockErrorResponse)
-    expect(logger.error).toHaveBeenCalledWith(
-      `Error getting page count for ${mockFilePath}: ${expectedErrorMessage}`, // message from mockErrorResponse.error.message
-      { error: mockErrorResponse } // the error object is mockErrorResponse
-    );
     expect(mockDoc.Close).toHaveBeenCalledWith(false); // Ensure close is still attempted
     expect(mockOfficeAppInstance.release).toHaveBeenCalled();
   });

@@ -14,6 +14,7 @@ import { saveResource } from '../dynamic/resources.tool.js'; // Import saveResou
 import * as fs from 'fs-extra'; // Import fs to read the Excel file
 import * as path from 'path'; // Import path
 import ExcelJS from 'exceljs'; // Import exceljs
+import logger from '../../utils/logger.js'; // Import logger
 
 // Define the input schema for the excel/worksheets tool
 const ExcelWorksheetsInputSchema = z.object({
@@ -62,24 +63,26 @@ export const excelWorksheetsTool: McpResource[] = [{
 
     try { // Outer try for the whole handler logic
       if (useComInterop) {
-        let excelApp: any;
-      let workbook: any;
-      let sheets: any;
-      let sheet: any;
-      try {
-        excelApp = await getOfficeApplication('Excel.Application');
-        excelApp.Visible = false; // Keep Excel hidden
-
+        let officeAppInstance: any = null; // Will hold { app: ExcelApplication, release: () => void }
+        let actualExcelAppObject: any = null; // Will hold the raw ExcelApplication COM object
+        let workbook: any;
+        let sheets: any;
+        let sheet: any;
         try {
-          // Attempt to open the existing workbook
-          workbook = excelApp.Workbooks.Open(absoluteFilePath); // Use absoluteFilePath
-        } catch (error: any) {
-          // If it doesn't exist, create a new one (only for the 'add' operation)
-          if (operation === 'add') {
-            workbook = excelApp.Workbooks.Add();
-            // Save the new workbook immediately to be able to add sheets
-            workbook.SaveAs(absoluteFilePath); // Use absoluteFilePath
-          } else {
+          officeAppInstance = await getOfficeApplication('Excel.Application');
+          actualExcelAppObject = officeAppInstance.app;
+          actualExcelAppObject.Visible = false; // Keep Excel hidden
+
+          try {
+            // Attempt to open the existing workbook
+            workbook = await actualExcelAppObject.Workbooks.Open(absoluteFilePath); // Use absoluteFilePath
+          } catch (error: any) {
+            // If it doesn't exist, create a new one (only for the 'add' operation)
+            if (operation === 'add') {
+              workbook = await actualExcelAppObject.Workbooks.Add();
+              // Save the new workbook immediately to be able to add sheets
+              await workbook.SaveAs(absoluteFilePath); // Use absoluteFilePath
+            } else {
             throw new Error(`File not found: ${absoluteFilePath}`);
           }
         }
@@ -122,7 +125,7 @@ export const excelWorksheetsTool: McpResource[] = [{
             }
             try {
                // Disable alerts to avoid the deletion confirmation dialog
-              excelApp.DisplayAlerts = false;
+              actualExcelAppObject.DisplayAlerts = false;
               if (sheetName) {
                 sheet = sheets.Item(sheetName);
                 sheet.Delete();
@@ -137,7 +140,7 @@ export const excelWorksheetsTool: McpResource[] = [{
                throw new Error(`Could not delete the sheet. Verify the name or index. Error: ${error.message}`);
             } finally {
                // Re-enable alerts
-               excelApp.DisplayAlerts = true;
+               actualExcelAppObject.DisplayAlerts = true;
             }
             break;
           }
@@ -223,7 +226,12 @@ export const excelWorksheetsTool: McpResource[] = [{
         if (sheet) releaseObject(sheet);
         if (sheets) releaseObject(sheets);
         if (workbook) releaseObject(workbook);
-        if (excelApp) releaseObject(excelApp);
+        // if (excelApp) releaseObject(excelApp); // excelApp was the instance
+        if (officeAppInstance) {
+          officeAppInstance.release(); // Use the release method from the instance
+          logger.debug("Excel application instance released via officeAppInstance.release().");
+        }
+        if (actualExcelAppObject) releaseObject(actualExcelAppObject); // Still release the raw COM app object
       }
     } else {
       // Use exceljs

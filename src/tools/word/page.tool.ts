@@ -154,7 +154,7 @@ function convertToPoints(valueWithUnit: string | undefined, wordApp: any): numbe
 // --- COM Logic ---
 
 /** Gets the PageSetup configuration for a specific section */
-async function getPageSetup(filePath: string, sectionIndex: number = 1): Promise<any> {
+async function getPageSetup(filePath: string, sectionIndex: number = 1): Promise<any | ApiResponse<any>> {
     let wordApp: any = null;
     let doc: any = null;
     let pageSetup: any = null;
@@ -198,7 +198,7 @@ async function getPageSetup(filePath: string, sectionIndex: number = 1): Promise
         logger.error(`Error getting page setup for ${filePath}, section ${sectionIndex}: ${error.message}`, { error }); // Log the full error
         if (doc) await doc.Close(false).catch((e: any) => logger.warn(`Failed to close document during error handling: ${e.message}`));
         // Throw the formatted ErrorResponse
-        throw handleToolError(error, 'OFFICE_API_ERROR'); // Use a more specific code and remove third argument
+        return handleToolError(error, 'OFFICE_API_ERROR'); // Use a more specific code and remove third argument
     } finally {
         releaseObject(pageSetup);
         releaseObject(section);
@@ -212,7 +212,7 @@ async function getPageSetup(filePath: string, sectionIndex: number = 1): Promise
 }
 
 /** Gets the total page count of a Word document */
-async function getDocumentPageCount(filePath: string): Promise<number> {
+async function getDocumentPageCount(filePath: string): Promise<number | ApiResponse<any>> {
     let wordApp: any = null;
     let doc: any = null;
     let officeAppInstance: any = null;
@@ -234,7 +234,7 @@ async function getDocumentPageCount(filePath: string): Promise<number> {
     } catch (error: any) {
         logger.error(`Error getting page count for ${filePath}: ${error.message}`, { error });
         if (doc) await doc.Close(false).catch((e: any) => logger.warn(`Failed to close document during error handling for page count: ${e.message}`));
-        throw handleToolError(error, 'OFFICE_API_ERROR');
+        return handleToolError(error, 'OFFICE_API_ERROR');
     } finally {
         releaseObject(doc);
         if (officeAppInstance) {
@@ -251,7 +251,7 @@ async function applyPageSetup(
     // Use the combined type for set/modify
     settings: WordPageInput,
     sectionIndex: number = 1,
-): Promise<void> {
+): Promise<ApiResponse<any>> { // Always return ApiResponse
     let wordApp: any = null;
     let doc: any = null;
     let pageSetup: any = null;
@@ -310,12 +310,12 @@ async function applyPageSetup(
         await doc.Save();
         await doc.Close();
         logger.info(`Page setup applied/modified successfully for ${filePath}, section ${sectionIndex || 1}.`);
-
+        return { success: true, data: null, message: `Page setup operation successful for section ${sectionIndex || 1}.` };
     } catch (error: any) {
         logger.error(`Error applying page setup for ${filePath}, section ${sectionIndex || 1}: ${error.message}`, { error, settings }); // Log the full error and settings
         if (doc) await doc.Close(false).catch((e: any) => logger.warn(`Failed to close document during error handling: ${e.message}`));
-        // Throw the formatted ErrorResponse
-        throw handleToolError(error, 'OFFICE_API_ERROR'); // Use a more specific code and remove third argument
+        // Return the formatted ErrorResponse
+        return handleToolError(error, 'OFFICE_API_ERROR'); // Use a more specific code and remove third argument
     } finally {
         releaseObject(pageSetup);
         releaseObject(section);
@@ -419,35 +419,35 @@ export const wordPageTool: McpResource = { // Define as a single object
       switch (operation) {
         case 'get':
           // args is already validated by Zod as part of WordPageInputSchema
-          const config = await getPageSetup(filePath, sectionIndex); // Pass sectionIndex
-          return { success: true, data: config };
+          const configResult = await getPageSetup(filePath, sectionIndex); // Pass sectionIndex
+          if (typeof configResult === 'object' && configResult !== null && 'success' in configResult && configResult.success === false) {
+            return configResult as ApiResponse<any>;
+          }
+          return { success: true, data: configResult };
         case 'set':
         case 'modify':
           // args is already validated by Zod as part of WordPageInputSchema
-          await applyPageSetup(filePath, validatedRequest, sectionIndex); // Pass the complete validatedRequest and sectionIndex
-          return { success: true, data: null, message: `Page setup ${operation}ed successfully for section ${sectionIndex || 1}.` };
+          const applyResult = await applyPageSetup(filePath, validatedRequest, sectionIndex); // Pass the complete validatedRequest and sectionIndex
+          // applyPageSetup now directly returns ApiResponse
+          return applyResult;
         case 'getPageCount':
-          const pageCount = await getDocumentPageCount(filePath);
-          return { success: true, data: { pageCount } };
+          const pageCountResult = await getDocumentPageCount(filePath);
+          // Check if getDocumentPageCount returned an ErrorResponse
+          if (pageCountResult && (pageCountResult as any).success === false) { // Simplified check
+            return pageCountResult as ApiResponse<any>;
+          }
+          return { success: true, data: { pageCount: pageCountResult as number } };
         // No default case needed due to Zod enum
       }
-    } catch (error: any) {
-       // If the error is already an ErrorResponse (thrown by handleToolError within the COM functions), return it directly
-       // We check if it has the structure of ErrorResponse
-       if (error && typeof error === 'object' && 'success' in error && error.success === false && 'error' in error) {
-           // TypeScript should now recognize 'error' as compatible with ErrorResponse here
-           return error as ApiResponse<any>; // Return as generic ApiResponse that includes ErrorResponse
-       }
-       // If it's a Zod validation error (although inputSchema should catch them before, just in case)
+    } catch (error: any) { // This catch block now primarily handles truly unexpected errors or Zod errors from refine
+       // If it's a Zod validation error (e.g. from .refine, though initial parse is caught above)
        if (error instanceof z.ZodError) {
            log.warn(`Input validation failed at handler level for word/page: ${error.message}`, { errors: JSON.stringify(error.errors) });
-           // Use handleToolError to format it consistently
            return handleToolError(error, 'VALIDATION_ERROR');
        }
-       // Handle other unexpected errors that did not go through handleToolError
+       // Handle other unexpected errors
        log.error(`Unexpected error in word/page handler: ${error.message}`, { stack: error.stack, filePath, sectionIndex, operation });
-       // Use handleToolError to standardize unexpected errors
-       return handleToolError(error, 'UNEXPECTED_HANDLER_ERROR'); // Use specific code and only 2 args
+       return handleToolError(error, 'UNEXPECTED_HANDLER_ERROR');
     }
   },
 };
