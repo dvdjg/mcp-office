@@ -25,7 +25,7 @@
    - [word/styles](#wordstyles)
    - [word/text](#wordtext)
    - [word/search-replace](#wordsearch-replace)
-   - [word/page](#wordpage)
+   - [word/page](#wordpage) <!-- Enhanced for getPageCount -->
    - [word/headers-footers](#wordheaders-footers)
    - [word/tables](#wordtables)
    - [word/charts](#wordcharts)
@@ -43,14 +43,18 @@
    - [word/code-format](#wordcode-format)
    - [word/image](#wordimage)
    - [word/generate-and-insert-text](#wordgenerate-and-insert-text)
+   - [word/applyAutoTitles](#wordapplyautotitles)
+   - [word/saveActiveWordAsMarkdown](#wordsaveactivewordasmarkdown)
+   - [word/concludeStoryInDocument](#wordconcludestoryindocument)
 4. [Excel Tools](#excel-tools)
-   - [excel/worksheets](#excelworksheets)
+   - [excel/worksheets](#excelworksheets) <!-- Enhanced for getWorksheetCount -->
    - [excel/range](#excelrange)
    - [excel/tables](#exceltables)
    - [excel/charts](#excelcharts)
    - [excel/data-analysis](#exceldata-analysis)
+   - [excel/formatTablesInWorksheet](#excelformattablesinworksheet)
 5. [PowerPoint Tools](#powerpoint-tools)
-   - [powerpoint/slides](#powerpointslides)
+   - [powerpoint/slides](#powerpointslides) <!-- Enhanced for getSlideCount -->
    - [powerpoint/shapes](#powerpointshapes)
    - [powerpoint/properties](#powerpointproperties)
    - [powerpoint/animations](#powerpointanimations)
@@ -62,9 +66,13 @@
    - [office/pdf/parse](#officepdfparse)
    - [office/combine](#officecombine)
    - [office/word-to-powerpoint](#officeword-to-powerpoint)
+   - [office/adaptWordToPowerpoint](#officeadaptwordtopowerpoint)
+   - [Feature: Get Document Size](#feature-get-document-size)
 7. [Resource Management](#resource-management)
    - [memory/ai_assistant_guide](#memoryai_assistant_guide)
    - [dynamic/resources](#dynamicresources)
+8. [OS Tools](#os-tools)
+   - [os/getActiveOfficeDocuments](#osgetactiveofficedocuments)
 
 ---
 
@@ -1027,7 +1035,7 @@ curl -X POST "http://localhost:3000/fs/update_markup_content" \
 **Completions**: Search terms, criteria options (e.g., `caseSensitive`, `wholeWord`).
 
 ### word/page
-**Description**: Configures page layout.
+**Description**: Configures page layout and provides page count information.
 
 **Operations**:
 - **set**: Sets page properties.
@@ -1037,12 +1045,28 @@ curl -X POST "http://localhost:3000/fs/update_markup_content" \
     ```bash
     curl -X POST "http://localhost:3000/word/page/set?document=/docs/sample.docx&size=A4&margins=1&orientation=portrait"
     ```
+- **getPageCount**: Retrieves the total number of pages in the document.
+  - **Input**: `filePath` (string, path to the Word document). `useComInterop` (boolean, optional, default: `true`).
+  - **Output**: `{ success: boolean, count?: number, error?: string }`.
+  - **Example**:
+    ```bash
+    curl -X GET "http://localhost:3000/word/page/getPageCount?filePath=/docs/my_epic_novel.docx"
+    ```
+    **Response**:
+    ```json
+    { "success": true, "count": 342 }
+    ```
 
 **AI Request Examples**:
 - User: “Set sample.docx to A4 with 1-inch margins.”
   - AI Infers: `POST /word/page/set?document=/docs/sample.docx&size=A4&margins=1`.
+- User: "How many pages are in 'annual_report.docx'?"
+  - AI Infers: `GET /word/page/getPageCount?filePath=/docs/annual_report.docx`.
 
-**Completions**: Page sizes (e.g., `A4`, `Letter`), orientations.
+**Completions**: Page sizes (e.g., `A4`, `Letter`), orientations, file paths.
+
+**When You Need to Know if It's a Leaflet or a Tome (Word Edition)**:
+Before you hit print on that "brief" document, or try to impress your boss with its "conciseness," use `getPageCount`. "MCP, tell me, is 'my_quick_memo.docx' actually quick, or have I written another dissertation? Get the page count!"
 
 ### word/headers-footers
 **Description**: Manages headers and footers.
@@ -1388,13 +1412,107 @@ curl -X POST "http://localhost:3000/fs/update_markup_content" \
 
 **Completions**: Document paths, position specifiers, prompt text.
 
----
+### <a name="wordapplyautotitles"></a>word/applyAutoTitles
+**Description**: Unleashes the power of AI to automatically identify and apply appropriate heading styles (Heading 1, Heading 2, etc.) to an active Word document. It's like having a tiny, style-obsessed robot editor living in your computer.
 
+**Operations**:
+- **apply**: Identifies potential titles and subtitles and applies heading styles.
+  - **Input**: `filePath` (string, path to the active Word document). `useComInterop` (boolean, optional, default: `true`).
+  - **Output**: `{ success: boolean, changesApplied?: number, error?: string }`.
+  - **Example**:
+    ```bash
+    curl -X POST "http://localhost:3000/word/applyAutoTitles" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "filePath": "/docs/my_rambling_manifesto.docx"
+      }'
+    ```
+    **Response**:
+    ```json
+    { "success": true, "changesApplied": 12 }
+    ```
+
+**AI Request Examples**:
+- User: "Can you automatically style the headings in 'my_thesis_draft.docx'?"
+  - AI Infers: `POST /word/applyAutoTitles` with `filePath`.
+- User: "This document is a mess. Make the titles look like titles in 'report_final.docx'."
+  - AI Infers: `POST /word/applyAutoTitles` with `filePath`.
+
+**Completions**: File paths.
+
+**When Your Document Looks Like a Wall of Text from a Fever Dream**:
+You've poured your heart and soul into writing, but it's structurally... abstract. Before your reader needs a map and compass to navigate your thoughts, let `applyAutoTitles` work its magic. "MCP, make this readable! Apply some auto-titles to 'stream_of_consciousness.docx'."
+
+### <a name="wordsaveactivewordasmarkdown"></a>word/saveActiveWordAsMarkdown
+**Description**: Converts the content of an active Word document into a beautiful, clean Markdown file. Because sometimes, `.docx` is just too mainstream.
+
+**Operations**:
+- **save**: Saves the active Word document as Markdown.
+  - **Input**: `filePath` (string, path to the active Word document), `outputMarkdownPath` (string, path for the new .md file).
+  - **Output**: `{ success: boolean, outputPath?: string, error?: string }`.
+  - **Example**:
+    ```bash
+    curl -X POST "http://localhost:3000/word/saveActiveWordAsMarkdown" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "filePath": "/docs/my_blog_post.docx",
+        "outputMarkdownPath": "/docs/my_blog_post.md"
+      }'
+    ```
+    **Response**:
+    ```json
+    { "success": true, "outputPath": "/docs/my_blog_post.md" }
+    ```
+
+**AI Request Examples**:
+- User: "Convert 'latest_article.docx' to Markdown and save it."
+  - AI Infers: `POST /word/saveActiveWordAsMarkdown` with `filePath` and an inferred `outputMarkdownPath`.
+- User: "I need 'meeting_notes.docx' as 'notes.md'."
+  - AI Infers: `POST /word/saveActiveWordAsMarkdown` with `filePath="meeting_notes.docx"` and `outputMarkdownPath="notes.md"`.
+
+**Completions**: File paths.
+
+**When You're Too Cool for WYSIWYG**:
+You've crafted a masterpiece in Word, but now you need to post it on your ultra-hip, text-only blog. Fear not, `saveActiveWordAsMarkdown` is here to translate your fancy formatting into pure, unadulterated Markdown. "MCP, liberate 'my_novel.docx' into 'my_novel.md'!"
+
+### <a name="wordconcludestoryindocument"></a>word/concludeStoryInDocument
+**Description**: Employs an AI to craft a fitting conclusion for a story within a specified Word document. Defaults to working its narrative magic on 'Historias de luis.docx' if you're feeling particularly unspecific or if Luis has been prolific again.
+
+**Operations**:
+- **conclude**: Generates and inserts a story conclusion.
+  - **Input**: `filePath` (string, optional, path to the Word document, defaults to 'Historias de luis.docx' in a predefined user documents folder if not provided or if the provided path is not found), `storyContextPrompt` (string, optional, additional context for the AI to better understand the story, e.g., "The story is a space opera about a heroic hamster.").
+  - **Output**: `{ success: boolean, message?: string, error?: string }`.
+  - **Example**:
+    ```bash
+    curl -X POST "http://localhost:3000/word/concludeStoryInDocument" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "filePath": "/stories/chapter_final.docx",
+        "storyContextPrompt": "It's a detective noir, and the butler definitely didn't do it."
+      }'
+    ```
+    **Response**:
+    ```json
+    { "success": true, "message": "Conclusion generated and inserted successfully." }
+    ```
+
+**AI Request Examples**:
+- User: "Help me finish my story in 'my_adventure_novel.docx'. It's about a pirate who finds a cursed treasure."
+  - AI Infers: `POST /word/concludeStoryInDocument` with `filePath` and `storyContextPrompt`.
+- User: "Just wrap up whatever Luis is writing in his story document."
+  - AI Infers: `POST /word/concludeStoryInDocument` (using default filePath).
+
+**Completions**: File paths, story context snippets.
+
+**When Your Muse Abandons You at Chapter 27**:
+You've written a masterpiece, but the ending is... elusive. Instead of staring blankly at the cursor, let the AI ghostwriter step in. "MCP, please, conclude 'TheNeverEndingTale.docx'. My brain is soup." It might not be Shakespeare, but it'll be *an* ending.
+
+---
 
 ## Excel Tools
 
 ### excel/worksheets
-**Description**: Manages worksheets.
+**Description**: Manages worksheets and provides worksheet count information.
 
 **Operations**:
 - **add**: Adds a worksheet.
@@ -1404,12 +1522,28 @@ curl -X POST "http://localhost:3000/fs/update_markup_content" \
     ```bash
     curl -X POST "http://localhost:3000/excel/worksheets/add?document=/docs/data.xlsx&name=Data"
     ```
+- **getWorksheetCount**: Retrieves the total number of worksheets in the workbook.
+  - **Input**: `filePath` (string, path to the Excel workbook). `useComInterop` (boolean, optional, default: `true`).
+  - **Output**: `{ success: boolean, count?: number, error?: string }`.
+  - **Example**:
+    ```bash
+    curl -X GET "http://localhost:3000/excel/worksheets/getWorksheetCount?filePath=/spreadsheets/annual_data.xlsx"
+    ```
+    **Response**:
+    ```json
+    { "success": true, "count": 12 }
+    ```
 
 **AI Request Examples**:
 - User: “Add a worksheet named ‘Data’ to data.xlsx.”
   - AI Infers: `POST /excel/worksheets/add?document=/docs/data.xlsx&name=Data`.
+- User: "How many sheets are in 'financial_model.xlsx'?"
+  - AI Infers: `GET /excel/worksheets/getWorksheetCount?filePath=/spreadsheets/financial_model.xlsx`.
 
-**Completions**: Worksheet names.
+**Completions**: Worksheet names, file paths.
+
+**When You Suspect Your Workbook is Secretly a Labyrinth (Excel Edition)**:
+Is it a simple spreadsheet or a multi-dimensional data maze? Before you get lost in a sea of tabs, use `getWorksheetCount`. "MCP, how many rabbit holes... I mean, worksheets... are in 'Project_Omega_Data_v73.xlsx'?"
 
 ### excel/range
 **Description**: Manipulates cell ranges.
@@ -1484,12 +1618,44 @@ curl -X POST "http://localhost:3000/fs/update_markup_content" \
 
 **Completions**: Range formats, sort orders.
 
+### <a name="excelformattablesinworksheet"></a>excel/formatTablesInWorksheet
+**Description**: Scans a specified Excel worksheet for tables and applies AI-suggested formatting to make them look presentable. If you don't specify, it bravely tackles the second sheet of whatever Excel file is currently active. Because life's too short for ugly spreadsheets.
+
+**Operations**:
+- **format**: Identifies and formats tables in a worksheet.
+  - **Input**: `filePath` (string, optional, path to the Excel workbook. If not provided, attempts to use the active document), `sheetIdentifier` (string | number, optional, name or 1-based index of the worksheet. Defaults to the second sheet if not provided).
+  - **Output**: `{ success: boolean, tablesFormatted?: number, error?: string }`.
+  - **Example**:
+    ```bash
+    curl -X POST "http://localhost:3000/excel/formatTablesInWorksheet" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "filePath": "/data/quarterly_results.xlsx",
+        "sheetIdentifier": "Sheet1"
+      }'
+    ```
+    **Response**:
+    ```json
+    { "success": true, "tablesFormatted": 3 }
+    ```
+
+**AI Request Examples**:
+- User: "Make the tables in 'SalesData.xlsx' on the 'Q3_Data' sheet look nice."
+  - AI Infers: `POST /excel/formatTablesInWorksheet` with `filePath` and `sheetIdentifier`.
+- User: "Spruce up the tables on the second sheet of this open Excel file."
+  - AI Infers: `POST /excel/formatTablesInWorksheet` (using defaults for active file and second sheet).
+
+**Completions**: File paths, sheet names/indices.
+
+**When Your Data Looks Like It Dressed Itself in the Dark**:
+Your numbers are solid, but your tables are an eyesore. Before you blind your colleagues with unformatted data, let `formatTablesInWorksheet` give it an AI-powered makeover. "MCP, please apply some formatting wizardry to the tables in 'budget_draft_v17.xlsx', sheet 'PainfulNumbers'."
+
 ---
 
 ## PowerPoint Tools
 
 ### powerpoint/slides
-**Description**: Manages slides.
+**Description**: Manages slides and provides slide count information.
 
 **Operations**:
 - **add**: Adds a slide.
@@ -1499,12 +1665,28 @@ curl -X POST "http://localhost:3000/fs/update_markup_content" \
     ```bash
     curl -X POST "http://localhost:3000/powerpoint/slides/add?document=/docs/presentation.pptx&layout=TitleSlide"
     ```
+- **getSlideCount**: Retrieves the total number of slides in the presentation.
+  - **Input**: `filePath` (string, path to the PowerPoint presentation). `useComInterop` (boolean, optional, default: `true`).
+  - **Output**: `{ success: boolean, count?: number, error?: string }`.
+  - **Example**:
+    ```bash
+    curl -X GET "http://localhost:3000/powerpoint/slides/getSlideCount?filePath=/presentations/keynote_address.pptx"
+    ```
+    **Response**:
+    ```json
+    { "success": true, "count": 78 }
+    ```
 
 **AI Request Examples**:
 - User: “Add a title slide to presentation.pptx.”
   - AI Infers: `POST /powerpoint/slides/add?document=/docs/presentation.pptx&layout=TitleSlide`.
+- User: "How many slides are in 'marketing_pitch_final.pptx'?"
+  - AI Infers: `GET /powerpoint/slides/getSlideCount?filePath=/presentations/marketing_pitch_final.pptx`.
 
-**Completions**: Layout names.
+**Completions**: Layout names, file paths.
+
+**When Your "Quick Update" Presentation Has More Slides Than a Feature Film (PowerPoint Edition)**:
+You promised a "short and sweet" presentation. Before you accidentally subject your audience to an epic saga, check the slide count. "MCP, how many slides did I actually make for 'FiveMinuteIntro.pptx'? Be honest."
 
 ### powerpoint/shapes
 **Description**: Manipulates shapes and text.
@@ -1691,6 +1873,47 @@ curl -X POST "http://localhost:3000/fs/update_markup_content" \
 
 **Completions**: File paths.
 
+### <a name="officeadaptwordtopowerpoint"></a>office/adaptWordToPowerpoint
+**Description**: Magically (or through clever programming) converts an active Word document into a PowerPoint presentation. It even includes a placeholder for future AI enhancements, because the future is now...ish.
+
+**Operations**:
+- **convert**: Converts a Word document to a PowerPoint presentation.
+  - **Input**: `wordFilePath` (string, path to the source Word document), `powerpointFilePath` (string, optional, path for the output .pptx file. If not provided, it's derived from the Word file name).
+  - **Output**: `{ success: boolean, outputPath?: string, error?: string }`.
+  - **Example**:
+    ```bash
+    curl -X POST "http://localhost:3000/office/adaptWordToPowerpoint" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "wordFilePath": "/reports/annual_summary.docx",
+        "powerpointFilePath": "/presentations/annual_summary_slides.pptx"
+      }'
+    ```
+    **Response**:
+    ```json
+    { "success": true, "outputPath": "/presentations/annual_summary_slides.pptx" }
+    ```
+
+**AI Request Examples**:
+- User: "Turn 'my_detailed_report.docx' into a PowerPoint presentation."
+  - AI Infers: `POST /office/adaptWordToPowerpoint` with `wordFilePath`.
+- User: "I need slides from 'project_outline.docx', save it as 'project_kickoff.pptx'."
+  - AI Infers: `POST /office/adaptWordToPowerpoint` with `wordFilePath` and `powerpointFilePath`.
+
+**Completions**: File paths.
+
+**When Your 20-Page Report Needs to Become a 5-Minute Presentation Yesterday**:
+You wrote a novel, but they want a slideshow. Don't panic! `adaptWordToPowerpoint` will attempt to distill your magnum opus into digestible slides. Results may vary based on your Word document's structure and the current mood of the AI gods. "MCP, please, turn 'WarAndPeace_abridged.docx' into 'WarAndPeace_the_slideshow.pptx'. And make it snappy!"
+
+### <a name="feature-get-document-size"></a>Feature: Get Document Size (Know Before You Commit!)
+**Description**: Ever wondered if that "quick" document is actually a 500-page epic, or if your "brief" presentation has more slides than a corporate retreat? This feature lets you quickly find out the scale of your Office documents.
+    *   **Word**: Get the page count using [`word/page/getPageCount`](#wordpage).
+    *   **Excel**: Get the worksheet count using [`excel/worksheets/getWorksheetCount`](#excelworksheets).
+    *   **PowerPoint**: Get the slide count using [`powerpoint/slides/getSlideCount`](#powerpointslides).
+
+**When You're About to Bite Off More Than You Can Chew**:
+You've been asked to "quickly review" a document. Before you dive in, get its vital statistics. "MCP, how many pages is 'WarAndPeace_Final_Final_ReallyFinal.docx'?" or "MCP, just how many slides are in 'MyLifeStory_Part1.pptx'?" This way, you can manage expectations (mostly your own).
+
 ---
 
 ## Resource Management
@@ -1767,6 +1990,45 @@ curl -X POST "http://localhost:3000/fs/update_markup_content" \
   - AI Infers: `POST /dynamic/resources/write?path=/docs/new.docx` with file and metadata.
 
 **Completions**: Resource types, metadata fields.
+
+---
+
+## OS Tools
+
+### <a name="osgetactiveofficedocuments"></a>os/getActiveOfficeDocuments
+**Description**: Ever feel like you're juggling too many Office files and can't remember what's open? This tool is your personal digital assistant, peeking over your shoulder (with permission, of course) to list all currently open Microsoft Office documents (Word, Excel, PowerPoint) and their file paths.
+
+**Operations**:
+- **list**: Retrieves a list of active Office documents.
+  - **Input**: None.
+  - **Output**: `{ success: boolean, documents?: { type: string, path: string }[], error?: string }`.
+    - `type`: Can be 'Word', 'Excel', or 'PowerPoint'.
+    - `path`: Full file path of the open document.
+  - **Example**:
+    ```bash
+    curl -X GET "http://localhost:3000/os/getActiveOfficeDocuments"
+    ```
+    **Response**:
+    ```json
+    {
+      "success": true,
+      "documents": [
+        { "type": "Word", "path": "C:\\Users\\David\\Documents\\Reports\\Q1_Sales_Report.docx" },
+        { "type": "Excel", "path": "C:\\Users\\David\\Spreadsheets\\Financial_Projections_v3.xlsx" }
+      ]
+    }
+    ```
+
+**AI Request Examples**:
+- User: "What Office documents do I have open right now?"
+  - AI Infers: `GET /os/getActiveOfficeDocuments`.
+- User: "Can you check if I left that important PowerPoint presentation open?"
+  - AI Infers: `GET /os/getActiveOfficeDocuments` (and then AI would filter/check the list).
+
+**Completions**: None applicable for input.
+
+**When Your Desktop is a Digital Minefield**:
+You have 17 Word docs, 12 Excel sheets, and 5 PowerPoints open. One of them is critical. Which one? Instead of clicking through each window like a digital archaeologist, just ask! "MCP, what unholy mess of Office files have I created this time? `getActiveOfficeDocuments` please!"
 
 ---
 

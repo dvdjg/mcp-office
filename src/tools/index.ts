@@ -53,6 +53,7 @@ import mermaidImportTool from './word/mermaidImport.tool.js'; // Import the merm
 import mermaidExportTool from './word/mermaidExport.tool.js'; // Import the mermaid export tool
 import reformatTool from './word/reformat.tool.js'; // Import the new reformat tool
 import { registerWordCodeFormatTool } from './word/codeFormat.tool.js'; // Import the new code format tool registration function
+import { applyAutoTitlesTool } from './word/applyAutoTitles.tool.js'; // Import the new auto titles tool
 
 import analyzeToolDefinition from './word/analyze.tool.js'; // Import the new analyze tool definition
 
@@ -62,6 +63,7 @@ import excelRangeTool from './excel/range.tool.js'; // Import the new excel/rang
 import excelTablesTool from './excel/tables.tool.js'; // Import the new excel/tables tool
 import excelChartsTool from './excel/charts.tool.js'; // Import the new excel/charts tool
 import { excelDataAnalysisTool } from './excel/dataAnalysis.tool.js'; // Import the new excel/data-analysis tool
+import { formatTablesInWorksheetTool } from './excel/formatTablesInWorksheet.tool.js'; // Import the new formatTablesInWorksheet tool
 
 // Import PowerPoint tools
 import slidesTool from './powerpoint/slides.tool.js'; // Import the new powerpoint/slides tool
@@ -79,6 +81,9 @@ import { dynamicResourcesTool } from './dynamic/resources.tool.js'; // Assuming 
 import { officeImageAnalysisGenerationTool } from './office/imageAnalysisGeneration.tool.js'; // Single object
 import { generalParseTextTool } from './office/generalParseText.tool.js'; // Import the new general parse text tool
 import getActiveOfficeDocumentsTool from './os/getActiveOfficeDocuments.tool.js'; // Import the new OS tool
+import saveActiveWordAsMarkdownTool from './word/saveActiveWordAsMarkdown.tool.js'; // Import the new save active Word as Markdown tool
+import adaptWordToPowerpointTool from './office/adaptWordToPowerpoint.tool.js'; // Import the new adapt Word to PowerPoint tool
+import { concludeStoryInDocumentTool } from './word/concludeStoryInDocument.tool.js'; // Import the new conclude story tool
  
  // Import static resources
 import aiAssistantGuideResource from '../resources/static/ai_assistant_guide.resource.js';
@@ -352,6 +357,7 @@ const allImplementedToolsIntermediate = [
     excelTablesTool,
     excelChartsTool,
     ...excelDataAnalysisTool, // Spread array
+    ...formatTablesInWorksheetTool, // Spread array, as it's McpResource[]
     slidesTool,
     powerpointShapesTool,
     ...powerpointPropertiesTool, // Spread array
@@ -365,6 +371,10 @@ const allImplementedToolsIntermediate = [
     officeImageAnalysisGenerationTool, // Add the new tool here
     generalParseTextTool, // Add the new general parse text tool
     getActiveOfficeDocumentsTool, // Add the new OS tool
+    applyAutoTitlesTool, // Add the new auto titles tool
+    saveActiveWordAsMarkdownTool, // Add the new save active Word as Markdown tool
+    adaptWordToPowerpointTool, // Add the new adapt Word to PowerPoint tool
+    concludeStoryInDocumentTool, // Add the new conclude story tool
      // Add other imported tools here
  ];
 

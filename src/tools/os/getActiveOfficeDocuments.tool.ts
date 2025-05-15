@@ -3,7 +3,7 @@ import { McpResource, ToolRequestParams, ApiResponse } from '@/types/common.type
 import { z } from 'zod';
 
 // Define an interface for the structure of an active Office document
-interface ActiveOfficeDocument {
+export interface ActiveOfficeDocument { // Added export
   filePath: string;
   applicationType: 'Word' | 'Excel' | 'PowerPoint';
 }

@@ -30,9 +30,13 @@ Welcome to the **Office MCP Server**’s hall of fame, where Word, Excel, PowerP
   - [Use Case 24: The DOCX-to-Markdown Metamorphosis (with Image Wrangling!) - Future Capability](#use-case-24-the-docx-to-markdown-metamorphosis-with-image-wrangling---future-capability)
   - [Use Case 25: The Cat-astrophic COM Correction! (COM in Action!)](#use-case-25-the-cat-astrophic-com-correction-com-in-action)
   - [Use Case 26: The TPS Report Titan (Library Power Unleashed!)](#use-case-26-the-tps-report-titan-library-power-unleashed)
+  - [Use Case 27: The Auto-Titler Autocrat! (applyAutoTitles)](#use-case-27-the-auto-titler-autocrat-applyautotitles)
+  - [Use Case 28: The Markdown Makeover Artist! (saveActiveWordAsMarkdown)](#use-case-28-the-markdown-makeover-artist-saveactivewordasmarkdown)
+  - [Use Case 29: The AI Story Finisher! (concludeStoryInDocument)](#use-case-29-the-ai-story-finisher-concludestoryindocument)
 - [Excel Use Cases (with a Smile)](#excel-use-cases-with-a-smile)
   - [The Excel Accountant with Judgment](#the-excel-accountant-with-judgment)
   - [The Express Excel Exporter](#the-express-excel-exporter)
+  - [Use Case 30: The Spreadsheet Stylist Supreme! (formatTablesInWorksheet)](#use-case-30-the-spreadsheet-stylist-supreme-formattablesinworksheet)
 - [PowerPoint Use Cases (with Festive Cheer)](#powerpoint-use-cases-with-festive-cheer)
   - [The Christmas PowerPoint Decorator (Ho ho ho!)](#the-christmas-powerpoint-decorator-ho-ho-ho)
 - [Cross-Application Use Cases](#cross-application-use-cases)
@@ -45,7 +49,11 @@ Welcome to the **Office MCP Server**’s hall of fame, where Word, Excel, PowerP
   - [The Compressed File Manager (ZIP, 7z, etc.)](#the-compressed-file-manager-zip-7z-etc)
   - [Use Case XX: The Accidental Archivist's Assistant! (generalParseText)](#use-case-xx-the-accidental-archivists-assistant-generalparsetext)
   - [Use Case YY: The AI's Appetizer! (generalParseText)](#use-case-yy-the-ais-appetizer-generalparsetext)
+  - [Use Case ZZ: The Word-to-PowerPoint Alchemist! (adaptWordToPowerpoint)](#use-case-zz-the-word-to-powerpoint-alchemist-adaptwordtopowerpoint)
+  - [Use Case AAA: The Document Detective - Know Your Size! (Get Document Size)](#use-case-aaa-the-document-detective---know-your-size-get-document-size)
   - [Accessing Cloud Documents (Future)](#accessing-cloud-documents-future)
+- [OS Shenanigans (Beyond the Document)](#os-shenanigans-beyond-the-document)
+  - [Use Case BBB: The "What's Open?!" Oracle (getActiveOfficeDocuments)](#use-case-bbb-the-whats-open-oracle-getactiveofficedocuments)
 
 ## How We Tackle Your Office Shenanigans: COM vs. Libraries
 
@@ -188,7 +196,7 @@ Two teammates sent conflicting drafts of `ProductImprovements.docx`. Merging the
 - **User Tells AI**: “Write a banging conclusion for `MyNovel.docx`, stat!”
 - **AI Infers**: The user needs AI to channel Shakespeare. The `word/generate-and-insert-text` tool is the quill. This would ideally use **COM** to insert text into an open document seamlessly.
 - **AI Action**: Uses `word/generate-and-insert-text` with `document=/docs/MyNovel.docx`, `prompt=write-conclusion`, and `position=end`. Vague prompt? AI suggests a dramatic finale.
-- **Interaction**: AI asks, “Doc path, and what’s the vibe—epic, tearjerker? I’ll craft something juicy!”
+- **Interaction**: AI says, “Doc path, and what’s the vibe—epic, tearjerker? I’ll craft something juicy!”
 
 ### Use Case 16: Surgical Strike Styling with URIs
 **Scenario**: You need to apply the “Emphasis” style but *only* the fifth paragraph of `MotivationalSpeech.docx` needs pizzazz, the rest is fine. Manually finding it is tedious, and applying it document-wide is overkill. Precision surgery required! 🎯
@@ -290,6 +298,30 @@ Two teammates sent conflicting drafts of `ProductImprovements.docx`. Merging the
         c. Save the new file as `/tps_reports_final/TPS_Report_EmployeeID.docx`.
 - **Interaction**: AI confirms, "Consider it done! Those TPS reports will be ready faster than you can say 'synergy.' Point me to the template, CSV, and output folder, and I'll unleash the library kraken!"
 
+### Use Case 27: The Auto-Titler Autocrat! (applyAutoTitles)
+**Scenario**: You've just brain-dumped 10 pages of genius into `MyGrandPlan.docx`. It's all there, but it looks like a single, run-on sentence from a caffeinated philosopher. Your boss needs to present it in an hour, and it needs headings... like, yesterday! Manually styling? You'd rather teach a badger to knit. 🦡🧶
+**Solution**:
+- **User Tells AI**: "My `MyGrandPlan.docx` is a wall of text! Make it look organized with auto-titles, and do it NOW!"
+- **AI Infers**: The user is in a panic and needs structural salvation. The `word/applyAutoTitles` tool is the AI-powered structural engineer for this job, likely using **COM** for direct styling of the active document.
+- **AI Action**: Unleashes `word/applyAutoTitles` on `filePath=/docs/MyGrandPlan.docx`. The AI scans for logical breaks and big, bold ideas, then slaps on `Heading 1`, `Heading 2`, etc., faster than you can say "procrastination."
+- **Interaction**: AI says, "Consider your text wall conquered! I'll whip those headings into shape. Just point me to the document of despair!"
+
+### Use Case 28: The Markdown Makeover Artist! (saveActiveWordAsMarkdown)
+**Scenario**: You've crafted the perfect blog post in `MyLatestMusings.docx`, complete with witty asides and profound insights. Now, you need to get it onto your minimalist Markdown-based blog. Copy-pasting and reformatting? That's like trying to fit a square peg in a round hole while blindfolded. 😵‍💫➡️📝
+**Solution**:
+- **User Tells AI**: "Transform `MyLatestMusings.docx` into `my-latest-musings.md` for my blog. Keep it clean!"
+- **AI Infers**: The user wants to shed the .docx skin for sleek Markdown. The `word/saveActiveWordAsMarkdown` tool is the digital chameleon. This can use **COM** to read the active document's content and a **library** to write the Markdown.
+- **AI Action**: Invokes `word/saveActiveWordAsMarkdown` with `filePath=/blog/MyLatestMusings.docx` and `outputMarkdownPath=/blog/my-latest-musings.md`.
+- **Interaction**: AI chirps, "From Wordy to Web-Ready! Give me the Word doc and where you want the Markdown masterpiece, and I'll handle the conversion!"
+
+### Use Case 29: The AI Story Finisher! (concludeStoryInDocument)
+**Scenario**: Your epic space opera, `AdventuresOfCaptainLuis.docx` (yes, *that* Luis), is 99% complete. But the grand finale? Your muse has apparently taken an unscheduled vacation to another galaxy. You need an ending, any ending, before your fans (mostly your cat) start a riot. 🌌🙀
+**Solution**:
+- **User Tells AI**: "Captain Luis is stranded on Planet Xylar with a broken hyperdrive! Finish the story in `AdventuresOfCaptainLuis.docx` for me, I'm stumped!"
+- **AI Infers**: The user is suffering from 'Conclusion Constipation'. The `word/concludeStoryInDocument` tool, with its AI brain, is the narrative deus ex machina. This would use **COM** to append the AI-generated text.
+- **AI Action**: Calls `word/concludeStoryInDocument` with `filePath=/stories/AdventuresOfCaptainLuis.docx` and `storyContextPrompt="Captain Luis, a charming rogue, must escape Planet Xylar, which is guarded by sentient space hamsters, before his ship's cookies run out."`
+- **Interaction**: AI quips, "Fear not, wordsmith! I'll craft an ending so spectacular, even the space hamsters will applaud. Just give me the doc and any vital plot points I shouldn't accidentally contradict!"
+
 ## Excel Use Cases (with a Smile)
 
 No more tears over spreadsheets! Office MCP brings joy (and efficiency) to your life with Excel.
@@ -313,6 +345,14 @@ No more tears over spreadsheets! Office MCP brings joy (and efficiency) to your 
 - **AI Infers**: The user wants a sheet-to-CSV sprint. A combo of `excel/worksheets`, `excel/range`, and `fs/file` is the relay team. This is a classic **library-based** task for speed and efficiency with closed files.
 - **AI Action**: Uses `excel/worksheets` with `operation=list` to grab sheet names. For each, uses `excel/range` with `operation=read`, then `fs/file` with `operation=write` to save as `sheet_name.csv`. No output folder? AI suggests `/docs/csv`.
 - **Interaction**: AI asks, “File path and where do the CSVs go? I’ve got a spot if you don’t!”
+
+### Use Case 30: The Spreadsheet Stylist Supreme! (formatTablesInWorksheet)
+**Scenario**: Your `MonthlyExpenses.xlsx` looks like a rainbow exploded in a data grid – inconsistent fonts, no borders, numbers aligned like they're doing the cha-cha. You need to present this to the finance committee, and they appreciate... visual serenity. 🧘‍♂️📊
+**Solution**:
+- **User Tells AI**: "My `MonthlyExpenses.xlsx`, sheet 'Actuals', is an eyesore! Make the tables look professional before I get audited by the style police!"
+- **AI Infers**: The user's spreadsheet needs an urgent aesthetic intervention. The `excel/formatTablesInWorksheet` tool is the AI stylist on call, likely using **COM** to apply rich formatting.
+- **AI Action**: Deploys `excel/formatTablesInWorksheet` with `filePath=/finance/MonthlyExpenses.xlsx` and `sheetIdentifier="Actuals"`. The AI will then suggest and apply sensible formatting (like consistent fonts, borders, and number alignment) to any detected tables.
+- **Interaction**: AI reassures, "No more spreadsheet nightmares! Point me to the Excel file and the offending sheet, and I'll work my formatting magic. Prepare for table tranquility!"
 
 ## PowerPoint Use Cases (with Festive Cheer)
 
@@ -408,6 +448,25 @@ The real magic happens when Office MCP makes Word, Excel, and PowerPoint dance t
 - **Result**: The extracted text is mostly "Are we there yet?", "Synergy!", and a surprising amount of haikus about staplers. The AI can now advise the user that a full, costly analysis might not be the best use of resources.
 - **Interaction**: AI says, "Let's get a quick taste of this presentation. Give me the file path, and I'll serve up the text content. We'll see if it's a five-star meal or just digital breadcrumbs!"
 
+### Use Case ZZ: The Word-to-PowerPoint Alchemist! (adaptWordToPowerpoint)
+**Scenario**: You've written a 30-page magnum opus in Word (`MyEpicTreatise.docx`) detailing the socio-economic impact of garden gnomes. Now, your boss wants a "quick summary presentation" for the team meeting... in an hour. Condensing your life's work into slides manually? You'd rather wrestle a gnome. 🍄➡️📊
+**Solution**:
+- **User Tells AI**: "Transform `MyEpicTreatise.docx` into a PowerPoint presentation called `GnomeEconomics.pptx`. Make it snappy, but don't lose the gnome-essence!"
+- **AI Infers**: The user needs to transmute dense text into engaging slides, pronto. The `office/adaptWordToPowerpoint` tool is the alchemical assistant for this, likely using **COM** to best interpret Word structures and create PowerPoint objects.
+- **AI Action**: Fires up `office/adaptWordToPowerpoint` with `wordFilePath=/research/MyEpicTreatise.docx` and `powerpointFilePath=/presentations/GnomeEconomics.pptx`. The tool will attempt to identify headings and key paragraphs to structure the slides.
+- **Interaction**: AI says, "From treatise to tantalizing slides! Give me your Word document, and I'll conjure a PowerPoint. Any specific gnome-related imagery you'd like me to *not* include?"
+
+### Use Case AAA: The Document Detective - Know Your Size! (Get Document Size)
+**Scenario**: Your colleague sends you `ProjectGodzilla_Final_v17_Reviewed_Approved_FINAL.docx` with a casual "Can you just give this a quick once-over?" Before you commit your afternoon (and possibly your sanity), you want to know if "quick" means 5 pages or 500. 🦖📄❓
+**Solution**:
+- **User Tells AI**: "How massive is `ProjectGodzilla_Final_v17_Reviewed_Approved_FINAL.docx`? I need the page count before I dive in!" (Or similar for Excel sheets/PowerPoint slides)
+- **AI Infers**: The user is wisely trying to gauge the Lochness Monster before agreeing to swim with it. The "Get Document Size" capability, using `word/page/getPageCount`, `excel/worksheets/getWorksheetCount`, or `powerpoint/slides/getSlideCount`, is the sonar here. This uses **COM** for accuracy on potentially open or complex files.
+- **AI Action**:
+    - For Word: `word/page/getPageCount` with `filePath=/shared_docs/ProjectGodzilla_Final_v17_Reviewed_Approved_FINAL.docx`.
+    - For Excel: `excel/worksheets/getWorksheetCount` with the relevant Excel file path.
+    - For PowerPoint: `powerpoint/slides/getSlideCount` with the relevant PowerPoint file path.
+- **Interaction**: AI responds, "Let's measure this beast! For `ProjectGodzilla...docx`, it's a whopping 487 pages! Maybe 'quick once-over' was an understatement? For Excel, it's 37 sheets of pure data joy. And that PowerPoint? A breezy 112 slides. Plan accordingly!"
+
 ### Accessing Cloud Documents (Future)
 **Scenario**: You need to work with documents stored in Teams or Office 365 via their links, ensuring your permissions are respected.
 **Solution**:
@@ -415,6 +474,18 @@ The real magic happens when Office MCP makes Word, Excel, and PowerPoint dance t
 - **AI Infers**: The user wants to interact with cloud-based documents. This functionality is planned for future development and will involve integrating with Microsoft Graph API (a **library/API based approach**) and potentially the Office JavaScript API to handle authentication and document manipulation while respecting user permissions.
 - **AI Action**: Explains that this feature is planned and points to the documentation for future implementation details.
 - **Interaction**: AI informs the user about the future availability of this feature and where to find more information.
+
+## OS Shenanigans (Beyond the Document)
+
+Sometimes the chaos isn't *in* the document, but *around* it. This section is for tools that help manage your Office environment itself!
+
+### Use Case BBB: The "What's Open?!" Oracle (getActiveOfficeDocuments)
+**Scenario**: You've been multitasking like a caffeinated octopus – three Word docs, two Excels, and that one PowerPoint you *swear* you closed. Now you need to find "that_important_report.docx" but your desktop looks like a digital explosion. Which window is it?! 🤯🐙
+**Solution**:
+- **User Tells AI**: "I've lost track! What Office files do I actually have open right now? Is `that_important_report.docx` among them?"
+- **AI Infers**: The user's drowning in a sea of open windows and needs a lifeline. The `os/getActiveOfficeDocuments` tool is the digital coast guard. This uses OS-level interactions, likely via **COM** or platform-specific APIs, to query active processes.
+- **AI Action**: Calls `os/getActiveOfficeDocuments`. The AI then checks the returned list for `that_important_report.docx`.
+- **Interaction**: AI reports back, "Okay, deep breath! You currently have `Draft1.docx`, `Spreadsheet_of_Doom.xlsx`, `Presentation_for_Cats.pptx`, and YES, `that_important_report.docx` is open! Phew! Anything else I can find in this digital jungle?"
 
 ## Next Steps
 - See [Installation & API](INSTALLATION_AND_API.md:0) for setup and tools.
