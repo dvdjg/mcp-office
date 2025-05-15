@@ -1,9 +1,17 @@
-import { exec } from 'child_process';
 import { McpResource, ToolRequestParams, ApiResponse } from '@/types/common.types.js';
 import { z } from 'zod';
+import logger from '../../utils/logger.js';
+import {
+  getOfficeApplication,
+  getOpenWordDocuments,
+  getOpenExcelWorkbooks,
+  getOpenPowerPointPresentations,
+  releaseObject,
+  OfficeAppName,
+} from '../../utils/officeInterop.js';
 
 // Define an interface for the structure of an active Office document
-export interface ActiveOfficeDocument { // Added export
+export interface ActiveOfficeDocument {
   filePath: string;
   applicationType: 'Word' | 'Excel' | 'PowerPoint';
 }
@@ -12,123 +20,76 @@ export interface ActiveOfficeDocument { // Added export
 interface GetActiveOfficeDocumentsInput extends ToolRequestParams {}
 
 // Define the output interface for the tool
-interface GetActiveOfficeDocumentsOutputData { // Renamed to reflect it's the data part of ApiResponse
+interface GetActiveOfficeDocumentsOutputData {
   documents: ActiveOfficeDocument[];
-}
-
-// Helper function to execute PowerShell commands
-function executePowerShell(script: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const command = `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& {${script}}"`;
-
-    exec(command, (error, stdout, stderr) => {
-      if (error) {
-        return reject(new Error(`PowerShell script execution failed: ${error.message}. Stderr: ${stderr}`));
-      }
-      if (stderr) {
-        // Stderr might contain warnings or errors from within the script if not caught by try/catch in PS.
-        // For this tool, PowerShell's try/catch should handle most issues, returning empty output.
-        // console.warn(`[os/getActiveOfficeDocuments] PowerShell script stderr: ${stderr}`);
-      }
-      resolve(stdout.trim());
-    });
-  });
 }
 
 const getActiveOfficeDocumentsTool: McpResource = {
   path: 'os/getActiveOfficeDocuments',
-  description: 'Lists all currently open Microsoft Office documents (Word, Excel, PowerPoint) and their full file paths. Windows only.',
-  schema: z.object({}), // Correctly defined as an empty Zod object schema
-  // outputSchema removed as it's not part of McpResource
+  description: 'Lists all currently open Microsoft Office documents (Word, Excel, PowerPoint) and their full file paths using winax COM interop. Windows only.',
+  schema: z.object({}),
   async handler(input: GetActiveOfficeDocumentsInput): Promise<ApiResponse<GetActiveOfficeDocumentsOutputData>> {
-    const documents: ActiveOfficeDocument[] = [];
+    const allOpenDocuments: ActiveOfficeDocument[] = [];
 
     if (process.platform !== 'win32') {
-      // console.warn('[os/getActiveOfficeDocuments] This tool is currently only supported on Windows.');
+      logger.warn('[os/getActiveOfficeDocuments] This tool is currently only supported on Windows. Returning empty list.');
       return { success: true, data: { documents: [] } };
     }
 
-    const officeApps = [
-      { comObject: 'Word.Application', type: 'Word' as const },
-      { comObject: 'Excel.Application', type: 'Excel' as const },
-      { comObject: 'PowerPoint.Application', type: 'PowerPoint' as const },
+    const officeAppDefinitions: { name: OfficeAppName; type: ActiveOfficeDocument['applicationType']; getter: (app: any) => Promise<string[]> }[] = [
+      { name: 'Word.Application', type: 'Word', getter: getOpenWordDocuments },
+      { name: 'Excel.Application', type: 'Excel', getter: getOpenExcelWorkbooks },
+      { name: 'PowerPoint.Application', type: 'PowerPoint', getter: getOpenPowerPointPresentations },
     ];
 
-    for (const app of officeApps) {
-      let script = '';
-      switch (app.type) {
-        case 'Word':
-          script = `
-            try {
-              $appInstance = [System.Runtime.InteropServices.Marshal]::GetActiveObject('${app.comObject}')
-              $docPaths = @()
-              foreach ($document in $appInstance.Documents) {
-                try {
-                  if ($document.FullName -and $document.FullName.Trim() -ne '') {
-                    $docPaths += $document.FullName
-                  }
-                } catch { /* Ignore errors for individual documents */ }
-              }
-              Write-Output ($docPaths -join ';')
-            } catch { Write-Output "" }`; // App not running or other COM error
-          break;
-        case 'Excel':
-          script = `
-            try {
-              $appInstance = [System.Runtime.InteropServices.Marshal]::GetActiveObject('${app.comObject}')
-              $wbPaths = @()
-              foreach ($workbook in $appInstance.Workbooks) {
-                try {
-                  if ($workbook.FullName -and $workbook.FullName.Trim() -ne '') {
-                    $wbPaths += $workbook.FullName
-                  }
-                } catch { /* Ignore errors for individual workbooks */ }
-              }
-              Write-Output ($wbPaths -join ';')
-            } catch { Write-Output "" }`;
-          break;
-        case 'PowerPoint':
-          script = `
-            try {
-              $appInstance = [System.Runtime.InteropServices.Marshal]::GetActiveObject('${app.comObject}')
-              $presPaths = @()
-              foreach ($presentation in $appInstance.Presentations) {
-                try {
-                  if ($presentation.FullName -and $presentation.FullName.Trim() -ne '') {
-                    $presPaths += $presentation.FullName
-                  }
-                } catch { /* Ignore errors for individual presentations */ }
-              }
-              Write-Output ($presPaths -join ';')
-            } catch { Write-Output "" }`;
-          break;
-      }
+    for (const appDef of officeAppDefinitions) {
+      let appInstance: any = null;
+      try {
+        logger.info(`[os/getActiveOfficeDocuments] Attempting to connect to ${appDef.name}...`);
+        appInstance = await getOfficeApplication(appDef.name);
 
-      if (script) {
-        try {
-          const output = await executePowerShell(script);
-          const filePaths = output.split(';').map(p => p.trim()).filter(p => p.length > 0);
-
-          for (const filePath of filePaths) {
-            const lcFilePath = filePath.toLowerCase();
-            let isValidExtension = false;
-            if (app.type === 'Word' && (lcFilePath.endsWith('.docx') || lcFilePath.endsWith('.doc') || lcFilePath.endsWith('.docm'))) isValidExtension = true;
-            if (app.type === 'Excel' && (lcFilePath.endsWith('.xlsx') || lcFilePath.endsWith('.xls') || lcFilePath.endsWith('.xlsm') || lcFilePath.endsWith('.xlsb'))) isValidExtension = true;
-            if (app.type === 'PowerPoint' && (lcFilePath.endsWith('.pptx') || lcFilePath.endsWith('.ppt') || lcFilePath.endsWith('.pptm'))) isValidExtension = true;
-
-            // Basic check for an absolute path (contains ':') and a valid extension
-            if (filePath.includes(':') && isValidExtension) {
-                 documents.push({ filePath, applicationType: app.type });
+        if (appInstance) {
+          logger.info(`[os/getActiveOfficeDocuments] Successfully connected to ${appDef.name}. Fetching open documents...`);
+          const filePaths = await appDef.getter(appInstance);
+          filePaths.forEach(filePath => {
+            if (filePath && typeof filePath === 'string' && filePath.trim() !== '') {
+              allOpenDocuments.push({ filePath, applicationType: appDef.type });
+              logger.debug(`[os/getActiveOfficeDocuments] Found open ${appDef.type} document: ${filePath}`);
             } else {
-                // console.warn(`[os/getActiveOfficeDocuments] Filtered out potentially invalid path for ${app.type}: '${filePath}'`);
+              logger.warn(`[os/getActiveOfficeDocuments] Invalid or empty file path received for an open ${appDef.type} document.`);
             }
-          }
-        } catch (err) {
-          // console.warn(`[os/getActiveOfficeDocuments] Error querying ${app.type} documents: ${err.message}. App might not be running or no documents open.`);
+          });
+          logger.info(`[os/getActiveOfficeDocuments] Found ${filePaths.length} open document(s) for ${appDef.name}.`);
+        } else {
+          logger.info(`[os/getActiveOfficeDocuments] No active instance of ${appDef.name} found or could not connect.`);
+        }
+      } catch (error) {
+        // Log error if getOfficeApplication fails (e.g., app not installed or running with no docs)
+        // Or if the specific getter (getOpenWordDocuments etc.) fails.
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (errorMessage.includes('RPC_E_CALL_REJECTED') || errorMessage.includes('OLE error 8001010A')) {
+             logger.info(`[os/getActiveOfficeDocuments] ${appDef.name} might be busy or not responding. Skipping. Error: ${errorMessage}`);
+        } else if (errorMessage.includes('Failed to get application') && (errorMessage.includes('Object is not connected to server') || errorMessage.includes('Invalid class string'))) {
+            // This often means the application is not running or no documents are open, which is not an error for this tool's purpose.
+            logger.info(`[os/getActiveOfficeDocuments] No running instance of ${appDef.name} found or it has no open documents. Error: ${errorMessage}`);
+        } else {
+            logger.error(`[os/getActiveOfficeDocuments] Error processing ${appDef.name}: ${errorMessage}`, { error });
+        }
+      } finally {
+        if (appInstance) {
+          // Release the application object.
+          // Important: Releasing the main application object might close it if it was newly created
+          // and has no visible windows/documents. If it was an existing instance,
+          // releasing it here generally detaches our script from it, not closes the user's app.
+          // The individual document/workbook/presentation objects are released within their respective getter functions.
+          releaseObject(appInstance);
+          logger.info(`[os/getActiveOfficeDocuments] Released ${appDef.name} instance.`);
         }
       }
     }
-    return { success: true, data: { documents } };
+
+    logger.info(`[os/getActiveOfficeDocuments] Final combined list of open documents: ${JSON.stringify(allOpenDocuments)}`);
+    return { success: true, data: { documents: allOpenDocuments } };
   },
 };
 

@@ -488,3 +488,134 @@ export async function getWordElementContent(
         // releaseObject(wordApp);
     }
 }
+
+/**
+ * Retrieves the full paths of all open documents in a Word application instance.
+ * @param wordApp The Word application COM object.
+ * @returns A promise resolving to an array of full document paths.
+ * @throws {Error} If accessing documents fails.
+ */
+export async function getOpenWordDocuments(wordApp: any): Promise<string[]> {
+  logger.info('[OfficeInterop] Attempting to get open Word documents...');
+  const openDocuments: string[] = [];
+  if (!wordApp || typeof wordApp.Documents === 'undefined' || typeof wordApp.Documents.Count === 'undefined') {
+    logger.warn('[OfficeInterop] Word application or Documents collection is not available.');
+    return openDocuments; // Return empty if app or Documents collection is invalid
+  }
+
+  try {
+    const documents = wordApp.Documents;
+    const count = documents.Count;
+    logger.debug(`[OfficeInterop] Word - Found ${count} open document(s).`);
+    for (let i = 1; i <= count; i++) { // COM collections are 1-indexed
+      let doc: any = null;
+      try {
+        doc = documents.Item(i);
+        if (doc && typeof doc.FullName === 'string') {
+          openDocuments.push(doc.FullName);
+          logger.debug(`[OfficeInterop] Word - Added document: ${doc.FullName}`);
+        } else {
+          logger.warn(`[OfficeInterop] Word - Document item ${i} or its FullName is invalid.`);
+        }
+      } catch (itemError) {
+        logger.warn(`[OfficeInterop] Word - Error accessing document item ${i}: ${itemError instanceof Error ? itemError.message : String(itemError)}`);
+      } finally {
+        if (doc) releaseObject(doc); // Release individual document object
+      }
+    }
+    logger.info(`[OfficeInterop] Retrieved ${openDocuments.length} open Word document path(s).`);
+    return openDocuments;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`[OfficeInterop] Word - Error getting open documents: ${errorMessage}`, { error });
+    throw new Error(`Failed to get open Word documents: ${errorMessage}`);
+  }
+}
+
+/**
+ * Retrieves the full paths of all open workbooks in an Excel application instance.
+ * @param excelApp The Excel application COM object.
+ * @returns A promise resolving to an array of full workbook paths.
+ * @throws {Error} If accessing workbooks fails.
+ */
+export async function getOpenExcelWorkbooks(excelApp: any): Promise<string[]> {
+  logger.info('[OfficeInterop] Attempting to get open Excel workbooks...');
+  const openWorkbooks: string[] = [];
+   if (!excelApp || typeof excelApp.Workbooks === 'undefined' || typeof excelApp.Workbooks.Count === 'undefined') {
+    logger.warn('[OfficeInterop] Excel application or Workbooks collection is not available.');
+    return openWorkbooks;
+  }
+
+  try {
+    const workbooks = excelApp.Workbooks;
+    const count = workbooks.Count;
+    logger.debug(`[OfficeInterop] Excel - Found ${count} open workbook(s).`);
+    for (let i = 1; i <= count; i++) { // COM collections are 1-indexed
+      let wb: any = null;
+      try {
+        wb = workbooks.Item(i);
+        if (wb && typeof wb.FullName === 'string') {
+          openWorkbooks.push(wb.FullName);
+          logger.debug(`[OfficeInterop] Excel - Added workbook: ${wb.FullName}`);
+        } else {
+          logger.warn(`[OfficeInterop] Excel - Workbook item ${i} or its FullName is invalid.`);
+        }
+      } catch (itemError) {
+        logger.warn(`[OfficeInterop] Excel - Error accessing workbook item ${i}: ${itemError instanceof Error ? itemError.message : String(itemError)}`);
+      } finally {
+        if (wb) releaseObject(wb); // Release individual workbook object
+      }
+    }
+    logger.info(`[OfficeInterop] Retrieved ${openWorkbooks.length} open Excel workbook path(s).`);
+    return openWorkbooks;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`[OfficeInterop] Excel - Error getting open workbooks: ${errorMessage}`, { error });
+    throw new Error(`Failed to get open Excel workbooks: ${errorMessage}`);
+  }
+}
+
+/**
+ * Retrieves the full paths of all open presentations in a PowerPoint application instance.
+ * @param pptApp The PowerPoint application COM object.
+ * @returns A promise resolving to an array of full presentation paths.
+ * @throws {Error} If accessing presentations fails.
+ */
+export async function getOpenPowerPointPresentations(pptApp: any): Promise<string[]> {
+  logger.info('[OfficeInterop] Attempting to get open PowerPoint presentations...');
+  const openPresentations: string[] = [];
+  if (!pptApp || typeof pptApp.Presentations === 'undefined' || typeof pptApp.Presentations.Count === 'undefined') {
+    logger.warn('[OfficeInterop] PowerPoint application or Presentations collection is not available.');
+    return openPresentations;
+  }
+
+  try {
+    const presentations = pptApp.Presentations;
+    const count = presentations.Count;
+    logger.debug(`[OfficeInterop] PowerPoint - Found ${count} open presentation(s).`);
+    for (let i = 1; i <= count; i++) { // COM collections are 1-indexed
+      let pres: any = null;
+      try {
+        pres = presentations.Item(i);
+        // PowerPoint presentations might not have a FullName if they haven't been saved yet.
+        // Check if FullName exists and is a non-empty string.
+        if (pres && typeof pres.FullName === 'string' && pres.FullName) {
+          openPresentations.push(pres.FullName);
+          logger.debug(`[OfficeInterop] PowerPoint - Added presentation: ${pres.FullName}`);
+        } else {
+          logger.warn(`[OfficeInterop] PowerPoint - Presentation item ${i} has no valid FullName (possibly unsaved).`);
+        }
+      } catch (itemError) {
+        logger.warn(`[OfficeInterop] PowerPoint - Error accessing presentation item ${i}: ${itemError instanceof Error ? itemError.message : String(itemError)}`);
+      } finally {
+        if (pres) releaseObject(pres); // Release individual presentation object
+      }
+    }
+    logger.info(`[OfficeInterop] Retrieved ${openPresentations.length} open PowerPoint presentation path(s).`);
+    return openPresentations;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`[OfficeInterop] PowerPoint - Error getting open presentations: ${errorMessage}`, { error });
+    throw new Error(`Failed to get open PowerPoint presentations: ${errorMessage}`);
+  }
+}
