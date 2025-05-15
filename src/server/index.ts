@@ -126,9 +126,19 @@ const isStdioMode = !OFFICE_MCP_PORT;
 
 for (let i = 0; i < allRegisteredTools.length; i++) {
     const item: McpResource = allRegisteredTools[i];
+// --- BEGIN MODIFIED SECTION ---
+// Log the item itself to see its structure
+logger.debug(`[Tool Registration] Inspecting item at index ${i}: ${JSON.stringify(item)}`); // Kept for verbosity if debug logs start working
 
-    // Check if the tool is an FS tool
-    const isFsTool = item.path.startsWith('fs/');
+// Robust check for item and item.path
+if (!item || typeof item.path !== 'string') {
+    logger.error(`[Tool Registration] CRITICAL: Item at index ${i} is invalid or has a non-string 'path' property. Skipping registration for this item. Item details: ${JSON.stringify(item)}`);
+    continue; // Skip to the next item in the loop
+}
+// --- END MODIFIED SECTION ---
+
+// Check if the tool is an FS tool (this line should now be safe)
+const isFsTool = item.path.startsWith('fs/');
 
     // If it's an FS tool, check if FS access is allowed and if running in STDIO mode
     if (isFsTool) {

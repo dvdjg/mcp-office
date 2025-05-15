@@ -35,7 +35,7 @@ interface ToolContext {
 }
 
 interface BaseTool<T_Input, T_Output> {
-  name: string;
+  path: string;
   description: string;
   inputSchema: z.ZodSchema<T_Input>;
   outputSchema: z.ZodSchema<T_Output>;
@@ -89,7 +89,7 @@ interface ActiveOfficeDoc {
 }
 
 const saveActiveWordAsMarkdownTool: BaseTool<SaveActiveWordAsMarkdownInput, SaveActiveWordAsMarkdownOutput> = {
-  name: 'word/saveActiveWordAsMarkdown',
+  path: 'word/saveActiveWordAsMarkdown',
   description: 'Saves an active Microsoft Word document as a Markdown file. Can optionally specify input and output paths.',
   inputSchema: saveActiveWordAsMarkdownInputSchema,
   outputSchema: z.object({
