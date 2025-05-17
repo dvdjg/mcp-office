@@ -109,6 +109,20 @@ Dive into specific topics:
 - **[Technical Details](TECHNICAL_DETAILS.md)**: Insights into TypeScript, FastMCP, testing, security, future plans (including cloud document access), and licensing.
 
 *   **Office Instance Context:** The server interacts with the default or currently active Microsoft Office application instance available via COM Interop. Managing multiple installed Office versions or specific user sessions/licenses within the Office applications themselves is a complex consideration and is not currently supported.
+
+## Developer Utilities
+
+### Menu-Driven Debugging Script
+
+To assist with testing and debugging individual tools provided by this MCP server, a menu-driven script is available. This script allows you to:
+
+*   Select a tool by category and name.
+*   Acknowledge any preconditions for the tool.
+*   Provide parameters, with support for selecting fixture files.
+*   View the `ts-node` command that would be used to run the tool.
+*   Optionally, execute the generated command directly.
+
+This utility is located in the `debug_tool_script/` directory. For detailed instructions on setup and usage, please refer to its dedicated [README file](debug_tool_script/README.md).
 ## Testing 🧪
 
 This project uses Jest for testing. You can find test files in the `tests/` directory, categorized into `unit` and `e2e` (end-to-end, or functional tests).

@@ -1,0 +1,29 @@
+{
+  "name": "debug-tool-menu",
+  "version": "1.0.0",
+  "description": "Menu-driven script for debugging tools",
+  "main": "debug-tool-menu.ts",
+  "scripts": {
+    "start": "ts-node debug-tool-menu.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "debug",
+    "menu",
+    "typescript",
+    "cli"
+  ],
+  "author": "Roo",
+  "license": "ISC",
+  "dependencies": {
+    "inquirer": "^8.2.4"
+  },
+  "devDependencies": {
+    "@types/inquirer": "^8.2.1",
+    "@types/node": "^18.0.0",
+    "cross-env": "^7.0.3",
+    "ts-node": "^10.9.1",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^4.7.4"
+  }
+}
