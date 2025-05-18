@@ -2005,10 +2005,13 @@ You've been asked to "quickly review" a document. Before you dive in, get its vi
     - `documents`: An array of `ActiveOfficeDocument` objects, where each object has the following structure:
       - `fullName` (string): The full path or URL as reported by the Office application.
       - `path` (string): The directory path as reported by the Office application. Can be empty or a URL.
-      - `name` (string): The filename as reported by the Office application.
-      - `resolvedPath` (string | null): If the `fullName` of the document is a cloud URL (e.g., from OneDrive or SharePoint) and it is successfully converted to a local file system path, this property will contain the local path. If the `fullName` is already a local path, or if the conversion of a cloud URL to a local path fails, this property will be `null`. The `fullName` property always contains the original path as reported by the Office application.
+      - `name` (string): The filename as reported by the Office application (e.g., "Q1_Sales_Report.docx").
+      - `resolvedPath` (string | null): The local file system path.
+        - If `fullName` is a local path (e.g., "C:\\path\\to\\doc.docx"), `resolvedPath` is the same as `fullName`.
+        - If `fullName` is a cloud URL (e.g., "https://tenant-my.sharepoint.com/...") and successfully converted to a local path (e.g., "C:\\Users\\User\\OneDrive - Tenant\\doc.docx"), `resolvedPath` contains this local equivalent.
+        - If `fullName` is a cloud URL and the conversion to a local path fails, or if `fullName` is null/empty, `resolvedPath` is `null`.
       - `applicationType` (string): Can be 'Word', 'Excel', or 'PowerPoint'.
-      - `isLocal` (boolean): `true` if `resolvedPath` is determined to be a local file system path, `false` otherwise (e.g., if it's a URL).
+      - `isLocal` (boolean): `true` if `resolvedPath` contains a non-null local file system path. `false` if `resolvedPath` is `null` (indicating a cloud URL that could not be converted or an empty/null `fullName`).
   - **Example**:
     ```bash
     curl -X GET "http://localhost:3000/os/getActiveOfficeDocuments"
@@ -2023,7 +2026,7 @@ You've been asked to "quickly review" a document. Before you dive in, get its vi
             "fullName": "C:\\Users\\David\\Documents\\Reports\\Q1_Sales_Report.docx",
             "path": "C:\\Users\\David\\Documents\\Reports",
             "name": "Q1_Sales_Report.docx",
-            "resolvedPath": null,
+            "resolvedPath": "C:\\Users\\David\\Documents\\Reports\\Q1_Sales_Report.docx",
             "applicationType": "Word",
             "isLocal": true
           },

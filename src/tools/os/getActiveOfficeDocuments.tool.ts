@@ -15,12 +15,17 @@ import { join as joinPath, isAbsolute } from 'path'; // For path manipulation
 
 // Define an interface for the structure of an active Office document
 export interface ActiveOfficeDocument {
-  fullName: string; // Original full path or URL from COM
-  path: string;     // Directory path from COM, if available
-  name: string;     // Filename from COM
-  resolvedPath: string | null; // Local file path if resolvable (either originally local or converted from cloud), otherwise null.
+  fullName: string; // Original full path or URL from COM (e.g., "C:\\path\\to\\doc.docx" or "https://tenant-my.sharepoint.com/...")
+  path: string;     // Directory path from COM, if available (e.g., "C:\\path\\to\\" or "https://tenant-my.sharepoint.com/...")
+  name: string;     // Filename from COM (e.g., "doc.docx")
+  resolvedPath: string | null; // The local file system path.
+                           // - If fullName is a local path, resolvedPath is fullName.
+                           // - If fullName is a cloud URL and successfully converted, resolvedPath is the local equivalent.
+                           // - If fullName is a cloud URL and conversion fails, or if fullName is empty, resolvedPath is null.
   applicationType: 'Word' | 'Excel' | 'PowerPoint';
-  isLocal: boolean; // Flag indicating if resolvedPath is a local file system path (true if resolvedPath is a non-null local path)
+  isLocal: boolean; // True if resolvedPath contains a local file system path (i.e., resolvedPath is not null and is not a URL).
+                           // False if resolvedPath is null (cloud URL that failed to convert or empty fullName)
+                           // or if resolvedPath is still a URL (should not happen with current logic but good to note).
 }
 
 // Define the input interface for the tool (currently no specific inputs)
