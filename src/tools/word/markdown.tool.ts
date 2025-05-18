@@ -8,6 +8,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import MarkdownIt from 'markdown-it';
+import TurndownService from 'turndown';
 import { z } from 'zod';
 import archiver from 'archiver';
 import * as mammoth from 'mammoth'; // Reverted import style
@@ -47,7 +48,7 @@ export const exportSchema = z.object({
     /** Optional prefix for extracted image filenames. */
     imagePrefix: z.string().optional().describe("Optional prefix for extracted image filenames."),
     /** Format for tables: 'markdown' (simple) or 'html' (preserves merged cells). */
-    tableFormat: z.enum(['markdown', 'html']).default('html').describe("Format for tables: 'markdown' (simple) or 'html' (preserves merged cells)."),
+    tableFormat: z.enum(['markdown', 'html_tables', 'full_html']).default('markdown').describe("Format for tables: 'markdown' (Mammoth's best effort), 'html_tables' (tables as HTML, rest as Markdown via Turndown), or 'full_html' (entire document as HTML)."),
     /** If true, create a ZIP archive containing the Markdown file and image directory. */
     zipOutput: z.boolean().default(false).describe("If true, create a ZIP archive containing the Markdown file and image directory."),
     /** Optional name for the output ZIP file (defaults based on output MD name). */
@@ -811,29 +812,60 @@ export async function exportToMarkdown(params: ToolRequestParams, context?: Fast
                 log.warn(`Mammoth Path: Comment handling for '${commentsOption}' is basic. For detailed comment extraction, COM path might be better or further Mammoth customization is needed.`);
             }
 
-            log.info(`Mammoth Path: Converting document: ${absoluteInputPath}`);
-            let { value: markdownOutput, messages } = await (mammoth as any).convertToMarkdown({ path: absoluteInputPath }, mammothOptions); // Changed const to let
-            if (messages && messages.length > 0) {
-                messages.forEach((msg: any) => log.warn(`Mammoth message (${msg.type}): ${msg.message}`)); // Using any for MammothMessage
+            let markdownOutput = '';
+            let messages: any[] = [];
+
+            if (tableFormat === 'full_html') {
+                log.info(`Mammoth Path: Converting document to FULL HTML: ${absoluteInputPath}`);
+                const conversionResult = await (mammoth as any).convertToHtml({ path: absoluteInputPath }, mammothOptions);
+                markdownOutput = conversionResult.value;
+                messages = conversionResult.messages;
+            } else if (tableFormat === 'html_tables') {
+                log.info(`Mammoth Path: Converting document to HTML for 'html_tables' processing: ${absoluteInputPath}`);
+                const htmlConversionResult = await (mammoth as any).convertToHtml({ path: absoluteInputPath }, mammothOptions);
+                messages = htmlConversionResult.messages;
+                if (htmlConversionResult.value) {
+                    log.info("Mammoth Path: Converting HTML to Markdown, keeping HTML tables.");
+                    const turndownService = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
+                    turndownService.keep(['table', 'thead', 'tbody', 'tr', 'th', 'td', 'caption', 'colgroup', 'col']);
+                    // Add a rule to handle strikethrough if Turndown doesn't do it by default or if Mammoth's HTML for it is specific
+                    turndownService.addRule('strikethrough', {
+                        filter: ['s', 'del'], // Removed 'strike' as it's obsolete and causes TS error
+                        replacement: function (content) {
+                            return '~~' + content + '~~';
+                        }
+                    });
+                    markdownOutput = turndownService.turndown(htmlConversionResult.value);
+                } else {
+                    markdownOutput = "<!-- Mammoth conversion to HTML yielded empty content -->";
+                }
+            } else { // 'markdown'
+                log.info(`Mammoth Path: Converting document to Markdown: ${absoluteInputPath}`);
+                const conversionResult = await (mammoth as any).convertToMarkdown({ path: absoluteInputPath }, mammothOptions);
+                markdownOutput = conversionResult.value;
+                messages = conversionResult.messages;
             }
 
-            if (cleanMarkdownEscapes) {
+            if (messages && messages.length > 0) {
+                messages.forEach((msg: any) => log.warn(`Mammoth message (${msg.type}): ${msg.message}`));
+            }
+
+            // Apply Markdown cleaning only if the output is primarily Markdown
+            if (tableFormat === 'markdown' && cleanMarkdownEscapes) {
                 log.info('Mammoth Path: Cleaning unnecessary escape characters from Markdown output.');
-                // Option 1: Previous regex (commented out)
-                // markdownOutput = markdownOutput.replace(/\\([\\*_{}\[\]()#+\-.!])/g, '$1');
-                markdownOutput = markdownOutput.replace(/\\([\\*_{}\[\]()#+\-.!])/g, '$1');
-                // Option 2: Specific replacements (current active logic)
-                markdownOutput = markdownOutput.replace(/\\\./g, '.');  // Unescape periods
-                markdownOutput = markdownOutput.replace(/\\\)/g, ')');  // Unescape closing parentheses
-                markdownOutput = markdownOutput.replace(/\\\(/g, '(');  // Unescape opening parentheses
-                markdownOutput = markdownOutput.replace(/\\\[/g, '[');  // Unescape opening brackets
-                markdownOutput = markdownOutput.replace(/\\\]/g, ']');  // Unescape closing brackets
-                markdownOutput = markdownOutput.replace(/\\\#/g, '#');  // Unescape hashes
-                markdownOutput = markdownOutput.replace(/\\\*/g, '*');  // Unescape asterisks
-                markdownOutput = markdownOutput.replace(/\\\_/g, '_');  // Unescape underscores
-                markdownOutput = markdownOutput.replace(/\\\-/g, '-');  // Unescape hyphens
-                markdownOutput = markdownOutput.replace(/\\\+/g, '+');  // Unescape pluses
-                markdownOutput = markdownOutput.replace(/\\\!/g, '!');  // Unescape exclamation marks
+                markdownOutput = markdownOutput.replace(/\\([\\*_{}\[\]()#+\-.!~])/g, '$1');
+                // Option 2: Specific replacements (now commented out)
+                // markdownOutput = markdownOutput.replace(/\\\./g, '.');  // Unescape periods
+                // markdownOutput = markdownOutput.replace(/\\\)/g, ')');  // Unescape closing parentheses
+                // markdownOutput = markdownOutput.replace(/\\\(/g, '(');  // Unescape opening parentheses
+                // markdownOutput = markdownOutput.replace(/\\\[/g, '[');  // Unescape opening brackets
+                // markdownOutput = markdownOutput.replace(/\\\]/g, ']');  // Unescape closing brackets
+                // markdownOutput = markdownOutput.replace(/\\\#/g, '#');  // Unescape hashes
+                // markdownOutput = markdownOutput.replace(/\\\*/g, '*');  // Unescape asterisks
+                // markdownOutput = markdownOutput.replace(/\\\_/g, '_');  // Unescape underscores
+                // markdownOutput = markdownOutput.replace(/\\\-/g, '-');  // Unescape hyphens
+                // markdownOutput = markdownOutput.replace(/\\\+/g, '+');  // Unescape pluses
+                // markdownOutput = markdownOutput.replace(/\\\!/g, '!');  // Unescape exclamation marks
                 // Note: Add more specific replacements if other escaped characters are found to be problematic
             }
 
