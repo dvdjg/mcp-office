@@ -10,6 +10,8 @@ import { mkdir, readFile, writeFile, stat, unlink } from 'fs/promises'; // For a
 import { resolve as resolvePath, join as joinPath } from 'path';     // For path manipulation
 import { tmpdir } from 'os';         // For temporary directory
 import logger from './logger.js';     // Ensure logger path is correct
+import { exec } from 'child_process';
+import { existsSync } from 'fs'; // For synchronous path validation, useful in loops
 
 export type OfficeAppName = 'Word.Application' | 'Excel.Application' | 'PowerPoint.Application';
 
@@ -636,4 +638,292 @@ export async function getOpenPowerPointPresentations(pptApp: any): Promise<Docum
     logger.error(`[OfficeInterop] PowerPoint - Error getting open presentations: ${errorMessage}`, { error });
     throw new Error(`Failed to get open PowerPoint presentations: ${errorMessage}`);
   }
+}
+
+/**
+ * Attempts to convert a cloud URL (e.g., from OneDrive/SharePoint) to a local file system path.
+ * This is a workaround for Office COM APIs returning cloud URLs instead of local paths
+ * for documents opened from OneDrive or SharePoint.
+ *
+ * Prioritizes registry-based mapping and falls back to environment variables.
+ *
+ * @param cloudUrl The cloud URL to convert (e.g., https://tenant-my.sharepoint.com/personal/user_domain_com/Documents/MyFile.docx).
+ * @returns The local file system path if successfully resolved and validated, otherwise null.
+ */
+export async function getCloudUrlLocalPath(cloudUrl: string): Promise<string | null> {
+  logger.info(`[OfficeInterop] Attempting to resolve cloud URL to local path: ${cloudUrl}`);
+
+  if (!cloudUrl || !cloudUrl.toLowerCase().startsWith('http')) {
+    logger.warn(`[OfficeInterop] Invalid cloud URL provided: ${cloudUrl}`);
+    return null;
+  }
+
+  // Normalize URL by decoding and replacing slashes
+  let normalizedUrlPath = '';
+  try {
+    const url = new URL(cloudUrl);
+    // Pathname usually starts with a slash, e.g., /personal/user_domain_com/Documents/MyFile.docx
+    // We want to remove the leading slash for consistency in joining paths.
+    normalizedUrlPath = decodeURIComponent(url.pathname).substring(1).replace(/\//g, '\\\\');
+  } catch (e) {
+    logger.warn(`[OfficeInterop] Could not parse cloud URL: ${cloudUrl}. Error: ${e instanceof Error ? e.message : String(e)}`);
+    // Fallback for URLs that might not be perfectly formed but still contain a recognizable path part
+    // Example: https://tenant-my.sharepoint.com/personal/user_domain_com/Documents/MyFile.docx
+    // We are interested in "personal/user_domain_com/Documents/MyFile.docx"
+    const schemeSeparator = '://';
+    const schemeIndex = cloudUrl.indexOf(schemeSeparator);
+    if (schemeIndex === -1) {
+        logger.warn(`[OfficeInterop] Cloud URL does not contain '://': ${cloudUrl}`);
+        return null;
+    }
+
+    const pathStartIndex = cloudUrl.indexOf('/', schemeIndex + schemeSeparator.length);
+    if (pathStartIndex === -1) {
+        logger.warn(`[OfficeInterop] Cloud URL does not contain a path component after domain: ${cloudUrl}`);
+        return null;
+    }
+
+    normalizedUrlPath = cloudUrl.substring(pathStartIndex + 1); // +1 to remove leading slash
+    normalizedUrlPath = decodeURIComponent(normalizedUrlPath).replace(/\//g, '\\\\');
+    logger.debug(`[OfficeInterop] Fallback normalized path: ${normalizedUrlPath}`);
+  }
+
+
+  if (!normalizedUrlPath) {
+    logger.warn(`[OfficeInterop] Could not derive a normalized path from URL: ${cloudUrl}`);
+    return null;
+  }
+
+  // 1. Registry-Based Mapping
+  // Common Office versions. Add more if needed.
+  const officeVersions = ['16.0', '15.0']; // Office 2016/365, Office 2013
+  const registryKeyTemplates = [
+    // Path for specific Office version sync locations
+    'Software\\\\Microsoft\\\\Office\\\\{version}\\\\Common\\\\Internet\\\\LocalSyncClientDiskLocation',
+    // Path for general OneDrive client mount points (often more reliable for modern OneDrive)
+    'Software\\\\SyncEngines\\\\Providers\\\\OneDrive\\\\MountPoints',
+    // Another common OneDrive location
+    'Software\\\\Microsoft\\\\OneDrive\\\\Accounts\\\\Business1\\\\UserFolder', // Business1, Business2 etc. might exist
+    'Software\\\\Microsoft\\\\OneDrive\\\\Accounts\\\\Personal\\\\UserFolder', // Personal
+  ];
+
+  for (const version of officeVersions.concat('')) { // Add empty string for version-agnostic paths
+    for (const regPathTemplate of registryKeyTemplates) {
+      if (regPathTemplate.includes('{version}') && !version) continue; // Skip versioned paths if version is empty
+
+      const regPath = `HKEY_CURRENT_USER\\\\${regPathTemplate.replace('{version}', version)}`;
+      try {
+        const stdout = await queryRegistry(regPath);
+        if (stdout) {
+          const lines = stdout.split('\\n').map(l => l.trim()).filter(l => l);
+
+          if (regPathTemplate.includes('LocalSyncClientDiskLocation')) {
+            for (const line of lines) {
+              // Example: LocalSyncClientDiskLocation    REG_SZ    C:\Users\username\OneDrive - TenantName
+              const match = line.match(/LocalSyncClientDiskLocation\s+REG_SZ\s+(.+)/);
+              if (match && match[1]) {
+                const syncRoot = match[1].trim();
+                const localPath = await checkPotentialPath(syncRoot, normalizedUrlPath, "Registry (LocalSyncClientDiskLocation)");
+                if (localPath) return localPath;
+              }
+            }
+          } else if (regPathTemplate.includes('UserFolder')) {
+             for (const line of lines) {
+                // Example: UserFolder    REG_SZ    C:\Users\username\OneDrive - TenantName
+                const match = line.match(/UserFolder\s+REG_SZ\s+(.+)/);
+                if (match && match[1]) {
+                    const syncRoot = match[1].trim();
+                    const localPath = await checkPotentialPath(syncRoot, normalizedUrlPath, "Registry (UserFolder)");
+                    if (localPath) return localPath;
+                }
+            }
+          } else if (regPathTemplate.includes('MountPoints')) {
+            // MountPoints keys are the IDs, values contain Path
+            // HKEY_CURRENT_USER\Software\SyncEngines\Providers\OneDrive\MountPoints\SP_Tenant_SiteID_WebID
+            //    Path    REG_SZ    C:\Users\user\Tenant\Site - Library
+            const mountPointKeys = await queryRegistrySubKeys(regPath);
+            for (const mpKey of mountPointKeys) {
+              const fullMpKeyPath = `${regPath}\\\\${mpKey}`;
+              const pathValueStdout = await queryRegistryValue(fullMpKeyPath, 'Path');
+              if (pathValueStdout) {
+                const match = pathValueStdout.match(/Path\s+REG_SZ\s+(.+)/);
+                if (match && match[1]) {
+                  const syncRoot = match[1].trim();
+                  const localPath = await checkPotentialPath(syncRoot, normalizedUrlPath, `Registry (MountPoint ${mpKey})`);
+                  if (localPath) return localPath;
+                }
+              }
+            }
+          }
+        }
+      } catch (error) {
+        logger.debug(`[OfficeInterop] Registry: Error querying ${regPath}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+  logger.info('[OfficeInterop] Registry-based resolution failed or no match found.');
+
+  // 2. Environment Variables (Fallback)
+  const envVarsToCheck = [
+    'OneDriveCommercial',
+    'OneDriveConsumer',
+    'OneDrive',
+  ];
+
+  for (const envVar of envVarsToCheck) {
+    const syncRoot = process.env[envVar];
+    if (syncRoot) {
+      logger.debug(`[OfficeInterop] Environment Variable: Checking ${envVar}=${syncRoot}`);
+      const localPath = await checkPotentialPath(syncRoot, normalizedUrlPath, `Env Var (${envVar})`);
+      if (localPath) return localPath;
+    }
+  }
+  logger.info('[OfficeInterop] Environment variable-based resolution failed or no match found.');
+
+  logger.warn(`[OfficeInterop] Could not resolve cloud URL to a local path: ${cloudUrl}`);
+  return null;
+}
+
+/**
+ * Helper function to check potential local paths derived from a sync root and a normalized URL path.
+ * @param syncRoot The base path of the sync folder.
+ * @param normalizedUrlPath The normalized path extracted from the cloud URL.
+ * @param context A string for logging context (e.g., "Registry", "Env Var").
+ * @returns The validated local path string if found, otherwise null.
+ */
+async function checkPotentialPath(syncRoot: string, normalizedUrlPath: string, context: string): Promise<string | null> {
+    // Attempt 1: Direct join
+    let potentialPath = joinPath(syncRoot, normalizedUrlPath);
+    logger.debug(`[OfficeInterop] ${context}: Trying path ${potentialPath}`);
+    if (existsSync(potentialPath)) {
+        logger.info(`[OfficeInterop] ${context}: Resolved local path: ${potentialPath}`);
+        return potentialPath;
+    }
+
+    // Attempt 2: Try to find a common suffix by stripping leading parts from normalizedUrlPath.
+    // This is to handle cases where normalizedUrlPath might contain parts like "personal/user_id/"
+    // or "sites/SiteName/" which are already implicitly part of the syncRoot.
+    const urlParts = normalizedUrlPath.split('\\\\');
+    for (let i = 1; i < urlParts.length; i++) { // Start from 1 to strip at least one part
+        const subPath = urlParts.slice(i).join('\\\\');
+        if (!subPath) continue; // Avoid joining with an empty path
+        potentialPath = joinPath(syncRoot, subPath);
+        logger.debug(`[OfficeInterop] ${context}: Trying sub-path ${potentialPath} (stripped ${i} part(s))`);
+        if (existsSync(potentialPath)) {
+            logger.info(`[OfficeInterop] ${context}: Resolved local path with sub-path: ${potentialPath}`);
+            return potentialPath;
+        }
+    }
+    return null;
+}
+
+
+/**
+ * Helper function to query the Windows Registry.
+ * Executes `reg query <keyPath> /s`
+ * @param keyPath The full path of the registry key.
+ * @returns Promise resolving to the stdout of the command.
+ */
+function queryRegistry(keyPath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const command = `reg query "${keyPath}" /s`;
+    logger.debug(`[OfficeInterop] Executing registry query: ${command}`);
+    exec(command, { encoding: 'utf-8' }, (error, stdout, stderr) => {
+      if (error) {
+        if (stderr && (stderr.toLowerCase().includes('unable to find the specified registry key or value') || stderr.toLowerCase().includes('cannot find'))) {
+            logger.debug(`[OfficeInterop] Registry key not found: ${keyPath}`);
+            resolve('');
+            return;
+        }
+        logger.warn(`[OfficeInterop] Registry query error for ${keyPath}: ${stderr || error.message}`);
+        reject(new Error(stderr || error.message));
+        return;
+      }
+      resolve(stdout);
+    });
+  });
+}
+
+/**
+ * Helper function to query a specific value from a Windows Registry key.
+ * Executes `reg query <keyPath> /v <valueName>`
+ * @param keyPath The full path of the registry key.
+ * @param valueName The name of the value to query.
+ * @returns Promise resolving to the stdout of the command.
+ */
+function queryRegistryValue(keyPath: string, valueName: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const command = `reg query "${keyPath}" /v "${valueName}"`;
+    logger.debug(`[OfficeInterop] Executing registry query for value: ${command}`);
+    exec(command, { encoding: 'utf-8' }, (error, stdout, stderr) => {
+      if (error) {
+         if (stderr && (stderr.toLowerCase().includes('unable to find the specified registry key or value') || stderr.toLowerCase().includes('cannot find'))) {
+            logger.debug(`[OfficeInterop] Registry value "${valueName}" not found in key: ${keyPath}`);
+            resolve('');
+            return;
+        }
+        logger.warn(`[OfficeInterop] Registry query error for value "${valueName}" in ${keyPath}: ${stderr || error.message}`);
+        reject(new Error(stderr || error.message));
+        return;
+      }
+      // Output format:
+      // \n<KeyPath>\n    <ValueName>    <Type>    <Data>\n
+      // We need to parse <Data>
+      const lines = stdout.split('\\n').map(l => l.trim()).filter(l => l);
+      for (const line of lines) {
+          const parts = line.split(/\s{2,}/); // Split by 2 or more spaces
+          if (parts.length >= 3 && parts[0] === valueName && parts[1] === 'REG_SZ') {
+              resolve(line); // Return the whole line for the main function to parse REG_SZ data
+              return;
+          }
+      }
+      resolve(''); // Value not found in expected format
+    });
+  });
+}
+
+/**
+ * Helper function to list subkeys of a Windows Registry key.
+ * Parses output from `reg query <keyPath>` which lists subkeys directly.
+ * @param keyPath The full path of the registry key.
+ * @returns Promise resolving to an array of subkey names (just the name, not full path).
+ */
+async function queryRegistrySubKeys(keyPath: string): Promise<string[]> {
+    // Query without /s to list direct subkeys primarily
+    const command = `reg query "${keyPath}"`;
+    logger.debug(`[OfficeInterop] Executing registry query for subkeys: ${command}`);
+    
+    return new Promise((resolve, reject) => {
+        exec(command, { encoding: 'utf-8' }, (error, stdout, stderr) => {
+            if (error) {
+                if (stderr && (stderr.toLowerCase().includes('unable to find the specified registry key or value') || stderr.toLowerCase().includes('cannot find'))) {
+                    logger.debug(`[OfficeInterop] Registry key for subkey listing not found: ${keyPath}`);
+                    resolve([]);
+                    return;
+                }
+                logger.warn(`[OfficeInterop] Registry query error for subkeys in ${keyPath}: ${stderr || error.message}`);
+                reject(new Error(stderr || error.message));
+                return;
+            }
+
+            const subKeys: string[] = [];
+            if (stdout) {
+                const lines = stdout.split('\\n');
+                for (const line of lines) {
+                    const trimmedLine = line.trim();
+                    // Subkeys are listed as direct children of the queried keyPath
+                    // e.g., HKEY_CURRENT_USER\Software\SyncEngines\Providers\OneDrive\MountPoints\SP_Tenant_SiteID_WebID
+                    if (trimmedLine.startsWith(keyPath) && trimmedLine.length > keyPath.length) {
+                        const potentialSubKeyFullPath = trimmedLine;
+                        // Ensure it's a direct subkey by checking if the remainder contains no further backslashes
+                        const subKeyNamePart = potentialSubKeyFullPath.substring(keyPath.length + 1); // +1 for the backslash
+                        if (subKeyNamePart && !subKeyNamePart.includes('\\\\')) {
+                            subKeys.push(subKeyNamePart);
+                        }
+                    }
+                }
+            }
+            resolve([...new Set(subKeys)]); // Deduplicate
+        });
+    });
 }

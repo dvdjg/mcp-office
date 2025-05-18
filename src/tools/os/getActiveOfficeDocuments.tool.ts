@@ -9,6 +9,7 @@ import {
   releaseObject,
   OfficeAppName,
   DocumentPathInfo, // Import the new interface
+  getCloudUrlLocalPath,
 } from '../../utils/officeInterop.js';
 import { join as joinPath, isAbsolute } from 'path'; // For path manipulation
 
@@ -57,36 +58,50 @@ const getActiveOfficeDocumentsTool: McpResource = {
         if (appInstance) {
           logger.info(`[os/getActiveOfficeDocuments] Successfully connected to ${appDef.name}. Fetching open documents...`);
           const documentInfos = await appDef.getter(appInstance);
-          documentInfos.forEach(docInfo => {
+          for (const docInfo of documentInfos) {
             if (docInfo && docInfo.name) { // Ensure we have at least a name
               let resolvedPath = docInfo.fullName; // Default to fullName
               let isLocal = false;
 
-              // Attempt to determine if it's a local path
-              // Check if docInfo.path is a non-URL-like string and docInfo.name exists
-              if (docInfo.path && !docInfo.path.match(/^https?:\/\//i) && docInfo.name) {
-                 // If docInfo.path is already absolute, use it, otherwise join with a placeholder (e.g. if Path is empty for unsaved files)
-                 // For COM, Path property usually gives the directory.
-                 if (isAbsolute(docInfo.path) || docInfo.path.match(/^[a-zA-Z]:\\/)) { // Basic check for Windows absolute path
-                    resolvedPath = joinPath(docInfo.path, docInfo.name);
-                    isLocal = true;
-                 } else if (docInfo.fullName && !docInfo.fullName.match(/^https?:\/\//i) && (isAbsolute(docInfo.fullName) || docInfo.fullName.match(/^[a-zA-Z]:\\/))) {
-                    // If fullName itself is a local path (e.g. for unsaved files where Path might be empty)
-                    resolvedPath = docInfo.fullName;
-                    isLocal = true;
-                 } else {
-                    // If path is not absolute or clearly local, and fullName is a URL, stick with fullName
-                    resolvedPath = docInfo.fullName; // Keep URL if path is not local-like
-                    isLocal = false;
-                 }
-              } else if (docInfo.fullName && !docInfo.fullName.match(/^https?:\/\//i) && (isAbsolute(docInfo.fullName) || docInfo.fullName.match(/^[a-zA-Z]:\\/))) {
-                // Fallback: if fullName is a local path (e.g. C:\...)
-                resolvedPath = docInfo.fullName;
-                isLocal = true;
+              if (docInfo.fullName && !!docInfo.fullName.match(/^https?:\/\//i)) {
+                // It's a URL, try to resolve it
+                const localPathFromCloud = await getCloudUrlLocalPath(docInfo.fullName);
+                if (localPathFromCloud) {
+                  resolvedPath = localPathFromCloud;
+                  isLocal = true;
+                  logger.debug(`[os/getActiveOfficeDocuments] Resolved cloud URL '${docInfo.fullName}' to local path '${resolvedPath}'`);
+                } else {
+                  // Could not resolve cloud URL, keep original URL
+                  resolvedPath = docInfo.fullName;
+                  isLocal = false; // It's a URL, so not local
+                  logger.debug(`[os/getActiveOfficeDocuments] Could not resolve cloud URL '${docInfo.fullName}' to a local path. Using original URL.`);
+                }
               } else {
-                // Default to fullName if it's a URL or path is missing/URL-like
-                resolvedPath = docInfo.fullName;
-                isLocal = docInfo.fullName ? !docInfo.fullName.match(/^https?:\/\//i) : false;
+                // Not a URL, apply existing local path logic
+                if (docInfo.path && !docInfo.path.match(/^https?:\/\//i) && docInfo.name) {
+                  // If docInfo.path is already absolute, use it, otherwise join with a placeholder (e.g. if Path is empty for unsaved files)
+                  // For COM, Path property usually gives the directory.
+                  if (isAbsolute(docInfo.path) || !!docInfo.path.match(/^[a-zA-Z]:\\/)) { // Basic check for Windows absolute path
+                      resolvedPath = joinPath(docInfo.path, docInfo.name);
+                      isLocal = true;
+                   } else if (docInfo.fullName && !docInfo.fullName.match(/^https?:\/\//i) && (isAbsolute(docInfo.fullName) || !!docInfo.fullName.match(/^[a-zA-Z]:\\/))) {
+                      // If fullName itself is a local path (e.g. for unsaved files where Path might be empty)
+                      resolvedPath = docInfo.fullName;
+                      isLocal = true;
+                   } else {
+                      // If path is not absolute or clearly local, and fullName is a URL, stick with fullName
+                      resolvedPath = docInfo.fullName;
+                      isLocal = false;
+                   }
+                } else if (docInfo.fullName && !docInfo.fullName.match(/^https?:\/\//i) && (isAbsolute(docInfo.fullName) || !!docInfo.fullName.match(/^[a-zA-Z]:\\/))) {
+                  // Fallback: if fullName is a local path (e.g. C:\...)
+                  resolvedPath = docInfo.fullName;
+                  isLocal = true;
+                } else {
+                  // Default to fullName if it's a URL or path is missing/URL-like
+                  resolvedPath = docInfo.fullName;
+                  isLocal = docInfo.fullName ? (!docInfo.fullName.match(/^https?:\/\//i) && (isAbsolute(docInfo.fullName) || !!docInfo.fullName.match(/^[a-zA-Z]:\\/))) : false;
+                }
               }
               
               allOpenDocuments.push({
@@ -101,7 +116,7 @@ const getActiveOfficeDocumentsTool: McpResource = {
             } else {
               logger.warn(`[os/getActiveOfficeDocuments] Invalid or empty document info received for an open ${appDef.type} document. Info: ${JSON.stringify(docInfo)}`);
             }
-          });
+          }
           logger.info(`[os/getActiveOfficeDocuments] Processed ${documentInfos.length} document entries for ${appDef.name}.`);
         } else {
           logger.info(`[os/getActiveOfficeDocuments] No active instance of ${appDef.name} found or could not connect.`);
