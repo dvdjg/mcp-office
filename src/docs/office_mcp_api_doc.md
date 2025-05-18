@@ -2001,9 +2001,14 @@ You've been asked to "quickly review" a document. Before you dive in, get its vi
 **Operations**:
 - **list**: Retrieves a list of active Office documents.
   - **Input**: None.
-  - **Output**: `{ success: boolean, documents?: { type: string, path: string }[], error?: string }`.
-    - `type`: Can be 'Word', 'Excel', or 'PowerPoint'.
-    - `path`: Full file path of the open document.
+  - **Output**: `{ success: boolean, data?: { documents: ActiveOfficeDocument[] }, error?: string }`.
+    - `documents`: An array of `ActiveOfficeDocument` objects, where each object has the following structure:
+      - `fullName` (string): The full path or URL as reported by the Office application.
+      - `path` (string): The directory path as reported by the Office application. Can be empty or a URL.
+      - `name` (string): The filename as reported by the Office application.
+      - `resolvedPath` (string): The script's best attempt to determine a usable local file system path. If the document is cloud-based and not locally synced in a detectable way, this will be the `fullName` (URL).
+      - `applicationType` (string): Can be 'Word', 'Excel', or 'PowerPoint'.
+      - `isLocal` (boolean): `true` if `resolvedPath` is determined to be a local file system path, `false` otherwise (e.g., if it's a URL).
   - **Example**:
     ```bash
     curl -X GET "http://localhost:3000/os/getActiveOfficeDocuments"
@@ -2012,10 +2017,26 @@ You've been asked to "quickly review" a document. Before you dive in, get its vi
     ```json
     {
       "success": true,
-      "documents": [
-        { "type": "Word", "path": "C:\\Users\\David\\Documents\\Reports\\Q1_Sales_Report.docx" },
-        { "type": "Excel", "path": "C:\\Users\\David\\Spreadsheets\\Financial_Projections_v3.xlsx" }
-      ]
+      "data": {
+        "documents": [
+          {
+            "fullName": "C:\\Users\\David\\Documents\\Reports\\Q1_Sales_Report.docx",
+            "path": "C:\\Users\\David\\Documents\\Reports",
+            "name": "Q1_Sales_Report.docx",
+            "resolvedPath": "C:\\Users\\David\\Documents\\Reports\\Q1_Sales_Report.docx",
+            "applicationType": "Word",
+            "isLocal": true
+          },
+          {
+            "fullName": "https://example.sharepoint.com/sites/MySite/Shared%20Documents/Financial_Projections_v3.xlsx",
+            "path": "https://example.sharepoint.com/sites/MySite/Shared%20Documents",
+            "name": "Financial_Projections_v3.xlsx",
+            "resolvedPath": "https://example.sharepoint.com/sites/MySite/Shared%20Documents/Financial_Projections_v3.xlsx",
+            "applicationType": "Excel",
+            "isLocal": false
+          }
+        ]
+      }
     }
     ```
 

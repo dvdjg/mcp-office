@@ -5,7 +5,7 @@
  * @copyright Copyright (c) 2025 David Jurado
  * @license MIT
  */
-import * as winax from 'winax';
+import winax from 'winax';
 import { mkdir, readFile, writeFile, stat, unlink } from 'fs/promises'; // For async file operations
 import { resolve as resolvePath, join as joinPath } from 'path';     // For path manipulation
 import { tmpdir } from 'os';         // For temporary directory
@@ -495,9 +495,15 @@ export async function getWordElementContent(
  * @returns A promise resolving to an array of full document paths.
  * @throws {Error} If accessing documents fails.
  */
-export async function getOpenWordDocuments(wordApp: any): Promise<string[]> {
+export interface DocumentPathInfo {
+  fullName: string;
+  path: string; // Directory path
+  name: string;   // Filename
+}
+
+export async function getOpenWordDocuments(wordApp: any): Promise<DocumentPathInfo[]> {
   logger.info('[OfficeInterop] Attempting to get open Word documents...');
-  const openDocuments: string[] = [];
+  const openDocuments: DocumentPathInfo[] = [];
   if (!wordApp || typeof wordApp.Documents === 'undefined' || typeof wordApp.Documents.Count === 'undefined') {
     logger.warn('[OfficeInterop] Word application or Documents collection is not available.');
     return openDocuments; // Return empty if app or Documents collection is invalid
@@ -511,11 +517,15 @@ export async function getOpenWordDocuments(wordApp: any): Promise<string[]> {
       let doc: any = null;
       try {
         doc = documents.Item(i);
-        if (doc && typeof doc.FullName === 'string') {
-          openDocuments.push(doc.FullName);
-          logger.debug(`[OfficeInterop] Word - Added document: ${doc.FullName}`);
+        const fullName = typeof doc.FullName === 'string' ? doc.FullName : '';
+        const path = typeof doc.Path === 'string' ? doc.Path : '';
+        const name = typeof doc.Name === 'string' ? doc.Name : '';
+
+        if (fullName && name) { // Require at least FullName and Name
+          openDocuments.push({ fullName, path, name });
+          logger.debug(`[OfficeInterop] Word - Added document: FullName='${fullName}', Path='${path}', Name='${name}'`);
         } else {
-          logger.warn(`[OfficeInterop] Word - Document item ${i} or its FullName is invalid.`);
+          logger.warn(`[OfficeInterop] Word - Document item ${i} has invalid/missing FullName or Name. FullName: '${fullName}', Path: '${path}', Name: '${name}'`);
         }
       } catch (itemError) {
         logger.warn(`[OfficeInterop] Word - Error accessing document item ${i}: ${itemError instanceof Error ? itemError.message : String(itemError)}`);
@@ -523,7 +533,7 @@ export async function getOpenWordDocuments(wordApp: any): Promise<string[]> {
         if (doc) releaseObject(doc); // Release individual document object
       }
     }
-    logger.info(`[OfficeInterop] Retrieved ${openDocuments.length} open Word document path(s).`);
+    logger.info(`[OfficeInterop] Retrieved info for ${openDocuments.length} open Word document(s).`);
     return openDocuments;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -538,9 +548,9 @@ export async function getOpenWordDocuments(wordApp: any): Promise<string[]> {
  * @returns A promise resolving to an array of full workbook paths.
  * @throws {Error} If accessing workbooks fails.
  */
-export async function getOpenExcelWorkbooks(excelApp: any): Promise<string[]> {
+export async function getOpenExcelWorkbooks(excelApp: any): Promise<DocumentPathInfo[]> {
   logger.info('[OfficeInterop] Attempting to get open Excel workbooks...');
-  const openWorkbooks: string[] = [];
+  const openWorkbooks: DocumentPathInfo[] = [];
    if (!excelApp || typeof excelApp.Workbooks === 'undefined' || typeof excelApp.Workbooks.Count === 'undefined') {
     logger.warn('[OfficeInterop] Excel application or Workbooks collection is not available.');
     return openWorkbooks;
@@ -554,11 +564,15 @@ export async function getOpenExcelWorkbooks(excelApp: any): Promise<string[]> {
       let wb: any = null;
       try {
         wb = workbooks.Item(i);
-        if (wb && typeof wb.FullName === 'string') {
-          openWorkbooks.push(wb.FullName);
-          logger.debug(`[OfficeInterop] Excel - Added workbook: ${wb.FullName}`);
+        const fullName = typeof wb.FullName === 'string' ? wb.FullName : '';
+        const path = typeof wb.Path === 'string' ? wb.Path : '';
+        const name = typeof wb.Name === 'string' ? wb.Name : '';
+        
+        if (fullName && name) {
+          openWorkbooks.push({ fullName, path, name });
+          logger.debug(`[OfficeInterop] Excel - Added workbook: FullName='${fullName}', Path='${path}', Name='${name}'`);
         } else {
-          logger.warn(`[OfficeInterop] Excel - Workbook item ${i} or its FullName is invalid.`);
+          logger.warn(`[OfficeInterop] Excel - Workbook item ${i} has invalid/missing FullName or Name. FullName: '${fullName}', Path: '${path}', Name: '${name}'`);
         }
       } catch (itemError) {
         logger.warn(`[OfficeInterop] Excel - Error accessing workbook item ${i}: ${itemError instanceof Error ? itemError.message : String(itemError)}`);
@@ -566,7 +580,7 @@ export async function getOpenExcelWorkbooks(excelApp: any): Promise<string[]> {
         if (wb) releaseObject(wb); // Release individual workbook object
       }
     }
-    logger.info(`[OfficeInterop] Retrieved ${openWorkbooks.length} open Excel workbook path(s).`);
+    logger.info(`[OfficeInterop] Retrieved info for ${openWorkbooks.length} open Excel workbook(s).`);
     return openWorkbooks;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -581,9 +595,9 @@ export async function getOpenExcelWorkbooks(excelApp: any): Promise<string[]> {
  * @returns A promise resolving to an array of full presentation paths.
  * @throws {Error} If accessing presentations fails.
  */
-export async function getOpenPowerPointPresentations(pptApp: any): Promise<string[]> {
+export async function getOpenPowerPointPresentations(pptApp: any): Promise<DocumentPathInfo[]> {
   logger.info('[OfficeInterop] Attempting to get open PowerPoint presentations...');
-  const openPresentations: string[] = [];
+  const openPresentations: DocumentPathInfo[] = [];
   if (!pptApp || typeof pptApp.Presentations === 'undefined' || typeof pptApp.Presentations.Count === 'undefined') {
     logger.warn('[OfficeInterop] PowerPoint application or Presentations collection is not available.');
     return openPresentations;
@@ -597,13 +611,17 @@ export async function getOpenPowerPointPresentations(pptApp: any): Promise<strin
       let pres: any = null;
       try {
         pres = presentations.Item(i);
+        const fullName = typeof pres.FullName === 'string' ? pres.FullName : '';
+        const path = typeof pres.Path === 'string' ? pres.Path : '';
+        const name = typeof pres.Name === 'string' ? pres.Name : '';
+
         // PowerPoint presentations might not have a FullName if they haven't been saved yet.
-        // Check if FullName exists and is a non-empty string.
-        if (pres && typeof pres.FullName === 'string' && pres.FullName) {
-          openPresentations.push(pres.FullName);
-          logger.debug(`[OfficeInterop] PowerPoint - Added presentation: ${pres.FullName}`);
+        // Name should generally be available.
+        if (name) { // Require at least Name for unsaved presentations
+          openPresentations.push({ fullName, path, name });
+          logger.debug(`[OfficeInterop] PowerPoint - Added presentation: FullName='${fullName}', Path='${path}', Name='${name}'`);
         } else {
-          logger.warn(`[OfficeInterop] PowerPoint - Presentation item ${i} has no valid FullName (possibly unsaved).`);
+          logger.warn(`[OfficeInterop] PowerPoint - Presentation item ${i} has no valid Name. FullName: '${fullName}', Path: '${path}', Name: '${name}'`);
         }
       } catch (itemError) {
         logger.warn(`[OfficeInterop] PowerPoint - Error accessing presentation item ${i}: ${itemError instanceof Error ? itemError.message : String(itemError)}`);
@@ -611,7 +629,7 @@ export async function getOpenPowerPointPresentations(pptApp: any): Promise<strin
         if (pres) releaseObject(pres); // Release individual presentation object
       }
     }
-    logger.info(`[OfficeInterop] Retrieved ${openPresentations.length} open PowerPoint presentation path(s).`);
+    logger.info(`[OfficeInterop] Retrieved info for ${openPresentations.length} open PowerPoint presentation(s).`);
     return openPresentations;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);

@@ -41,10 +41,10 @@ const concludeStoryInDocumentTool: McpResource = {
           return createErrorResponse('ACTIVE_DOCS_ERROR', 'Failed to retrieve active Office documents.', activeDocsResponse.error);
         }
         const activeWordDocs = activeDocsResponse.data.documents.filter((doc: ActiveOfficeDocument) => doc.applicationType === 'Word');
-        const foundDoc = activeWordDocs.find((doc: ActiveOfficeDocument) => doc.filePath.endsWith(targetPath)); // Simple name match
+        const foundDoc = activeWordDocs.find((doc: ActiveOfficeDocument) => doc.resolvedPath.endsWith(targetPath)); // Simple name match
 
         if (foundDoc) {
-          targetPath = foundDoc.filePath;
+          targetPath = foundDoc.resolvedPath;
           logger.info(`Found active document: ${targetPath}`);
         } else {
           // For this task, if a name is given and it's not active, an error is returned.

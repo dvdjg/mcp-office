@@ -79,10 +79,10 @@ export const formatTablesInWorksheetTool: McpResource[] = [{
         if (activeExcelDocs.length === 0) {
           throw new Error('No active Excel document found. Please open an Excel file or provide inputExcelPath.');
         } else if (activeExcelDocs.length > 1) {
-          const docPaths = activeExcelDocs.map((doc: ActiveOfficeDocument) => doc.filePath).join(', ');
+          const docPaths = activeExcelDocs.map((doc: ActiveOfficeDocument) => doc.resolvedPath).join(', ');
           throw new Error(`Multiple active Excel documents found: ${docPaths}. Please specify the target file using inputExcelPath or close other Excel files.`);
         } else {
-          absoluteFilePath = path.resolve(activeExcelDocs[0].filePath);
+          absoluteFilePath = path.resolve(activeExcelDocs[0].resolvedPath);
           logger.info(`Using active Excel document: ${absoluteFilePath}`);
         }
       }

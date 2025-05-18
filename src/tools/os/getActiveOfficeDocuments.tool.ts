@@ -8,12 +8,18 @@ import {
   getOpenPowerPointPresentations,
   releaseObject,
   OfficeAppName,
+  DocumentPathInfo, // Import the new interface
 } from '../../utils/officeInterop.js';
+import { join as joinPath, isAbsolute } from 'path'; // For path manipulation
 
 // Define an interface for the structure of an active Office document
 export interface ActiveOfficeDocument {
-  filePath: string;
+  fullName: string; // Original full path or URL from COM
+  path: string;     // Directory path from COM, if available
+  name: string;     // Filename from COM
+  resolvedPath: string; // Best guess for local path, or URL if not local/resolvable
   applicationType: 'Word' | 'Excel' | 'PowerPoint';
+  isLocal: boolean; // Flag indicating if resolvedPath is a local file system path
 }
 
 // Define the input interface for the tool (currently no specific inputs)
@@ -36,7 +42,7 @@ const getActiveOfficeDocumentsTool: McpResource = {
       return { success: true, data: { documents: [] } };
     }
 
-    const officeAppDefinitions: { name: OfficeAppName; type: ActiveOfficeDocument['applicationType']; getter: (app: any) => Promise<string[]> }[] = [
+    const officeAppDefinitions: { name: OfficeAppName; type: ActiveOfficeDocument['applicationType']; getter: (app: any) => Promise<DocumentPathInfo[]> }[] = [
       { name: 'Word.Application', type: 'Word', getter: getOpenWordDocuments },
       { name: 'Excel.Application', type: 'Excel', getter: getOpenExcelWorkbooks },
       { name: 'PowerPoint.Application', type: 'PowerPoint', getter: getOpenPowerPointPresentations },
@@ -50,16 +56,53 @@ const getActiveOfficeDocumentsTool: McpResource = {
 
         if (appInstance) {
           logger.info(`[os/getActiveOfficeDocuments] Successfully connected to ${appDef.name}. Fetching open documents...`);
-          const filePaths = await appDef.getter(appInstance);
-          filePaths.forEach(filePath => {
-            if (filePath && typeof filePath === 'string' && filePath.trim() !== '') {
-              allOpenDocuments.push({ filePath, applicationType: appDef.type });
-              logger.debug(`[os/getActiveOfficeDocuments] Found open ${appDef.type} document: ${filePath}`);
+          const documentInfos = await appDef.getter(appInstance);
+          documentInfos.forEach(docInfo => {
+            if (docInfo && docInfo.name) { // Ensure we have at least a name
+              let resolvedPath = docInfo.fullName; // Default to fullName
+              let isLocal = false;
+
+              // Attempt to determine if it's a local path
+              // Check if docInfo.path is a non-URL-like string and docInfo.name exists
+              if (docInfo.path && !docInfo.path.match(/^https?:\/\//i) && docInfo.name) {
+                 // If docInfo.path is already absolute, use it, otherwise join with a placeholder (e.g. if Path is empty for unsaved files)
+                 // For COM, Path property usually gives the directory.
+                 if (isAbsolute(docInfo.path) || docInfo.path.match(/^[a-zA-Z]:\\/)) { // Basic check for Windows absolute path
+                    resolvedPath = joinPath(docInfo.path, docInfo.name);
+                    isLocal = true;
+                 } else if (docInfo.fullName && !docInfo.fullName.match(/^https?:\/\//i) && (isAbsolute(docInfo.fullName) || docInfo.fullName.match(/^[a-zA-Z]:\\/))) {
+                    // If fullName itself is a local path (e.g. for unsaved files where Path might be empty)
+                    resolvedPath = docInfo.fullName;
+                    isLocal = true;
+                 } else {
+                    // If path is not absolute or clearly local, and fullName is a URL, stick with fullName
+                    resolvedPath = docInfo.fullName; // Keep URL if path is not local-like
+                    isLocal = false;
+                 }
+              } else if (docInfo.fullName && !docInfo.fullName.match(/^https?:\/\//i) && (isAbsolute(docInfo.fullName) || docInfo.fullName.match(/^[a-zA-Z]:\\/))) {
+                // Fallback: if fullName is a local path (e.g. C:\...)
+                resolvedPath = docInfo.fullName;
+                isLocal = true;
+              } else {
+                // Default to fullName if it's a URL or path is missing/URL-like
+                resolvedPath = docInfo.fullName;
+                isLocal = docInfo.fullName ? !docInfo.fullName.match(/^https?:\/\//i) : false;
+              }
+              
+              allOpenDocuments.push({
+                fullName: docInfo.fullName,
+                path: docInfo.path,
+                name: docInfo.name,
+                resolvedPath,
+                applicationType: appDef.type,
+                isLocal,
+              });
+              logger.debug(`[os/getActiveOfficeDocuments] Found open ${appDef.type} document: Name='${docInfo.name}', FullName='${docInfo.fullName}', Path='${docInfo.path}', Resolved='${resolvedPath}', IsLocal=${isLocal}`);
             } else {
-              logger.warn(`[os/getActiveOfficeDocuments] Invalid or empty file path received for an open ${appDef.type} document.`);
+              logger.warn(`[os/getActiveOfficeDocuments] Invalid or empty document info received for an open ${appDef.type} document. Info: ${JSON.stringify(docInfo)}`);
             }
           });
-          logger.info(`[os/getActiveOfficeDocuments] Found ${filePaths.length} open document(s) for ${appDef.name}.`);
+          logger.info(`[os/getActiveOfficeDocuments] Processed ${documentInfos.length} document entries for ${appDef.name}.`);
         } else {
           logger.info(`[os/getActiveOfficeDocuments] No active instance of ${appDef.name} found or could not connect.`);
         }
@@ -94,3 +137,22 @@ const getActiveOfficeDocumentsTool: McpResource = {
 };
 
 export default getActiveOfficeDocumentsTool;
+
+// Add this block at the end of the file
+if (import.meta.url === `file://${process.argv[1]}` || import.meta.url === `file:///${process.argv[1].replace(/\\/g, '/')}`) {
+  (async () => {
+    try {
+      // Simulate a minimal input for the handler
+      const input: GetActiveOfficeDocumentsInput = {
+        requestId: 'manual-execution',
+        toolConfig: {},
+        mcp_override_env_vars: {}
+      };
+      const result = await getActiveOfficeDocumentsTool.handler(input);
+      console.log(JSON.stringify(result, null, 2));
+    } catch (error) {
+      console.error("Error executing tool handler:", error);
+      process.exit(1);
+    }
+  })();
+}
