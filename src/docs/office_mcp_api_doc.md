@@ -2006,7 +2006,7 @@ You've been asked to "quickly review" a document. Before you dive in, get its vi
       - `fullName` (string): The full path or URL as reported by the Office application.
       - `path` (string): The directory path as reported by the Office application. Can be empty or a URL.
       - `name` (string): The filename as reported by the Office application.
-      - `resolvedPath` (string): The script's best attempt to determine a usable local file system path. If the document is cloud-based and not locally synced in a detectable way, this will be the `fullName` (URL).
+      - `resolvedPath` (string | null): If the `fullName` of the document is a cloud URL (e.g., from OneDrive or SharePoint) and it is successfully converted to a local file system path, this property will contain the local path. If the `fullName` is already a local path, or if the conversion of a cloud URL to a local path fails, this property will be `null`. The `fullName` property always contains the original path as reported by the Office application.
       - `applicationType` (string): Can be 'Word', 'Excel', or 'PowerPoint'.
       - `isLocal` (boolean): `true` if `resolvedPath` is determined to be a local file system path, `false` otherwise (e.g., if it's a URL).
   - **Example**:
@@ -2023,16 +2023,24 @@ You've been asked to "quickly review" a document. Before you dive in, get its vi
             "fullName": "C:\\Users\\David\\Documents\\Reports\\Q1_Sales_Report.docx",
             "path": "C:\\Users\\David\\Documents\\Reports",
             "name": "Q1_Sales_Report.docx",
-            "resolvedPath": "C:\\Users\\David\\Documents\\Reports\\Q1_Sales_Report.docx",
+            "resolvedPath": null,
             "applicationType": "Word",
             "isLocal": true
           },
           {
-            "fullName": "https://example.sharepoint.com/sites/MySite/Shared%20Documents/Financial_Projections_v3.xlsx",
-            "path": "https://example.sharepoint.com/sites/MySite/Shared%20Documents",
-            "name": "Financial_Projections_v3.xlsx",
-            "resolvedPath": "https://example.sharepoint.com/sites/MySite/Shared%20Documents/Financial_Projections_v3.xlsx",
+            "fullName": "https://example-my.sharepoint.com/personal/user_domain_com/Documents/CloudDoc.xlsx",
+            "path": "https://example-my.sharepoint.com/personal/user_domain_com/Documents",
+            "name": "CloudDoc.xlsx",
+            "resolvedPath": "C:\\Users\\David\\OneDrive - Example\\Documents\\CloudDoc.xlsx",
             "applicationType": "Excel",
+            "isLocal": true
+          },
+          {
+            "fullName": "https://another.sharepoint.com/sites/TeamSite/Shared%20Documents/UnresolvedPres.pptx",
+            "path": "https://another.sharepoint.com/sites/TeamSite/Shared%20Documents",
+            "name": "UnresolvedPres.pptx",
+            "resolvedPath": null,
+            "applicationType": "PowerPoint",
             "isLocal": false
           }
         ]

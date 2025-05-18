@@ -18,9 +18,9 @@ export interface ActiveOfficeDocument {
   fullName: string; // Original full path or URL from COM
   path: string;     // Directory path from COM, if available
   name: string;     // Filename from COM
-  resolvedPath: string; // Best guess for local path, or URL if not local/resolvable
+  resolvedPath: string | null; // Local file path if resolvable (either originally local or converted from cloud), otherwise null.
   applicationType: 'Word' | 'Excel' | 'PowerPoint';
-  isLocal: boolean; // Flag indicating if resolvedPath is a local file system path
+  isLocal: boolean; // Flag indicating if resolvedPath is a local file system path (true if resolvedPath is a non-null local path)
 }
 
 // Define the input interface for the tool (currently no specific inputs)
@@ -60,61 +60,46 @@ const getActiveOfficeDocumentsTool: McpResource = {
           const documentInfos = await appDef.getter(appInstance);
           for (const docInfo of documentInfos) {
             if (docInfo && docInfo.name) { // Ensure we have at least a name
-              let resolvedPath = docInfo.fullName; // Default to fullName
+              const originalPath = docInfo.fullName;
+              let resolvedPath: string | null = null;
               let isLocal = false;
 
-              if (docInfo.fullName && !!docInfo.fullName.match(/^https?:\/\//i)) {
-                // It's a URL, try to resolve it
-                const localPathFromCloud = await getCloudUrlLocalPath(docInfo.fullName);
+              if (originalPath && originalPath.match(/^https?:\/\//i)) {
+                // It's a cloud URL
+                const localPathFromCloud = await getCloudUrlLocalPath(originalPath);
                 if (localPathFromCloud) {
                   resolvedPath = localPathFromCloud;
                   isLocal = true;
-                  logger.debug(`[os/getActiveOfficeDocuments] Resolved cloud URL '${docInfo.fullName}' to local path '${resolvedPath}'`);
+                  logger.debug(`[os/getActiveOfficeDocuments] Resolved cloud URL '${originalPath}' to local path '${resolvedPath}'`);
                 } else {
-                  // Could not resolve cloud URL, keep original URL
-                  resolvedPath = docInfo.fullName;
-                  isLocal = false; // It's a URL, so not local
-                  logger.debug(`[os/getActiveOfficeDocuments] Could not resolve cloud URL '${docInfo.fullName}' to a local path. Using original URL.`);
+                  // Conversion failed for cloud URL
+                  resolvedPath = null;
+                  isLocal = false;
+                  logger.debug(`[os/getActiveOfficeDocuments] Could not resolve cloud URL '${originalPath}' to a local path. resolvedPath is null.`);
                 }
+              } else if (originalPath) {
+                // Not a cloud URL, assume it's a local path
+                resolvedPath = originalPath;
+                isLocal = true; // If it's not a cloud URL and it exists, assume it's local.
+                logger.debug(`[os/getActiveOfficeDocuments] '${originalPath}' is not a cloud URL. Assuming local path. resolvedPath is '${resolvedPath}'`);
               } else {
-                // Not a URL, apply existing local path logic
-                if (docInfo.path && !docInfo.path.match(/^https?:\/\//i) && docInfo.name) {
-                  // If docInfo.path is already absolute, use it, otherwise join with a placeholder (e.g. if Path is empty for unsaved files)
-                  // For COM, Path property usually gives the directory.
-                  if (isAbsolute(docInfo.path) || !!docInfo.path.match(/^[a-zA-Z]:\\/)) { // Basic check for Windows absolute path
-                      resolvedPath = joinPath(docInfo.path, docInfo.name);
-                      isLocal = true;
-                   } else if (docInfo.fullName && !docInfo.fullName.match(/^https?:\/\//i) && (isAbsolute(docInfo.fullName) || !!docInfo.fullName.match(/^[a-zA-Z]:\\/))) {
-                      // If fullName itself is a local path (e.g. for unsaved files where Path might be empty)
-                      resolvedPath = docInfo.fullName;
-                      isLocal = true;
-                   } else {
-                      // If path is not absolute or clearly local, and fullName is a URL, stick with fullName
-                      resolvedPath = docInfo.fullName;
-                      isLocal = false;
-                   }
-                } else if (docInfo.fullName && !docInfo.fullName.match(/^https?:\/\//i) && (isAbsolute(docInfo.fullName) || !!docInfo.fullName.match(/^[a-zA-Z]:\\/))) {
-                  // Fallback: if fullName is a local path (e.g. C:\...)
-                  resolvedPath = docInfo.fullName;
-                  isLocal = true;
-                } else {
-                  // Default to fullName if it's a URL or path is missing/URL-like
-                  resolvedPath = docInfo.fullName;
-                  isLocal = docInfo.fullName ? (!docInfo.fullName.match(/^https?:\/\//i) && (isAbsolute(docInfo.fullName) || !!docInfo.fullName.match(/^[a-zA-Z]:\\/))) : false;
-                }
+                // originalPath (docInfo.fullName) is null or empty
+                resolvedPath = null;
+                isLocal = false;
+                logger.debug(`[os/getActiveOfficeDocuments] docInfo.fullName is null or empty. resolvedPath is null.`);
               }
               
               allOpenDocuments.push({
-                fullName: docInfo.fullName,
+                fullName: originalPath, // This is docInfo.fullName
                 path: docInfo.path,
                 name: docInfo.name,
-                resolvedPath,
+                resolvedPath, // This is the newly determined resolvedPath
                 applicationType: appDef.type,
-                isLocal,
+                isLocal, // This is the newly determined isLocal
               });
-              logger.debug(`[os/getActiveOfficeDocuments] Found open ${appDef.type} document: Name='${docInfo.name}', FullName='${docInfo.fullName}', Path='${docInfo.path}', Resolved='${resolvedPath}', IsLocal=${isLocal}`);
+              logger.debug(`[os/getActiveOfficeDocuments] Found open ${appDef.type} document: Name='${docInfo.name}', FullName='${originalPath}', Path='${docInfo.path}', ResolvedPath='${resolvedPath}', IsLocal=${isLocal}`);
             } else {
-              logger.warn(`[os/getActiveOfficeDocuments] Invalid or empty document info received for an open ${appDef.type} document. Info: ${JSON.stringify(docInfo)}`);
+              logger.warn(`[os/getActiveOfficeDocuments] Invalid or empty document info received for an open ${appDef.type} document (docInfo or docInfo.name is null/undefined). Info: ${JSON.stringify(docInfo)}`);
             }
           }
           logger.info(`[os/getActiveOfficeDocuments] Processed ${documentInfos.length} document entries for ${appDef.name}.`);
