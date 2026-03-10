@@ -1,4 +1,4 @@
-const fs = require('fs-extra');
+import fs from 'fs-extra';
 import * as path from 'path';
 import {
     listDirectoryContents as list_directory_contents,

@@ -7,7 +7,7 @@
  * @license MIT
  */
 import { z } from 'zod';
-import * as fs from 'fs-extra';
+import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'node:url'; // Added for ES Module __dirname equivalent
 import NodeCache from 'node-cache';

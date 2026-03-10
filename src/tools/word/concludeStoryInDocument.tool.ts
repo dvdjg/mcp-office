@@ -33,8 +33,11 @@ const concludeStoryInDocumentTool: McpResource = {
       let targetPath = documentNameOrPath;
 
       // Step 2: Identify Target Word Document
-      if (!targetPath.endsWith('.docx') && !targetPath.includes('/') && !targetPath.includes('\\\\')) {
-        // Assuming it's a name, try to find it in active documents
+      const looksLikePath = targetPath.includes('/') || targetPath.includes('\\');
+      const shouldResolveAgainstActiveDocs = !looksLikePath;
+
+      if (shouldResolveAgainstActiveDocs) {
+        // Treat bare filenames like "Story.docx" as document names to resolve from active docs.
         const activeDocsResponse = await getActiveOfficeDocumentsTool.handler({}, context);
         if (!activeDocsResponse.success) {
           logger.error('Failed to get active office documents', activeDocsResponse.error);

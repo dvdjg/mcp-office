@@ -1,86 +1,104 @@
-// tests/integration/word/tables.integration.test.ts
-// Replaced with mock version to avoid import issues
+import path from 'path';
+import fs from 'fs-extra';
+import { insertTable, insertTableFromArray, extractTableData } from '../../../src/tools/word/tables.tool.js';
+import { getText } from '../../../src/tools/word/text.tool.js';
+import { createTempWordWorkspace } from '../../helpers/wordFixtures.js';
 
-import { jest, describe, expect, test, beforeEach } from '@jest/globals';
+describe('word/tables integration', () => {
+  let tempDir: string;
 
-// Define types
-type ApiResponse<T> = {
-  success: true;
-  data: T;
-} | {
-  success: false;
-  error: {
-    code: string;
-    message: string;
-  };
-};
-
-// Mock dependencies (simulated)
-const mockHandleToolError = jest.fn();
-const mockCreateErrorResponse = jest.fn();
-const mockGetOfficeApplication = jest.fn();
-const mockReleaseObject = jest.fn();
-const mockValidateFilePath = jest.fn(fp => fp);
-const mockLogger = {
-  info: jest.fn(),
-  warn: jest.fn(),
-  error: jest.fn(),
-  debug: jest.fn()
-};
-
-// Placeholder for actual tool functions that would be integration tested.
-
-describe('word/tables integration tests (mocked)', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mockCreateErrorResponse.mockImplementation((message, code) => ({
-      success: false,
-      error: { code, message }
-    }));
+  beforeAll(async () => {
+    tempDir = await createTempWordWorkspace('mcp-office-tables-');
   });
 
-  test('should pass this basic mock integration test for tables', () => {
-    expect(true).toBe(true);
-    mockLogger.info('Basic mock integration test for tables executed.');
+  afterAll(async () => {
+    if (tempDir) {
+      await fs.remove(tempDir);
+    }
   });
 
-  // Example of how you might test a mocked table creation and then read:
-  // const mockCreateTable = async (params: any): Promise<ApiResponse<{ tableId: string }>> => {
-  //   mockLogger.info(`mockCreateTable called with: ${JSON.stringify(params)}`);
-  //   mockValidateFilePath(params.filePath);
-  //   return { success: true, data: { tableId: 'mockTableIntegration123' } };
-  // };
-  //
-  // const mockReadTable = async (params: any): Promise<ApiResponse<any[][]>> => {
-  //   mockLogger.info(`mockReadTable called with: ${JSON.stringify(params)}`);
-  //   mockValidateFilePath(params.filePath);
-  //   if (params.tableId === 'mockTableIntegration123') {
-  //     return { success: true, data: [['mock', 'data'], ['for', 'table']] };
-  //   }
-  //   return mockCreateErrorResponse('Table not found in mock', 'MOCK_TABLE_NOT_FOUND') as ApiResponse<any[][]>;
-  // };
+  test('insertTable creates a new document on the library path', async () => {
+    const outputPath = path.join(tempDir, 'blank-table.docx');
 
-  // describe('mocked createTable and readTable integration', () => {
-  //   test('should simulate table creation and subsequent read successfully', async () => {
-  //     const filePath = 'integration_tables.docx';
-  //     const createParams = { filePath, data: [['a', 'b']], useComInterop: true };
-  //     const createResult = await mockCreateTable(createParams);
-  //
-  //     expect(createResult.success).toBe(true);
-  //     let tableId = '';
-  //     if (createResult.success) {
-  //       tableId = createResult.data.tableId;
-  //       expect(tableId).toBe('mockTableIntegration123');
-  //     }
-  //
-  //     const readParams = { filePath, tableId, useComInterop: true };
-  //     const readResult = await mockReadTable(readParams);
-  //
-  //     expect(readResult.success).toBe(true);
-  //     if (readResult.success) {
-  //       expect(readResult.data).toEqual([['mock', 'data'], ['for', 'table']]);
-  //     }
-  //     expect(mockValidateFilePath).toHaveBeenCalledWith(filePath);
-  //   });
-  // });
+    const result = await insertTable(
+      {
+        filePath: outputPath,
+        rows: 2,
+        columns: 3,
+        useComInterop: false,
+      },
+      { log: console } as any,
+    );
+
+    expect(result.success).toBe(true);
+    await expect(fs.pathExists(outputPath)).resolves.toBe(true);
+  });
+
+  test('insertTableFromArray creates a readable table document on the library path', async () => {
+    const outputPath = path.join(tempDir, 'array-table.docx');
+
+    const result = await insertTableFromArray(
+      {
+        filePath: outputPath,
+        data: [
+          ['Region', 'Revenue', 'Status'],
+          ['North', '1.2M', 'Recovered'],
+          ['South', '0.8M', 'At Risk'],
+        ],
+        useComInterop: false,
+      },
+      { log: console } as any,
+    );
+
+    expect(result.success).toBe(true);
+    await expect(fs.pathExists(outputPath)).resolves.toBe(true);
+
+    const textResult = await getText(
+      {
+        filePath: outputPath,
+        range: 'document',
+        useComInterop: false,
+      },
+      { log: console } as any,
+    );
+
+    expect(textResult.success).toBe(true);
+    if (textResult.success) {
+      expect(textResult.data).toContain('Region');
+      expect(textResult.data).toContain('North');
+      expect(textResult.data).toContain('At Risk');
+    }
+  });
+
+  test('library path rejects insertion into existing files and keeps extractData marked as pending', async () => {
+    const existingPath = path.join(tempDir, 'existing-table.docx');
+    await fs.writeFile(existingPath, 'placeholder');
+
+    const insertResult = await insertTable(
+      {
+        filePath: existingPath,
+        rows: 1,
+        columns: 1,
+        useComInterop: false,
+      },
+      { log: console } as any,
+    );
+    expect(insertResult.success).toBe(false);
+    if (!insertResult.success) {
+      expect(insertResult.error.code).toBe('LIB_INSERT_EXISTING_FILE_NOT_SUPPORTED');
+    }
+
+    const extractResult = await extractTableData(
+      {
+        filePath: existingPath,
+        tableIndex: 1,
+        useComInterop: false,
+      },
+      { log: console } as any,
+    );
+    expect(extractResult.success).toBe(false);
+    if (!extractResult.success) {
+      expect(extractResult.error.code).toBe('NOT_IMPLEMENTED_LIB_TABLE_EXTRACTION');
+    }
+  });
 });

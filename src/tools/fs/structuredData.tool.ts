@@ -1,6 +1,6 @@
-import * as fs from 'fs-extra';
+import fs from 'fs-extra';
 import * as pathUtil from 'path';
-import * as Papa from 'papaparse';
+import Papa from 'papaparse';
 import { JSONPath } from 'jsonpath-plus';
 import * as cheerio from 'cheerio';
 import { z } from 'zod';

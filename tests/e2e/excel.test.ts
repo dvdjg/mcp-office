@@ -6,6 +6,7 @@ const __dirname = dirname(__filename);
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import fetch from 'node-fetch';
+import ExcelJS from 'exceljs';
 
 const MCP_SERVER_URL = 'http://localhost:3000'; // Assuming the server runs on localhost:3000
 const TEMP_DIR = path.join(__dirname, '../temp_excel_dir');
@@ -137,7 +138,7 @@ describe('excel e2e tests', () => {
       if (error.code === 'ENOENT') {
         console.warn(`Creating dummy fixture file: ${sampleFixturePath}`);
         // Create a very basic valid xlsx file using exceljs for the dummy fixture
-        const workbook = new (require('exceljs').Workbook)();
+        const workbook = new ExcelJS.Workbook();
         const sheet1 = workbook.addWorksheet('Sheet1');
         sheet1.getCell('A1').value = 'Dummy Data';
         sheet1.getCell('A2').value = 123;
@@ -153,7 +154,7 @@ describe('excel e2e tests', () => {
     } catch (error: any) {
       if (error.code === 'ENOENT') {
         console.warn(`Creating dummy fixture file: ${dataAnalysisFixturePath}`);
-        const workbook = new (require('exceljs').Workbook)();
+        const workbook = new ExcelJS.Workbook();
         const sheet = workbook.addWorksheet('Sheet1');
         sheet.addRow(['ID', 'Name', 'Value', 'Category']);
         sheet.addRow([1, 'Alpha', 100, 'X']);

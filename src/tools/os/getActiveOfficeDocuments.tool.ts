@@ -142,22 +142,3 @@ const getActiveOfficeDocumentsTool: McpResource = {
 };
 
 export default getActiveOfficeDocumentsTool;
-
-// Add this block at the end of the file
-if (import.meta.url === `file://${process.argv[1]}` || import.meta.url === `file:///${process.argv[1].replace(/\\/g, '/')}`) {
-  (async () => {
-    try {
-      // Simulate a minimal input for the handler
-      const input: GetActiveOfficeDocumentsInput = {
-        requestId: 'manual-execution',
-        toolConfig: {},
-        mcp_override_env_vars: {}
-      };
-      const result = await getActiveOfficeDocumentsTool.handler(input);
-      console.log(JSON.stringify(result, null, 2));
-    } catch (error) {
-      console.error("Error executing tool handler:", error);
-      process.exit(1);
-    }
-  })();
-}
